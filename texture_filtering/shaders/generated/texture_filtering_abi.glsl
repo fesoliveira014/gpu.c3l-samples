@@ -16,7 +16,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) buffer FilterRoot 
     uint nearest_smp;
     uint bilinear_smp;
     uint trilinear_smp;
-    uint biased_smp;
+    uint aniso_smp;
     float strip_width;
     uint _pad0;
     uint _pad1;

@@ -13,7 +13,7 @@ struct FilterRoot {
     SamplerIndex nearest_smp;
     SamplerIndex bilinear_smp;
     SamplerIndex trilinear_smp;
-    SamplerIndex biased_smp;
+    SamplerIndex aniso_smp;
     float        strip_width;
     uint         _pad0;
     uint         _pad1;
@@ -30,7 +30,7 @@ $assert $reflect(FilterRoot.checker).offset == 72;
 $assert $reflect(FilterRoot.nearest_smp).offset == 76;
 $assert $reflect(FilterRoot.bilinear_smp).offset == 80;
 $assert $reflect(FilterRoot.trilinear_smp).offset == 84;
-$assert $reflect(FilterRoot.biased_smp).offset == 88;
+$assert $reflect(FilterRoot.aniso_smp).offset == 88;
 $assert $reflect(FilterRoot.strip_width).offset == 92;
 $assert $reflect(FilterRoot._pad0).offset == 96;
 $assert $reflect(FilterRoot._pad1).offset == 100;

@@ -10,7 +10,7 @@ root FilterRoot {
     SamplerIndex nearest_smp;
     SamplerIndex bilinear_smp;
     SamplerIndex trilinear_smp;
-    SamplerIndex biased_smp;
+    SamplerIndex aniso_smp;
     float        strip_width;
     uint         _pad0;
     uint         _pad1;
