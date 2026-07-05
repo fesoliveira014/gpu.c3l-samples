@@ -72,16 +72,17 @@ fn void write_matrix(gpu::Vec4f* columns, sample_camera::Mat4 m) {
     }
 }
 
-fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu::Filter mip_filter, float max_lod, float lod_bias = 0.0f) {
+fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu::Filter mip_filter, float max_lod, bool aniso = false) {
     gpu::SamplerDesc desc = {
-        .min_filter   = filter,
-        .mag_filter   = filter,
-        .mip_filter   = mip_filter,
-        .address_u    = gpu::AddressMode.REPEAT,
-        .address_v    = gpu::AddressMode.REPEAT,
-        .address_w    = gpu::AddressMode.REPEAT,
-        .mip_lod_bias = lod_bias,
-        .max_lod      = max_lod,
+        .min_filter        = filter,
+        .mag_filter        = filter,
+        .mip_filter        = mip_filter,
+        .address_u         = gpu::AddressMode.REPEAT,
+        .address_v         = gpu::AddressMode.REPEAT,
+        .address_w         = gpu::AddressMode.REPEAT,
+        .max_lod           = max_lod,
+        .anisotropy_enable = aniso,
+        .max_anisotropy    = aniso ? 16.0f : 0.0f,
     };
     return gpu::create_sampler(device, &desc);
 }
@@ -180,10 +181,8 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_sampler(&device, bilinear_smp);
     gpu::SamplerIndex trilinear_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.NEAREST, (float)MIP_LEVELS)!;
     defer (void)gpu::destroy_sampler(&device, trilinear_smp);
-    // Anisotropy waits on gpu.c3l#19 (samplerAnisotropy feature never
-    // enabled); +1 LOD bias makes the band shift visible instead.
-    gpu::SamplerIndex biased_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.LINEAR, (float)MIP_LEVELS, lod_bias: 1.0f)!;
-    defer (void)gpu::destroy_sampler(&device, biased_smp);
+    gpu::SamplerIndex aniso_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.LINEAR, (float)MIP_LEVELS, aniso: device.caps.max_sampler_anisotropy > 0)!;
+    defer (void)gpu::destroy_sampler(&device, aniso_smp);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = PLANE_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
@@ -264,7 +263,7 @@ fn void? run(sample_args::Options options) {
         root.nearest_smp   = nearest_smp;
         root.bilinear_smp  = bilinear_smp;
         root.trilinear_smp = trilinear_smp;
-        root.biased_smp    = biased_smp;
+        root.aniso_smp     = aniso_smp;
         root.strip_width   = (float)width / 4.0f;
 
         gpu::ColorTargetDesc[1] colors = {{
