@@ -35,6 +35,10 @@ TC="$ROOT/textured_cube"
 gen textured_cube "$TC/shader_abi.c3" "$TC/shaders/generated/textured_cube_abi.glsl" \
     "$TC/abi/scene.abi"
 
+TF="$ROOT/texture_filtering"
+gen texture_filtering "$TF/shader_abi.c3" "$TF/shaders/generated/texture_filtering_abi.glsl" \
+    "$TF/abi/filtering.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"
