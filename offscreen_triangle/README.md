@@ -1,5 +1,7 @@
 # offscreen_triangle
 
+![offscreen_triangle](screenshots/offscreen_triangle.png)
+
 Headless rasterization proof: a textured triangle rendered without a window or
 swapchain, written out as `offscreen_triangle.ppm`.
 

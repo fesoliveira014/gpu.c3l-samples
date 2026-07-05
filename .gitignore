@@ -7,6 +7,9 @@ obj/
 
 # Sample run artifacts
 *.ppm
+selftest_out.png
+out/
 
 # Local agent config
 .claude/
+openspec/

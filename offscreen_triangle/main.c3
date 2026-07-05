@@ -1,6 +1,8 @@
 module offscreen_triangle;
 
 import gpu;
+import sample_args;
+import sample_capture;
 import std::io;
 import std::io::file;
 import std::core::mem;
@@ -11,18 +13,18 @@ const char[*] OFFSCREEN_FRAG_SPIRV = $embed("shaders/offscreen.frag.spv");
 const uint RT_SIZE = 256;
 const usz RT_BYTES = RT_SIZE * RT_SIZE * 4;
 const uint TEX_SIZE = 16;
-const usz PPM_HEADER_MAX = 32;
 
-fn int main() {
-    if (catch err = run()) {
+fn int main(String[] args) {
+    sample_args::Options options = sample_args::parse_options(args);
+    if (catch err = run(options)) {
         io::printfn("offscreen_triangle: FAIL (%s)", err);
         return 1;
     }
-    io::printn("offscreen_triangle: PASS (wrote offscreen_triangle.ppm)");
+    io::printn("offscreen_triangle: PASS");
     return 0;
 }
 
-fn void? run() {
+fn void? run(sample_args::Options options) {
     gpu::DeviceDesc device_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
@@ -84,12 +86,6 @@ fn void? run() {
         }
     }
     gpu::flush_buffer(&device, staging, 0, 0)!;
-
-    gpu::BufferDesc rb_desc = {
-        .size = RT_BYTES, .usage = { .transfer_dst }, .memory_kind = gpu::MemoryKind.READBACK,
-    };
-    gpu::BufferHandle readback = gpu::create_buffer(&device, &rb_desc)!;
-    defer (void)gpu::destroy_buffer(&device, readback);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = OFFSCREEN_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
@@ -178,49 +174,25 @@ fn void? run() {
     )!;
     gpu::cmd_end_render_pass(&cmd)!;
 
-    gpu::TextureBarrier to_src = {
-        .texture       = target,
-        .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-        .after_stage   = gpu::Stage.TRANSFER,
-        .before_hazard = gpu::Hazard.COLOR_WRITE,
-        .after_hazard  = gpu::Hazard.TRANSFER_READ,
-        .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
-    };
-    gpu::cmd_texture_barrier(&cmd, &to_src)!;
-
-    gpu::GpuSpan rb_span = gpu::get_buffer_span(&device, readback)!;
-    gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = rb_span };
-    gpu::cmd_copy_texture_to_buffer(&cmd, &copy)!;
-    gpu::BufferBarrier host_read = {
-        .buffer = readback, .offset = 0, .size = RT_BYTES,
-        .before_stage = gpu::Stage.TRANSFER, .after_stage = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
-    };
-    gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-
     gpu::end_commands(&device, &cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(&device, &submit)!;
     gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::invalidate_buffer(&device, readback, 0, 0)!;
 
-    write_ppm((char*)rb_span.cpu)!;
+    if (options.wants_screenshot()) {
+        sample_capture::capture_texture_png(
+            device:      &device,
+            src:         target,
+            width:       RT_SIZE,
+            height:      RT_SIZE,
+            format:      gpu::Format.RGBA8_UNORM,
+            from_stage:  gpu::Stage.COLOR_ATTACHMENT,
+            from_hazard: gpu::Hazard.COLOR_WRITE,
+            from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
+            path:        options.screenshot_path,
+        )!;
+    }
     gpu::end_frame(&device)!;
 }
 
-fn void? write_ppm(char* rgba) {
-    @pool() {
-        char[] out = mem::talloc_array(char, (sz)(PPM_HEADER_MAX + RT_SIZE * RT_SIZE * 3));
-        String header = string::tformat("P6\n%d %d\n255\n", RT_SIZE, RT_SIZE);
-        mem::copy(out.ptr, header.ptr, header.len);
-        usz cursor = header.len;
-        for (uint i = 0; i < RT_SIZE * RT_SIZE; i++) {
-            out[cursor++] = rgba[i * 4];
-            out[cursor++] = rgba[i * 4 + 1];
-            out[cursor++] = rgba[i * 4 + 2];
-        }
-        file::save("offscreen_triangle.ppm", out[:cursor])!;
-    };
-}

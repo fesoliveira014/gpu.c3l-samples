@@ -1,6 +1,8 @@
 module gpu_driven_draw_sdl;
 
 import gpu;
+import sample_args;
+import sample_capture;
 import sample_window;
 import std::io;
 
@@ -12,30 +14,14 @@ const uint GRID = 16;
 const uint INSTANCES = GRID * GRID;
 const uint MAX_TRACKED_IMAGES = 8;
 
-struct Options {
-    long frames;
-    bool vsync;
-}
-
 fn void? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window, uint* width, uint* height, bool[] image_seen) {
     sample_window::pixel_size(window, width, height);
     gpu::resize_swapchain(device, swapchain, *width, *height)!;
     foreach (&seen : image_seen) *seen = false;
 }
 
-fn Options parse_options(String[] args) {
-    Options options = { .frames = -1, .vsync = true };
-    foreach (i, arg : args) {
-        if (arg == "--no-vsync") options.vsync = false;
-        if (arg == "--frames" && i + 1 < args.len) {
-            if (try value = args[i + 1].to_long()) options.frames = value;
-        }
-    }
-    return options;
-}
-
 fn int main(String[] args) {
-    if (catch err = run(parse_options(args))) {
+    if (catch err = run(sample_args::parse_options(args))) {
         io::printfn("gpu_driven_draw_sdl: FAIL (%s)", err);
         return 1;
     }
@@ -43,7 +29,7 @@ fn int main(String[] args) {
     return 0;
 }
 
-fn void? run(Options options) {
+fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l gpu-driven draws", 800, 600)!;
     defer sample_window::destroy_sample_window(&window);
 
@@ -66,6 +52,7 @@ fn void? run(Options options) {
     gpu::SwapchainDesc swapchain_desc = {
         .width        = width,
         .height       = height,
+        .preferred_format = gpu::Format.BGRA8_UNORM,
         .present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
         .srgb         = false,
         .debug_name   = "gpu_driven_swapchain",
@@ -265,6 +252,20 @@ fn void? run(Options options) {
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
         gpu::submit(&device, &submit)!;
+
+        if (options.capture_frame(frame)) {
+            sample_capture::capture_texture_png(
+                device:      &device,
+                src:         acquired.texture,
+                width:       width,
+                height:      height,
+                format:      gpu::Format.BGRA8_UNORM,
+                from_stage:  gpu::Stage.PRESENT,
+                from_hazard: gpu::Hazard.PRESENT_READ,
+                from_layout: gpu::TextureLayout.PRESENT,
+                path:        options.screenshot_path,
+            )!;
+        }
 
         gpu::PresentDesc present_desc = { .swapchain = swapchain };
         if (catch err = gpu::present(&device, &present_desc)) {
