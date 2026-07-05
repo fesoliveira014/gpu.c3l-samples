@@ -31,6 +31,10 @@ BTC="$ROOT/bindless_texture_compute"
 gen bindless_texture_compute "$BTC/shader_abi.c3" "$BTC/shaders/generated/bindless_abi.glsl" \
     "$BTC/abi/bindless.abi"
 
+TC="$ROOT/textured_cube"
+gen textured_cube "$TC/shader_abi.c3" "$TC/shaders/generated/textured_cube_abi.glsl" \
+    "$TC/abi/scene.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"
