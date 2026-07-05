@@ -1,0 +1,19 @@
+abi texture_filtering;
+
+root FilterRoot {
+    vec4         view_proj_c0;
+    vec4         view_proj_c1;
+    vec4         view_proj_c2;
+    vec4         view_proj_c3;
+    GpuAddress   vertex_gpu;
+    TextureIndex checker;
+    SamplerIndex nearest_smp;
+    SamplerIndex bilinear_smp;
+    SamplerIndex trilinear_smp;
+    SamplerIndex biased_smp;
+    float        strip_width;
+    uint         _pad0;
+    uint         _pad1;
+    uint         _pad2;
+    uint         _pad3;
+}
