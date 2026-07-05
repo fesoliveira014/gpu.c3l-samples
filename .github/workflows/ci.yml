@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  C3C_VERSION: "0.8.0"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Fine-grained PAT (Contents: read) covering this repo, gpu.c3l, and
+          # the private binding submodules.
+          token: ${{ secrets.SUBMODULE_TOKEN }}
+
+      - name: Cache c3c
+        uses: actions/cache@v4
+        with:
+          path: ~/tools/c3
+          key: c3c-linux-${{ env.C3C_VERSION }}
+
+      - name: Install c3c
+        run: |
+          if [ ! -x ~/tools/c3/c3c ]; then
+            mkdir -p ~/tools
+            curl -fsSL -o /tmp/c3.tar.gz \
+              "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+            tar -xzf /tmp/c3.tar.gz -C ~/tools
+          fi
+          echo "$HOME/tools/c3" >> "$GITHUB_PATH"
+
+      - name: Install glslc, lavapipe, xvfb
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y glslc mesa-vulkan-drivers vulkan-validationlayers xvfb
+
+      - name: ABI drift gate
+        run: ./scripts/gen_abi.sh --check
+
+      - name: Build shaders
+        run: ./scripts/build_shaders.sh
+
+      - name: Run samples
+        run: |
+          export VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
+          mkdir -p out
+          c3c run shared_selftest
+          c3c run root_pointer_compute
+          c3c run bindless_texture_compute
+          c3c run memory_report
+          c3c run offscreen_triangle -- --screenshot out/offscreen_triangle.png
+          for s in hello_triangle_sdl gpu_driven_draw_sdl; do
+            c3c build "$s"
+            xvfb-run -a env SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
+              "./build/$s" --frames 30 --screenshot "out/$s.png"
+          done
+          ls -la out/
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: out/*.png

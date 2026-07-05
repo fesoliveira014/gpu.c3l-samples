@@ -1,0 +1,3 @@
+# Byte-exact text on every platform: gen_abi.sh --check compares generated
+# outputs literally, and committed screenshots' reference test likewise.
+* text=auto eol=lf

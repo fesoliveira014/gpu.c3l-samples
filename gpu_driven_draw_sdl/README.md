@@ -1,5 +1,7 @@
 # gpu_driven_draw_sdl
 
+![gpu_driven_draw_sdl](screenshots/gpu_driven_draw_sdl.png)
+
 Windowed GPU-driven rendering: a compute pass culls a 16×16 quad grid against
 an animated spotlight and writes `DrawIndexedIndirectCommand`s (plus a draw
 count where `DeviceCaps.draw_indirect_count` holds); one indirect multi-draw

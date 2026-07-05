@@ -1,5 +1,7 @@
 # hello_triangle_sdl
 
+![hello_triangle_sdl](screenshots/hello_triangle_sdl.png)
+
 The offscreen triangle, presented: SDL3 window, platform-neutral surface,
 swapchain with fault-driven resize.
 
