@@ -1,0 +1,12 @@
+# Build output
+build/
+obj/
+
+# Compiled shaders (.glsl is the source of truth)
+*.spv
+
+# Sample run artifacts
+*.ppm
+
+# Local agent config
+.claude/
