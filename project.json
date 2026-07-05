@@ -33,6 +33,15 @@
     },
     // Windowed: compute culls a quad grid and writes indirect draw args
     // (+ count where supported); one multi-draw renders via gl_DrawID.
+    "textured_cube": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "textured_cube/main.c3", "textured_cube/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
     "shared_selftest": {
       "type": "executable",
       "sources": [ "shared/selftest.c3", "shared/sample_args.c3", "shared/sample_camera.c3", "shared/png.c3" ]

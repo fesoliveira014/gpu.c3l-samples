@@ -1,0 +1,19 @@
+abi textured_cube;
+
+root SceneRoot {
+    vec4         view_proj_c0;
+    vec4         view_proj_c1;
+    vec4         view_proj_c2;
+    vec4         view_proj_c3;
+    vec4         model_c0;
+    vec4         model_c1;
+    vec4         model_c2;
+    vec4         model_c3;
+    GpuAddress   vertex_gpu;
+    TextureIndex albedo_texture;
+    SamplerIndex albedo_sampler;
+    float        time;
+    uint         _pad0;
+    uint         _pad1;
+    uint         _pad2;
+}
