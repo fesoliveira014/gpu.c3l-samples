@@ -1,0 +1,6 @@
+abi multithreaded_recording;
+
+root QuadRoot {
+    vec4 rect;
+    vec4 color;
+}
