@@ -47,6 +47,10 @@ PS="$ROOT/particle_sim"
 gen particle_sim "$PS/shader_abi.c3" "$PS/shaders/generated/particle_sim_abi.glsl" \
     "$PS/abi/particles.abi"
 
+FC="$ROOT/frustum_culling"
+gen frustum_culling "$FC/shader_abi.c3" "$FC/shaders/generated/frustum_culling_abi.glsl" \
+    "$FC/abi/culling.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"
