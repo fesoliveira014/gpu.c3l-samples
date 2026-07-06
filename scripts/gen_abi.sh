@@ -75,6 +75,10 @@ PCT="$ROOT/pipeline_cache_timing"
 gen pipeline_cache_timing "$PCT/shader_abi.c3" "$PCT/shaders/generated/pipeline_cache_timing_abi.glsl" \
     "$PCT/abi/cachetime.abi"
 
+PME="$ROOT/present_mode_explorer"
+gen present_mode_explorer "$PME/shader_abi.c3" "$PME/shaders/generated/present_mode_explorer_abi.glsl" \
+    "$PME/abi/explorer.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"
