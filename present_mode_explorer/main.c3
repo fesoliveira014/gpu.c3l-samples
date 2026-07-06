@@ -1,0 +1,272 @@
+module present_mode_explorer;
+
+import gpu;
+import sample_args;
+import sample_capture;
+import sample_window;
+import std::io;
+import std::time;
+
+const char[*] CARD_VERT_SPIRV = $embed("shaders/testcard.vert.spv");
+const char[*] CARD_FRAG_SPIRV = $embed("shaders/testcard.frag.spv");
+
+const uint MAX_TRACKED_IMAGES = 8;
+const uint WARMUP_FRAMES = 10;
+const long DEFAULT_FRAMES_PER_MODE = 120;
+
+struct ModeStats {
+    double mean_ms;
+    double min_ms;
+    double max_ms;
+    double acquire_ms;
+    long   frames;
+}
+
+fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
+
+fn String mode_name(gpu::PresentMode mode) {
+    switch (mode) {
+        case gpu::PresentMode.FIFO:      return "FIFO     ";
+        case gpu::PresentMode.MAILBOX:   return "MAILBOX  ";
+        case gpu::PresentMode.IMMEDIATE: return "IMMEDIATE";
+    }
+}
+
+fn bool mode_supported(gpu::PresentModeSupport support, gpu::PresentMode mode) {
+    switch (mode) {
+        case gpu::PresentMode.FIFO:      return support.fifo;
+        case gpu::PresentMode.MAILBOX:   return support.mailbox;
+        case gpu::PresentMode.IMMEDIATE: return support.immediate;
+    }
+}
+
+fn int main(String[] args) {
+    if (catch err = run(sample_args::parse_options(args))) {
+        io::printfn("present_mode_explorer: FAIL (%s)", err);
+        return 1;
+    }
+    io::printn("present_mode_explorer: PASS");
+    return 0;
+}
+
+<* Render `frames` frames in the swapchain's current mode, collecting pacing
+   stats. Captures a screenshot on frame `capture_at` when non-negative. *>
+fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window, gpu::PipelineHandle pipeline, uint* width, uint* height, long frames, long capture_at, String screenshot_path) {
+    bool[MAX_TRACKED_IMAGES] image_seen;
+    ModeStats stats = { .min_ms = 1.0e9 };
+    double total_ms = 0.0;
+    double total_acquire_ms = 0.0;
+    Clock frame_clk = clock::now();
+
+    for (long frame = 0; frame < frames; frame++) {
+        sample_window::WindowEvents events = sample_window::pump_events(window);
+        if (events.quit) break;
+        if (events.resized) {
+            sample_window::pixel_size(window, width, height);
+            gpu::resize_swapchain(device, swapchain, *width, *height)!;
+            foreach (&seen : image_seen) *seen = false;
+        }
+
+        gpu::begin_frame(device)!;
+
+        Clock acquire_clk = clock::now();
+        gpu::AcquiredImage acquired;
+        if (try image = gpu::acquire_next_image(device, swapchain)) {
+            acquired = image;
+        } else {
+            sample_window::pixel_size(window, width, height);
+            gpu::resize_swapchain(device, swapchain, *width, *height)!;
+            foreach (&seen : image_seen) *seen = false;
+            gpu::end_frame(device)!;
+            continue;
+        }
+        double acquire_ms = ms(acquire_clk.mark());
+
+        gpu::GpuSpan root_span = gpu::alloc_frame_span(device, ExplorerRoot::size, 16)!;
+        ExplorerRoot* root = (ExplorerRoot*)root_span.cpu;
+        float bar = (float)(frame % 100) / 100.0f;
+        root.params = { (float)frame * 0.04f, bar, (float)*width, (float)*height };
+
+        gpu::CommandList cmd = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
+        gpu::TextureBarrier to_attach = {
+            .texture       = acquired.texture,
+            .before_stage  = image_seen[acquired.index] ? gpu::Stage.PRESENT : gpu::Stage.HOST,
+            .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
+            .before_hazard = image_seen[acquired.index] ? gpu::Hazard.PRESENT_READ : gpu::Hazard.HOST_WRITE,
+            .after_hazard  = gpu::Hazard.COLOR_WRITE,
+            .old_layout    = image_seen[acquired.index] ? gpu::TextureLayout.PRESENT : gpu::TextureLayout.UNDEFINED,
+            .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+        };
+        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        image_seen[acquired.index] = true;
+
+        gpu::ColorTargetDesc[1] colors = {{
+            .texture  = acquired.texture,
+            .load_op  = gpu::LoadOp.CLEAR,
+            .store_op = gpu::StoreOp.STORE,
+            .clear    = { .rgba = { 0, 0, 0, 1 } },
+        }};
+        gpu::RenderPassDesc pass = { .colors = colors[..], .width = *width, .height = *height };
+        gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::cmd_draw(
+            commands:       &cmd,
+            pipeline:       pipeline,
+            vertex_root:    root_span.gpu,
+            fragment_root:  root_span.gpu,
+            vertex_count:   3,
+            instance_count: 1,
+        )!;
+        gpu::cmd_end_render_pass(&cmd)!;
+
+        gpu::TextureBarrier to_present = {
+            .texture       = acquired.texture,
+            .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
+            .after_stage   = gpu::Stage.PRESENT,
+            .before_hazard = gpu::Hazard.COLOR_WRITE,
+            .after_hazard  = gpu::Hazard.PRESENT_READ,
+            .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+            .new_layout    = gpu::TextureLayout.PRESENT,
+        };
+        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::end_commands(device, &cmd)!;
+
+        gpu::CommandList[1] lists = { cmd };
+        gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
+        gpu::submit(device, &submit)!;
+
+        if (frame == capture_at) {
+            sample_capture::capture_texture_png(
+                device:      device,
+                src:         acquired.texture,
+                width:       *width,
+                height:      *height,
+                format:      gpu::Format.BGRA8_UNORM,
+                from_stage:  gpu::Stage.PRESENT,
+                from_hazard: gpu::Hazard.PRESENT_READ,
+                from_layout: gpu::TextureLayout.PRESENT,
+                path:        screenshot_path,
+            )!;
+        }
+
+        gpu::PresentDesc present_desc = { .swapchain = swapchain };
+        if (catch err = gpu::present(device, &present_desc)) {
+            if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+            sample_window::pixel_size(window, width, height);
+            gpu::resize_swapchain(device, swapchain, *width, *height)!;
+            foreach (&seen : image_seen) *seen = false;
+        }
+
+        gpu::end_frame(device)!;
+
+        double frame_ms = ms(frame_clk.mark());
+        if (frame >= WARMUP_FRAMES) {
+            total_ms += frame_ms;
+            total_acquire_ms += acquire_ms;
+            stats.frames++;
+            if (frame_ms < stats.min_ms) stats.min_ms = frame_ms;
+            if (frame_ms > stats.max_ms) stats.max_ms = frame_ms;
+        }
+    }
+
+    gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
+    if (stats.frames > 0) {
+        stats.mean_ms = total_ms / stats.frames;
+        stats.acquire_ms = total_acquire_ms / stats.frames;
+    }
+    return stats;
+}
+
+fn void? run(sample_args::Options options) {
+    sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l present-mode explorer", 800, 480)!;
+    defer sample_window::destroy_sample_window(&window);
+
+    gpu::DeviceDesc device_desc = {
+        .backend             = gpu::BackendKind.VULKAN,
+        .enable_validation   = true,
+        .enable_presentation = true,
+        .frames_in_flight    = 2,
+        .application_name    = "present_mode_explorer",
+    };
+    gpu::Device device = gpu::create_device(&device_desc)!;
+    defer (void)gpu::destroy_device(&device);
+
+    gpu::SurfaceDesc surface = sample_window::surface_desc_for(&window)!;
+    uint width;
+    uint height;
+    sample_window::pixel_size(&window, &width, &height);
+
+    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = CARD_VERT_SPIRV[..], .entry_point = "main" };
+    gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
+    defer (void)gpu::destroy_shader(&device, vert);
+    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = CARD_FRAG_SPIRV[..], .entry_point = "main" };
+    gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
+    defer (void)gpu::destroy_shader(&device, frag);
+
+    gpu::Format[1] color_formats = { gpu::Format.BGRA8_UNORM };
+    gpu::GraphicsPipelineDesc pipe_desc = {
+        .vertex_shader   = vert,
+        .fragment_shader = frag,
+        .topology        = gpu::PrimitiveTopology.TRIANGLES,
+        .color_formats   = color_formats[..],
+        .debug_name      = "testcard",
+    };
+    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(&device, pipeline);
+
+    // Probe swapchain: FIFO is spec-guaranteed, so this always succeeds and
+    // gives the query a surface to inspect.
+    gpu::SwapchainDesc probe_desc = {
+        .width            = width,
+        .height           = height,
+        .preferred_format = gpu::Format.BGRA8_UNORM,
+        .present_mode     = gpu::PresentMode.FIFO,
+        .srgb             = false,
+        .debug_name       = "explorer_probe",
+    };
+    gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &probe_desc)!;
+    gpu::PresentModeSupport support = gpu::get_present_mode_support(&device, swapchain)!;
+    if (!support.fifo) {
+        io::printn("present_mode_explorer: driver does not report FIFO — spec violation");
+        gpu::destroy_swapchain(&device, swapchain)!;
+        return gpu::UNSUPPORTED_FEATURE~;
+    }
+
+    long frames_per_mode = options.frames > 0 ? options.frames : DEFAULT_FRAMES_PER_MODE;
+    gpu::PresentMode[3] modes = { gpu::PresentMode.FIFO, gpu::PresentMode.MAILBOX, gpu::PresentMode.IMMEDIATE };
+
+    io::printfn("present_mode_explorer: support fifo=%s mailbox=%s immediate=%s, %d frames/mode",
+        support.fifo ? "yes" : "no",
+        support.mailbox ? "yes" : "no",
+        support.immediate ? "yes" : "no",
+        frames_per_mode);
+
+    foreach (i, mode : modes) {
+        if (!mode_supported(support, mode)) {
+            io::printfn("  %s  skipped (unsupported)", mode_name(mode));
+            continue;
+        }
+        // The probe swapchain is already FIFO; recreate for the others.
+        if (i > 0) {
+            gpu::destroy_swapchain(&device, swapchain)!;
+            gpu::SwapchainDesc mode_desc = probe_desc;
+            mode_desc.present_mode = mode;
+            mode_desc.debug_name   = "explorer_mode";
+            swapchain = gpu::create_swapchain(&device, &surface, &mode_desc)!;
+        }
+        ModeStats stats = run_mode_window(
+            device:          &device,
+            swapchain:       swapchain,
+            window:          &window,
+            pipeline:        pipeline,
+            width:           &width,
+            height:          &height,
+            frames:          frames_per_mode,
+            capture_at:      mode == gpu::PresentMode.FIFO && options.wants_screenshot() ? frames_per_mode - 1 : -1,
+            screenshot_path: options.screenshot_path,
+        )!;
+        io::printfn("  %s  frame %6.2f ms mean (%.2f..%.2f)   acquire %5.2f ms   ~%.0f fps",
+            mode_name(mode), stats.mean_ms, stats.min_ms, stats.max_ms, stats.acquire_ms,
+            stats.mean_ms > 0.0 ? 1000.0 / stats.mean_ms : 0.0);
+    }
+    gpu::destroy_swapchain(&device, swapchain)!;
+}

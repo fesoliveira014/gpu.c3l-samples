@@ -107,6 +107,15 @@
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
+    "present_mode_explorer": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "present_mode_explorer/main.c3", "present_mode_explorer/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
     "shared_selftest": {
       "type": "executable",
       "sources": [ "shared/selftest.c3", "shared/sample_args.c3", "shared/sample_camera.c3", "shared/png.c3" ]

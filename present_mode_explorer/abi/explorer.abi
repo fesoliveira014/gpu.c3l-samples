@@ -1,0 +1,5 @@
+abi present_mode_explorer;
+
+root ExplorerRoot {
+    vec4 params;
+}
