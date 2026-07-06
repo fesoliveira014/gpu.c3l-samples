@@ -1,0 +1,12 @@
+abi bindless_stress;
+
+const uint VERIFY_WORKGROUP = 64;
+
+root StressRoot {
+    GpuAddress   indices_gpu;
+    GpuAddress   output_gpu;
+    SamplerIndex heap_sampler;
+    uint         count;
+    uint         _pad0;
+    uint         _pad1;
+}

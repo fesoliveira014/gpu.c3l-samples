@@ -63,6 +63,10 @@ PBR="$ROOT/pbr_materials"
 gen pbr_materials "$PBR/shader_abi.c3" "$PBR/shaders/generated/pbr_materials_abi.glsl" \
     "$PBR/abi/pbr.abi"
 
+BS="$ROOT/bindless_stress"
+gen bindless_stress "$BS/shader_abi.c3" "$BS/shaders/generated/bindless_stress_abi.glsl" \
+    "$BS/abi/stress.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"

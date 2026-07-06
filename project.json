@@ -51,6 +51,10 @@
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
+    "bindless_stress": {
+      "type": "executable",
+      "sources": [ "bindless_stress/main.c3", "bindless_stress/shader_abi.c3" ]
+    },
     "image_processing": {
       "type": "executable",
       "sources": [
