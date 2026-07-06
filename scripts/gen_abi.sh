@@ -71,6 +71,10 @@ MT="$ROOT/multithreaded_recording"
 gen multithreaded_recording "$MT/shader_abi.c3" "$MT/shaders/generated/multithreaded_recording_abi.glsl" \
     "$MT/abi/mtrec.abi"
 
+PCT="$ROOT/pipeline_cache_timing"
+gen pipeline_cache_timing "$PCT/shader_abi.c3" "$PCT/shaders/generated/pipeline_cache_timing_abi.glsl" \
+    "$PCT/abi/cachetime.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"

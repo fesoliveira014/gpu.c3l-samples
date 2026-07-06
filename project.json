@@ -115,6 +115,10 @@
       "type": "executable",
       "sources": [ "multithreaded_recording/main.c3", "multithreaded_recording/shader_abi.c3" ]
     },
+    "pipeline_cache_timing": {
+      "type": "executable",
+      "sources": [ "pipeline_cache_timing/main.c3", "pipeline_cache_timing/shader_abi.c3" ]
+    },
     "memory_report": {
       "type": "executable",
       "sources": [ "memory_report/main.c3" ]
