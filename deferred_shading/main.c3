@@ -57,7 +57,7 @@ fn void write_instances(float* out) {
     float[<3>][INSTANCE_COUNT] centers = {
         { 0.0, -0.15, 0.0 },
         { -3.0, 1.0, -2.5 }, { 0.0, 1.6, 0.0 }, { 3.2, 0.8, -1.0 },
-        { -1.5, 0.6, 2.8 },  { 2.0, 2.6, 2.2 }, { -3.5, 0.9, 1.5 },
+        { -1.5, 0.6, 2.8 },  { 2.0, 0.9, 2.2 }, { -3.5, 0.9, 1.5 },
         { 1.0, 0.5, -3.4 },  { 4.0, 1.4, 3.0 },
     };
     float[<3>][INSTANCE_COUNT] scales = {
@@ -244,16 +244,6 @@ fn void? run(sample_args::Options options) {
     write_instances((float*)instances_span.cpu);
     gpu::flush_buffer(&device, instances, 0, 0)!;
 
-    gpu::BufferDesc lights_desc = {
-        .size        = LIGHT_COUNT * 32,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .debug_name  = "lights",
-    };
-    gpu::BufferHandle lights = gpu::create_buffer(&device, &lights_desc)!;
-    defer (void)gpu::destroy_buffer(&device, lights);
-    gpu::GpuSpan lights_span = gpu::get_buffer_span(&device, lights)!;
-
     gpu::ShaderDesc gv_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = GEOM_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle geom_vert = gpu::create_shader(&device, &gv_sd)!;
     defer (void)gpu::destroy_shader(&device, geom_vert);
@@ -337,8 +327,10 @@ fn void? run(sample_args::Options options) {
             continue;
         }
 
+        // Lights live in the frame arena: frame N-1 may still be reading its
+        // copy on the GPU while this one is written.
+        gpu::GpuSpan lights_span = gpu::alloc_frame_span(&device, LIGHT_COUNT * 32, 16)!;
         write_lights((float*)lights_span.cpu, (float)frame / 60.0f);
-        gpu::flush_buffer(&device, lights, 0, 0)!;
 
         gpu::GpuSpan geom_span = gpu::alloc_frame_span(&device, GeometryRoot::size, 16)!;
         GeometryRoot* geom_root = (GeometryRoot*)geom_span.cpu;

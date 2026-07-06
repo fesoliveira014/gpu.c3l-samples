@@ -34,10 +34,12 @@ geometry pass (MRT)                       resolve pass
 - G-buffer targets are read through the descriptor heap (`TextureIndex` per
   target + one `NEAREST` sampler in the root), so the resolve is plain
   root-pointer plumbing like any other pass.
-- Lights live in a persistent-upload storage buffer addressed from the root
-  (`lights_gpu` + `light_count`); the CPU rewrites all 16 each frame to orbit
-  them. Shading is `ambient + Σ albedo · light_color · lambert · atten²` with
-  a smooth radius falloff.
+- Lights are written into the frame arena each frame (frame N-1 may still be
+  reading its copy on the GPU) and addressed from the root (`lights_gpu` +
+  `light_count`). Shading is
+  `ambient + Σ (albedo · lambert + blinn_phong) · light_color · atten²`,
+  then Reinhard tonemap and a gamma encode — the swapchain is UNORM, not
+  sRGB, so linear light written raw would display crushed-dark.
 
 ## Barriers
 
