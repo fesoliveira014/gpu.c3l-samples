@@ -56,6 +56,7 @@ jobs:
           c3c run bindless_texture_compute
           c3c run memory_report
           c3c run offscreen_triangle -- --screenshot out/offscreen_triangle.png
+          c3c run image_processing -- --screenshot out/image_processing.png
           for s in hello_triangle_sdl gpu_driven_draw_sdl textured_cube texture_filtering; do
             c3c build "$s"
             xvfb-run -a env SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \

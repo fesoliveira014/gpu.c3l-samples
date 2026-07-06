@@ -1,0 +1,27 @@
+abi image_processing;
+
+const uint IMAGE_SIZE = 512;
+const uint GEN_TILE = 16;
+const uint BLUR_TILE = 64;
+const uint BLUR_RADIUS = 8;
+const uint HISTOGRAM_BINS = 256;
+
+root GenerateRoot {
+    TextureIndex target;
+    uint         size;
+    float        seed;
+    uint         _pad0;
+}
+
+root BlurRoot {
+    TextureIndex src;
+    TextureIndex dst;
+    uint         size;
+    uint         horizontal;
+}
+
+root HistogramRoot {
+    GpuAddress   bins_gpu;
+    TextureIndex src;
+    uint         size;
+}
