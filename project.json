@@ -111,6 +111,10 @@
       "type": "executable",
       "sources": [ "shared/selftest.c3", "shared/sample_args.c3", "shared/sample_camera.c3", "shared/png.c3" ]
     },
+    "multithreaded_recording": {
+      "type": "executable",
+      "sources": [ "multithreaded_recording/main.c3", "multithreaded_recording/shader_abi.c3" ]
+    },
     "memory_report": {
       "type": "executable",
       "sources": [ "memory_report/main.c3" ]
