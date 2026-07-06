@@ -18,7 +18,7 @@ const float GRID_SPACING = 1.6f;
 const float CUBE_HALF = 0.35f;
 const uint CUBE_VERTEX_COUNT = 36;
 const usz  ARGS_BYTES = INSTANCE_COUNT * 16;
-const long STATS_SAMPLE_INTERVAL = 30;
+const long STATS_SAMPLE_INTERVAL = 10;
 
 struct CubeFace {
     float[<3>] normal;
@@ -275,7 +275,7 @@ fn void? run(sample_args::Options options) {
             gpu::flush_buffer(&device, stats, 0, 0)!;
         }
 
-        camera.yaw = (float)frame * 0.02f;
+        camera.yaw = (float)frame * 0.05f;
         sample_camera::Mat4 view_proj = sample_camera::mul(
             sample_camera::perspective(0.9f, (float)width / (float)height, 0.1f, 100.0f),
             camera.view());
