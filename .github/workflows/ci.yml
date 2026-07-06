@@ -57,7 +57,7 @@ jobs:
           c3c run memory_report
           c3c run offscreen_triangle -- --screenshot out/offscreen_triangle.png
           c3c run image_processing -- --screenshot out/image_processing.png
-          for s in hello_triangle_sdl gpu_driven_draw_sdl textured_cube texture_filtering particle_sim frustum_culling shadow_mapping; do
+          for s in hello_triangle_sdl gpu_driven_draw_sdl textured_cube texture_filtering particle_sim frustum_culling shadow_mapping deferred_shading; do
             c3c build "$s"
             xvfb-run -a env SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
               "./build/$s" --frames 30 --screenshot "out/$s.png"

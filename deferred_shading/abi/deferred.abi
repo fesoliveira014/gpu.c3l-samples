@@ -1,0 +1,27 @@
+abi deferred_shading;
+
+const uint LIGHT_COUNT = 16;
+
+root GeometryRoot {
+    vec4       view_proj_c0;
+    vec4       view_proj_c1;
+    vec4       view_proj_c2;
+    vec4       view_proj_c3;
+    GpuAddress vertex_gpu;
+    GpuAddress instances_gpu;
+}
+
+root ResolveRoot {
+    vec4         camera_pos;
+    GpuAddress   lights_gpu;
+    TextureIndex albedo_target;
+    TextureIndex normal_target;
+    TextureIndex position_target;
+    SamplerIndex gbuffer_sampler;
+    uint         light_count;
+    uint         _pad0;
+    uint         _pad1;
+    uint         _pad2;
+    uint         _pad3;
+    uint         _pad4;
+}
