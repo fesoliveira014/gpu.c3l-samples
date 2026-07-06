@@ -51,6 +51,13 @@
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
+    "image_processing": {
+      "type": "executable",
+      "sources": [
+        "image_processing/main.c3", "image_processing/shader_abi.c3",
+        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
     "shared_selftest": {
       "type": "executable",
       "sources": [ "shared/selftest.c3", "shared/sample_args.c3", "shared/sample_camera.c3", "shared/png.c3" ]
