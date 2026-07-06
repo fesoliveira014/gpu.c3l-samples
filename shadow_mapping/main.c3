@@ -209,7 +209,7 @@ fn void? run(sample_args::Options options) {
         .fragment_shader = sh_frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
         .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
-        .raster          = { .depth_bias_constant = 8.0f, .depth_bias_slope = 3.0f },
+        .raster          = { .cull_mode = gpu::CullMode.FRONT, .depth_bias_slope = 1.0f },
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadow_pass",
     };
