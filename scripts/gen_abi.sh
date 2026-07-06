@@ -51,6 +51,10 @@ FC="$ROOT/frustum_culling"
 gen frustum_culling "$FC/shader_abi.c3" "$FC/shaders/generated/frustum_culling_abi.glsl" \
     "$FC/abi/culling.abi"
 
+SM="$ROOT/shadow_mapping"
+gen shadow_mapping "$SM/shader_abi.c3" "$SM/shaders/generated/shadow_mapping_abi.glsl" \
+    "$SM/abi/shadow.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"

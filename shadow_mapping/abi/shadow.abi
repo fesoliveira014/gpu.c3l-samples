@@ -1,0 +1,30 @@
+abi shadow_mapping;
+
+const uint SHADOW_MAP_SIZE = 2048;
+
+root ShadowPassRoot {
+    vec4       light_vp_c0;
+    vec4       light_vp_c1;
+    vec4       light_vp_c2;
+    vec4       light_vp_c3;
+    GpuAddress vertex_gpu;
+    GpuAddress instances_gpu;
+}
+
+root ScenePassRoot {
+    vec4         view_proj_c0;
+    vec4         view_proj_c1;
+    vec4         view_proj_c2;
+    vec4         view_proj_c3;
+    vec4         light_vp_c0;
+    vec4         light_vp_c1;
+    vec4         light_vp_c2;
+    vec4         light_vp_c3;
+    vec4         light_dir;
+    GpuAddress   vertex_gpu;
+    GpuAddress   instances_gpu;
+    TextureIndex shadow_map;
+    SamplerIndex shadow_sampler;
+    uint         _pad0;
+    uint         _pad1;
+}

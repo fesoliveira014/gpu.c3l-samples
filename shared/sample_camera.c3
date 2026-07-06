@@ -74,3 +74,14 @@ fn float[<3>] cross(float[<3>] a, float[<3>] b) {
         a[0] * b[1] - a[1] * b[0],
     };
 }
+
+<* Symmetric orthographic projection, Vulkan depth 0..1, Y flipped. *>
+fn Mat4 ortho(float half_extent, float near, float far) {
+    float inv_depth = 1.0f / (near - far);
+    return {
+        1.0f / half_extent, 0, 0, 0,
+        0, -1.0f / half_extent, 0, 0,
+        0, 0, inv_depth, 0,
+        0, 0, near * inv_depth, 1.0f,
+    };
+}
