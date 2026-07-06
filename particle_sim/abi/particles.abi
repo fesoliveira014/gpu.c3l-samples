@@ -1,0 +1,27 @@
+abi particle_sim;
+
+const uint PARTICLE_COUNT = 65536;
+const uint SIM_TILE = 256;
+
+root SimRoot {
+    GpuAddress read_gpu;
+    GpuAddress write_gpu;
+    uint       count;
+    float      dt;
+    float      time;
+    uint       _pad0;
+}
+
+root ParticleDrawRoot {
+    vec4       view_proj_c0;
+    vec4       view_proj_c1;
+    vec4       view_proj_c2;
+    vec4       view_proj_c3;
+    GpuAddress particles_gpu;
+    float      aspect;
+    float      quad_size;
+    uint       _pad0;
+    uint       _pad1;
+    uint       _pad2;
+    uint       _pad3;
+}

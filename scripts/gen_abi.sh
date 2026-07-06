@@ -43,6 +43,10 @@ IP="$ROOT/image_processing"
 gen image_processing "$IP/shader_abi.c3" "$IP/shaders/generated/image_processing_abi.glsl" \
     "$IP/abi/processing.abi"
 
+PS="$ROOT/particle_sim"
+gen particle_sim "$PS/shader_abi.c3" "$PS/shaders/generated/particle_sim_abi.glsl" \
+    "$PS/abi/particles.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"
