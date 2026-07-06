@@ -1,0 +1,38 @@
+abi pbr_materials;
+
+type MaterialIndex : uint;
+
+const uint MATERIAL_COUNT = 49;
+
+struct SphereInstance {
+    vec4          pos_scale;
+    MaterialIndex material;
+    uint          _pad0;
+    uint          _pad1;
+    uint          _pad2;
+}
+
+struct Material {
+    vec4         base_color;
+    float        roughness;
+    float        metallic;
+    TextureIndex albedo_tex;
+    uint         _pad0;
+}
+
+root PbrRoot {
+    vec4         view_proj_c0;
+    vec4         view_proj_c1;
+    vec4         view_proj_c2;
+    vec4         view_proj_c3;
+    vec4         camera_pos;
+    GpuAddress   vertex_gpu;
+    GpuAddress   instances_gpu;
+    GpuAddress   materials_gpu;
+    SamplerIndex albedo_sampler;
+    uint         _pad0;
+    uint         _pad1;
+    uint         _pad2;
+    uint         _pad3;
+    uint         _pad4;
+}
