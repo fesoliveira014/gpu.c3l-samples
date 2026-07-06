@@ -55,6 +55,10 @@ SM="$ROOT/shadow_mapping"
 gen shadow_mapping "$SM/shader_abi.c3" "$SM/shaders/generated/shadow_mapping_abi.glsl" \
     "$SM/abi/shadow.abi"
 
+DS="$ROOT/deferred_shading"
+gen deferred_shading "$DS/shader_abi.c3" "$DS/shaders/generated/deferred_shading_abi.glsl" \
+    "$DS/abi/deferred.abi"
+
 OT="$ROOT/offscreen_triangle"
 gen offscreen_triangle "$OT/shader_abi.c3" "$OT/shaders/generated/offscreen_abi.glsl" \
     "$OT/abi/offscreen.abi"
