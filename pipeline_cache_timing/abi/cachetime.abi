@@ -1,0 +1,15 @@
+abi pipeline_cache_timing;
+
+const uint CACHE_COMPUTE_WORKGROUP = 64;
+
+root QuadRoot {
+    vec4 rect;
+    vec4 color;
+}
+
+root ScaleRoot {
+    GpuAddress input_gpu;
+    GpuAddress output_gpu;
+    uint       count;
+    uint       _pad0;
+}
