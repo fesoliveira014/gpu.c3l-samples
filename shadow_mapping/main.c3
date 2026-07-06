@@ -55,7 +55,7 @@ fn void write_cube_vertices(float* out) {
    ground plane (wide flat cube); the rest are boxes of varied size. *>
 fn void write_instances(float* out) {
     float[<3>][INSTANCE_COUNT] centers = {
-        { 0.0, -0.5, 0.0 },
+        { 0.0, -0.15, 0.0 },
         { -3.0, 1.0, -2.5 }, { 0.0, 1.6, 0.0 }, { 3.2, 0.8, -1.0 },
         { -1.5, 0.6, 2.8 },  { 2.0, 2.6, 2.2 }, { -3.5, 0.9, 1.5 },
         { 1.0, 0.5, -3.4 },  { 4.0, 1.4, 3.0 },
