@@ -27,8 +27,8 @@ committed-per-policy of this repo: generated ABI files are committed, `.spv` is
 gitignored — `.glsl` and `.abi` are the sources of truth):
 
 ```sh
-sh scripts/gen_abi.sh --check   # verify committed ABI outputs match the schemas
-sh scripts/build_shaders.sh     # compile every sample's shaders to SPIR-V
+python3 scripts/gen_abi.py --check   # verify committed ABI outputs match the schemas
+python3 scripts/build_shaders.py     # compile every sample's shaders to SPIR-V
 c3c build root_pointer_compute  # or any target from project.json
 ```
 
