@@ -30,7 +30,13 @@ gitignored — `.glsl` and `.abi` are the sources of truth):
 python3 scripts/gen_abi.py --check   # verify committed ABI outputs match the schemas
 python3 scripts/build_shaders.py     # compile every sample's shaders to SPIR-V
 c3c build root_pointer_compute  # or any target from project.json
+python3 scripts/copy_runtime_deps.py # Windows: place SDL3.dll next to the exe (no-op elsewhere)
 ```
+
+On Windows the SDL3 binding links an import library, so `SDL3.dll` (vendored in
+`sdl3.c3l/linked-libs/windows-x64/`) must sit beside each executable;
+`copy_runtime_deps.py` mirrors it into `build/`. Linux/macOS link SDL3
+statically, so the step is a no-op there.
 
 ## Running
 

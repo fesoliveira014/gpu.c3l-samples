@@ -6,6 +6,10 @@
   "dependency-search-paths": [ "lib", "lib/gpu.c3l/lib" ],
   "dependencies": [ "gpu", "vk", "vma", "spvreflect" ],
   "output": "build",
+  // windows-x64 vendors a release-CRT VMA static lib (VMA uses std::mutex);
+  // the app must link the matching release CRT or std::mutex layout mismatches
+  // crash at first allocation. Harmless on linux (single libstdc++ ABI).
+  "wincrt": "dynamic",
   "targets": {
     // Windowed: SDL3 window + swapchain, presents the textured triangle.
     // Run with --frames N for an auto-exit smoke, --no-vsync for MAILBOX.

@@ -190,7 +190,7 @@ fn void? run(sample_args::Options options) {
 
     gpu::BufferDesc stats_desc = {
         .size        = 4,
-        .usage       = { .storage, .addressable },
+        .usage       = { .storage, .addressable, .transfer_dst },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
         .debug_name  = "cull_stats",
     };
@@ -270,10 +270,6 @@ fn void? run(sample_args::Options options) {
         }
 
         bool sample_stats = frame % STATS_SAMPLE_INTERVAL == 0;
-        if (sample_stats) {
-            *visible_count = 0;
-            gpu::flush_buffer(&device, stats, 0, 0)!;
-        }
 
         camera.yaw = (float)frame * 0.05f;
         sample_camera::Mat4 view_proj = sample_camera::mul(
@@ -311,6 +307,27 @@ fn void? run(sample_args::Options options) {
             };
             gpu::cmd_texture_barrier(&cmd, &depth_init)!;
             depth_fresh = false;
+        }
+
+        if (sample_stats) {
+            // The cull shader increments the visible counter every frame, so a
+            // host reset would race with the previous frame's still-in-flight
+            // dispatch (frames_in_flight=2). Zero it on the GPU instead: the
+            // first barrier orders the fill after all prior compute writes, the
+            // second makes the zero visible to this frame's dispatch.
+            gpu::BufferBarrier stats_before_clear = {
+                .buffer = stats, .offset = 0, .size = 4,
+                .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.TRANSFER,
+                .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.TRANSFER_WRITE,
+            };
+            gpu::cmd_buffer_barrier(&cmd, &stats_before_clear)!;
+            gpu::cmd_fill_buffer(&cmd, stats, 0, 4, 0)!;
+            gpu::BufferBarrier stats_after_clear = {
+                .buffer = stats, .offset = 0, .size = 4,
+                .before_stage = gpu::Stage.TRANSFER, .after_stage = gpu::Stage.COMPUTE_SHADER,
+                .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.SHADER_WRITE,
+            };
+            gpu::cmd_buffer_barrier(&cmd, &stats_after_clear)!;
         }
 
         gpu::cmd_dispatch(
