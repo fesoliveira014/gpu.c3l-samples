@@ -18,7 +18,9 @@ What it demonstrates:
   distinct queue when `device.caps.async_compute` is available and aliases
   graphics otherwise. The timeline orders the accesses; the particle buffers'
   shared-queue usage keeps access legal when those queues belong to different
-  families.
+  families. Concurrent sharing favors simplicity but may trade some
+  performance; explicit ownership transfers are the advanced path once the
+  library exposes them.
 - **First `BlendState` use** — additive (`ONE/ONE ADD`), order-independent,
   so no sorting and no depth buffer.
 - **Instanced billboards** — 6 vertices × 65k instances; the vertex shader
