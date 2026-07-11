@@ -106,7 +106,7 @@ fn ModeStats? run_mode_window(
         *width = swapchain_info.width;
         *height = swapchain_info.height;
 
-        gpu::begin_frame(device)!;
+        gpu::FrameToken frame_token = gpu::begin_frame(device)!;
 
         Clock acquire_clk = clock::now();
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(device, swapchain);
@@ -115,13 +115,13 @@ fn ModeStats? run_mode_window(
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
                 swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
             }
-            gpu::end_frame(device)!;
+            gpu::end_frame(&frame_token)!;
             (void)frame_clk.mark();
             continue;
         }
         double acquire_ms = ms(acquire_clk.mark());
 
-        gpu::GpuSpan root_span = gpu::alloc_frame_span(device, ExplorerRoot::size, 16)!;
+        gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, ExplorerRoot::size, 16)!;
         ExplorerRoot* root = (ExplorerRoot*)root_span.cpu;
         float bar = (float)(frame % 100) / 100.0f;
         root.params = { (float)frame * 0.04f, bar, (float)*width, (float)*height };
@@ -158,7 +158,7 @@ fn ModeStats? run_mode_window(
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(device, &cmd)!;
+        gpu::end_commands(&cmd)!;
 
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
@@ -182,12 +182,12 @@ fn ModeStats? run_mode_window(
         if (catch err = gpu::present(device, &present_desc)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
-            gpu::end_frame(device)!;
+            gpu::end_frame(&frame_token)!;
             (void)frame_clk.mark();
             continue;
         }
 
-        gpu::end_frame(device)!;
+        gpu::end_frame(&frame_token)!;
 
         double frame_ms = ms(frame_clk.mark());
         if (frame >= WARMUP_FRAMES) {

@@ -84,7 +84,7 @@ fn int record_worker(void* arg) {
                 args.failed = true;
                 return 1;
             }
-            if (catch gpu::end_commands(args.device, &list)) { args.failed = true; return 1; }
+            if (catch err = gpu::end_commands(&list)) { args.failed = true; return 1; }
             args.lists[args.list_count++] = list;
         }
     };
@@ -106,7 +106,7 @@ fn int main(String[] args) {
    `workers` == 0 records everything on the calling thread. Returns record
    wall time; the image lands in `out`. *>
 fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::PipelineHandle pipeline, gpu::GpuAddress roots_base, gpu::RecordingContextHandle[] contexts, uint workers, char[] out, bool* target_seen) {
-    gpu::begin_frame(device)!;
+    gpu::FrameToken frame = gpu::begin_frame(device)!;
 
     gpu::CommandList preamble = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
     // Readback round-trips the layout back to COLOR_ATTACHMENT, so only the
@@ -132,7 +132,7 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
     gpu::RenderPassDesc clear_pass = { .colors = clear_colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::cmd_begin_render_pass(&preamble, &clear_pass)!;
     gpu::cmd_end_render_pass(&preamble)!;
-    gpu::end_commands(device, &preamble)!;
+    gpu::end_commands(&preamble)!;
     gpu::CommandList[1] preamble_lists = { preamble };
     gpu::SubmitDesc preamble_submit = { .command_lists = preamble_lists[..] };
     gpu::submit(device, &preamble_submit)!;
@@ -146,7 +146,7 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
         for (uint chunk = 0; chunk < CHUNKS; chunk++) {
             gpu::CommandList list = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
             record_chunk(&list, target, pipeline, roots_base, chunk)!;
-            gpu::end_commands(device, &list)!;
+            gpu::end_commands(&list)!;
             all_lists[chunk] = list;
         }
         record_time = clk.mark();
@@ -193,7 +193,7 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
         from_hazard: gpu::Hazard.COLOR_WRITE,
         from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
     )!;
-    gpu::end_frame(device)!;
+    gpu::end_frame(&frame)!;
     return record_time;
 }
 

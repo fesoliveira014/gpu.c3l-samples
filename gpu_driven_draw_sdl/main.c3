@@ -106,19 +106,19 @@ fn void? run(sample_args::Options options) {
             pipeline_valid = true;
         }
 
-        gpu::begin_frame(&device)!;
+        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&device)!;
+            gpu::end_frame(&frame_token)!;
             continue;
         }
 
         float time = (float)frame / 60.0f;
 
-        gpu::GpuSpan instances_span = gpu::alloc_frame_span(&device, INSTANCES * Instance::size, 16)!;
+        gpu::GpuSpan instances_span = gpu::alloc_frame_span(&frame_token, INSTANCES * Instance::size, 16)!;
         Instance* instances = (Instance*)instances_span.cpu;
         for (uint y = 0; y < GRID; y++) {
             for (uint x = 0; x < GRID; x++) {
@@ -133,20 +133,20 @@ fn void? run(sample_args::Options options) {
             }
         }
 
-        gpu::GpuSpan corners_span = gpu::alloc_frame_span(&device, 4 * 8, 16)!;
+        gpu::GpuSpan corners_span = gpu::alloc_frame_span(&frame_token, 4 * 8, 16)!;
         float* corners = (float*)corners_span.cpu;
         float[8] corner_data = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
         for (uint i = 0; i < 8; i++) corners[i] = corner_data[i];
 
-        gpu::GpuSpan index_span = gpu::alloc_frame_span(&device, 6 * 4, 4)!;
+        gpu::GpuSpan index_span = gpu::alloc_frame_span(&frame_token, 6 * 4, 4)!;
         uint* indices = (uint*)index_span.cpu;
         uint[6] index_data = { 0, 1, 2, 2, 1, 3 };
         for (uint i = 0; i < 6; i++) indices[i] = index_data[i];
 
-        gpu::GpuSpan args_span = gpu::alloc_frame_span(&device, INSTANCES * gpu::DrawIndexedIndirectCommand::size, 16)!;
-        gpu::GpuSpan count_span = gpu::alloc_frame_span(&device, 4, 4)!;
+        gpu::GpuSpan args_span = gpu::alloc_frame_span(&frame_token, INSTANCES * gpu::DrawIndexedIndirectCommand::size, 16)!;
+        gpu::GpuSpan count_span = gpu::alloc_frame_span(&frame_token, 4, 4)!;
 
-        gpu::GpuSpan build_root_span = gpu::alloc_frame_span(&device, BuildRoot::size, 16)!;
+        gpu::GpuSpan build_root_span = gpu::alloc_frame_span(&frame_token, BuildRoot::size, 16)!;
         BuildRoot* build_root = (BuildRoot*)build_root_span.cpu;
         build_root.instances_gpu  = instances_span.gpu;
         build_root.args_gpu       = args_span.gpu;
@@ -154,7 +154,7 @@ fn void? run(sample_args::Options options) {
         build_root.instance_count = INSTANCES;
         build_root.time           = time;
 
-        gpu::GpuSpan draw_root_span = gpu::alloc_frame_span(&device, DrawRoot::size, 16)!;
+        gpu::GpuSpan draw_root_span = gpu::alloc_frame_span(&frame_token, DrawRoot::size, 16)!;
         DrawRoot* draw_root = (DrawRoot*)draw_root_span.cpu;
         draw_root.corners_gpu   = corners_span.gpu;
         draw_root.instances_gpu = instances_span.gpu;
@@ -252,7 +252,7 @@ fn void? run(sample_args::Options options) {
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
-        gpu::end_commands(&device, &cmd)!;
+        gpu::end_commands(&cmd)!;
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
         gpu::submit(&device, &submit)!;
@@ -277,7 +277,7 @@ fn void? run(sample_args::Options options) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
-        gpu::end_frame(&device)!;
+        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

@@ -308,13 +308,13 @@ fn void? run(sample_args::Options options) {
             sample_camera::perspective(1.0f, (float)width / (float)height, 0.1f, 100.0f),
             camera.view());
 
-        gpu::begin_frame(&device)!;
+        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&device)!;
+            gpu::end_frame(&frame_token)!;
             continue;
         }
 
@@ -327,13 +327,13 @@ fn void? run(sample_args::Options options) {
             sample_camera::ortho(LIGHT_EXTENT, 1.0f, 30.0f),
             sample_camera::look_at(light_pos, { 0, 0, 0 }, { 0, 1, 0 }));
 
-        gpu::GpuSpan shadow_span = gpu::alloc_frame_span(&device, ShadowPassRoot::size, 16)!;
+        gpu::GpuSpan shadow_span = gpu::alloc_frame_span(&frame_token, ShadowPassRoot::size, 16)!;
         ShadowPassRoot* shadow_root = (ShadowPassRoot*)shadow_span.cpu;
         write_matrix(&shadow_root.light_vp_c0, light_vp);
         shadow_root.vertex_gpu    = vertex_span.gpu;
         shadow_root.instances_gpu = instances_span.gpu;
 
-        gpu::GpuSpan scene_span = gpu::alloc_frame_span(&device, ScenePassRoot::size, 16)!;
+        gpu::GpuSpan scene_span = gpu::alloc_frame_span(&frame_token, ScenePassRoot::size, 16)!;
         ScenePassRoot* scene_root = (ScenePassRoot*)scene_span.cpu;
         write_matrix(&scene_root.view_proj_c0, view_proj);
         write_matrix(&scene_root.light_vp_c0, light_vp);
@@ -438,7 +438,7 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&device, &cmd)!;
+        gpu::end_commands(&cmd)!;
 
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
@@ -464,7 +464,7 @@ fn void? run(sample_args::Options options) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
-        gpu::end_frame(&device)!;
+        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

@@ -85,29 +85,29 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle hist_pipe = gpu::create_compute_pipeline(&device, &hist_pd)!;
     defer (void)gpu::destroy_pipeline(&device, hist_pipe);
 
-    gpu::begin_frame(&device)!;
+    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
-    gpu::GpuSpan gen_span = gpu::alloc_frame_span(&device, GenerateRoot::size, 16)!;
+    gpu::GpuSpan gen_span = gpu::alloc_frame_span(&frame_token, GenerateRoot::size, 16)!;
     GenerateRoot* gen_root = (GenerateRoot*)gen_span.cpu;
     gen_root.target = index_a;
     gen_root.size   = IMAGE_SIZE;
     gen_root.seed   = 3.7f;
 
-    gpu::GpuSpan blur_h_span = gpu::alloc_frame_span(&device, BlurRoot::size, 16)!;
+    gpu::GpuSpan blur_h_span = gpu::alloc_frame_span(&frame_token, BlurRoot::size, 16)!;
     BlurRoot* blur_h = (BlurRoot*)blur_h_span.cpu;
     blur_h.src        = index_a;
     blur_h.dst        = index_b;
     blur_h.size       = IMAGE_SIZE;
     blur_h.horizontal = 1;
 
-    gpu::GpuSpan blur_v_span = gpu::alloc_frame_span(&device, BlurRoot::size, 16)!;
+    gpu::GpuSpan blur_v_span = gpu::alloc_frame_span(&frame_token, BlurRoot::size, 16)!;
     BlurRoot* blur_v = (BlurRoot*)blur_v_span.cpu;
     blur_v.src        = index_b;
     blur_v.dst        = index_a;
     blur_v.size       = IMAGE_SIZE;
     blur_v.horizontal = 0;
 
-    gpu::GpuSpan hist_span = gpu::alloc_frame_span(&device, HistogramRoot::size, 16)!;
+    gpu::GpuSpan hist_span = gpu::alloc_frame_span(&frame_token, HistogramRoot::size, 16)!;
     HistogramRoot* hist_root = (HistogramRoot*)hist_span.cpu;
     hist_root.bins_gpu = bins_span.gpu;
     hist_root.src      = index_a;
@@ -185,7 +185,7 @@ fn void? run(sample_args::Options options) {
     };
     gpu::cmd_buffer_barrier(&cmd, &bins_read)!;
 
-    gpu::end_commands(&device, &cmd)!;
+    gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(&device, &submit)!;
@@ -208,7 +208,7 @@ fn void? run(sample_args::Options options) {
         )!;
     }
 
-    gpu::end_frame(&device)!;
+    gpu::end_frame(&frame_token)!;
 }
 
 <* ASCII chart plus the self-check: every pixel lands in exactly one bin. *>
