@@ -13,7 +13,6 @@ const char[*] GEOM_FRAG_SPIRV    = $embed("shaders/geometry.frag.spv");
 const char[*] RESOLVE_VERT_SPIRV = $embed("shaders/resolve.vert.spv");
 const char[*] RESOLVE_FRAG_SPIRV = $embed("shaders/resolve.frag.spv");
 
-const uint MAX_TRACKED_IMAGES = 8;
 const uint CUBE_VERTEX_COUNT = 36;
 const uint INSTANCE_COUNT = 9;
 
@@ -109,10 +108,20 @@ fn void write_matrix(gpu::Vec4f* columns, sample_camera::Mat4 m) {
     }
 }
 
-fn void? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window, uint* width, uint* height, bool[] image_seen) {
-    sample_window::pixel_size(window, width, height);
-    gpu::resize_swapchain(device, swapchain, *width, *height)!;
-    foreach (&seen : image_seen) *seen = false;
+fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window) {
+    uint width;
+    uint height;
+    sample_window::pixel_size(window, &width, &height);
+    gpu::resize_swapchain(device, swapchain, width, height)!;
+    return gpu::get_swapchain_info(device, swapchain);
+}
+
+fn gpu::TextureUse? swapchain_texture_use(gpu::TextureLayout layout) {
+    switch (layout) {
+        case gpu::TextureLayout.UNDEFINED: return gpu::TextureUse.UNDEFINED;
+        case gpu::TextureLayout.PRESENT:   return gpu::TextureUse.PRESENT;
+        default:                           return gpu::INVALID_RESOURCE_STATE~;
+    }
 }
 
 struct GBuffer {
@@ -205,10 +214,22 @@ fn void? run(sample_args::Options options) {
         .debug_name       = "deferred_swapchain",
     };
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)gpu::destroy_swapchain(&device, swapchain);
 
-    GBuffer gbuffer = create_gbuffer(&device, width, height)!;
-    defer destroy_gbuffer(&device, &gbuffer);
+    GBuffer gbuffer;
+    uint gbuffer_width;
+    uint gbuffer_height;
+    bool gbuffer_valid = false;
+    if (!swapchain_info.dormant) {
+        gbuffer = create_gbuffer(&device, swapchain_info.width, swapchain_info.height)!;
+        gbuffer_width = swapchain_info.width;
+        gbuffer_height = swapchain_info.height;
+        gbuffer_valid = true;
+    }
+    defer {
+        if (gbuffer_valid) destroy_gbuffer(&device, &gbuffer);
+    }
 
     gpu::SamplerDesc sampler_desc = {
         .min_filter = gpu::Filter.NEAREST,
@@ -270,7 +291,7 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle geom_pipe = gpu::create_graphics_pipeline(&device, &geom_pd)!;
     defer (void)gpu::destroy_pipeline(&device, geom_pipe);
 
-    gpu::Format[1] swap_formats = { gpu::Format.BGRA8_UNORM };
+    gpu::Format[1] swap_formats = { swapchain_info.format };
     gpu::GraphicsPipelineDesc resolve_pd = {
         .vertex_shader   = resolve_vert,
         .fragment_shader = resolve_frag,
@@ -278,36 +299,56 @@ fn void? run(sample_args::Options options) {
         .color_formats   = swap_formats[..],
         .debug_name      = "resolve_pass",
     };
-    gpu::PipelineHandle resolve_pipe = gpu::create_graphics_pipeline(&device, &resolve_pd)!;
-    defer (void)gpu::destroy_pipeline(&device, resolve_pipe);
+    gpu::PipelineHandle resolve_pipe;
+    bool resolve_pipe_valid = false;
+    if (!swapchain_info.dormant) {
+        resolve_pipe = gpu::create_graphics_pipeline(&device, &resolve_pd)!;
+        resolve_pipe_valid = true;
+    }
+    defer {
+        if (resolve_pipe_valid) (void)gpu::destroy_pipeline(&device, resolve_pipe);
+    }
 
     sample_camera::OrbitCamera camera = { .yaw = 0.7f, .pitch = 0.5f, .radius = 14.0f, .target = { 0, 0.8f, 0 } };
-    sample_camera::Mat4 view_proj = sample_camera::mul(
-        sample_camera::perspective(1.0f, (float)width / (float)height, 0.1f, 100.0f),
-        camera.view());
+    sample_camera::Mat4 view_proj;
 
-    bool[MAX_TRACKED_IMAGES] image_seen;
     long frame = 0;
     bool running = true;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            recover_swapchain(
-                device:     &device,
-                swapchain:  swapchain,
-                window:     &window,
-                width:      &width,
-                height:     &height,
-                image_seen: image_seen[..],
-            )!;
-            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
-            destroy_gbuffer(&device, &gbuffer);
-            gbuffer = create_gbuffer(&device, width, height)!;
-            view_proj = sample_camera::mul(
-                sample_camera::perspective(1.0f, (float)width / (float)height, 0.1f, 100.0f),
-                camera.view());
+            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
         }
+        if (swapchain_info.dormant) continue;
+
+        bool pipeline_changed = !resolve_pipe_valid || swap_formats[0] != swapchain_info.format;
+        bool gbuffer_changed = !gbuffer_valid
+            || gbuffer_width != swapchain_info.width
+            || gbuffer_height != swapchain_info.height;
+        if (pipeline_changed || gbuffer_changed) {
+            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+        }
+        if (pipeline_changed) {
+            if (resolve_pipe_valid) gpu::destroy_pipeline(&device, resolve_pipe)!;
+            resolve_pipe_valid = false;
+            swap_formats[0] = swapchain_info.format;
+            resolve_pipe = gpu::create_graphics_pipeline(&device, &resolve_pd)!;
+            resolve_pipe_valid = true;
+        }
+        if (gbuffer_changed) {
+            if (gbuffer_valid) destroy_gbuffer(&device, &gbuffer);
+            gbuffer_valid = false;
+            gbuffer = create_gbuffer(&device, swapchain_info.width, swapchain_info.height)!;
+            gbuffer_width = swapchain_info.width;
+            gbuffer_height = swapchain_info.height;
+            gbuffer_valid = true;
+        }
+        width = swapchain_info.width;
+        height = swapchain_info.height;
+        view_proj = sample_camera::mul(
+            sample_camera::perspective(1.0f, (float)width / (float)height, 0.1f, 100.0f),
+            camera.view());
 
         gpu::begin_frame(&device)!;
 
@@ -315,14 +356,7 @@ fn void? run(sample_args::Options options) {
         if (try image = gpu::acquire_next_image(&device, swapchain)) {
             acquired = image;
         } else {
-            recover_swapchain(
-                device:     &device,
-                swapchain:  swapchain,
-                window:     &window,
-                width:      &width,
-                height:     &height,
-                image_seen: image_seen[..],
-            )!;
+            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
             gpu::end_frame(&device)!;
             continue;
         }
@@ -429,17 +463,12 @@ fn void? run(sample_args::Options options) {
             gpu::cmd_texture_barrier(&cmd, &to_read)!;
         }
 
-        gpu::TextureBarrier to_attach = {
-            .texture       = acquired.texture,
-            .before_stage  = image_seen[acquired.index] ? gpu::Stage.PRESENT : gpu::Stage.HOST,
-            .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
-            .before_hazard = image_seen[acquired.index] ? gpu::Hazard.PRESENT_READ : gpu::Hazard.HOST_WRITE,
-            .after_hazard  = gpu::Hazard.COLOR_WRITE,
-            .old_layout    = image_seen[acquired.index] ? gpu::TextureLayout.PRESENT : gpu::TextureLayout.UNDEFINED,
-            .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-        };
+        gpu::TextureBarrier to_attach = gpu::texture_transition(
+            texture: acquired.texture,
+            before:  swapchain_texture_use(acquired.prior_layout)!,
+            after:   gpu::TextureUse.COLOR_ATTACHMENT,
+        )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
-        image_seen[acquired.index] = true;
 
         gpu::ColorTargetDesc[1] swap_colors = {{
             .texture  = acquired.texture,
@@ -459,15 +488,11 @@ fn void? run(sample_args::Options options) {
         )!;
         gpu::cmd_end_render_pass(&cmd)!;
 
-        gpu::TextureBarrier to_present = {
-            .texture       = acquired.texture,
-            .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-            .after_stage   = gpu::Stage.PRESENT,
-            .before_hazard = gpu::Hazard.COLOR_WRITE,
-            .after_hazard  = gpu::Hazard.PRESENT_READ,
-            .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-            .new_layout    = gpu::TextureLayout.PRESENT,
-        };
+        gpu::TextureBarrier to_present = gpu::texture_transition(
+            texture: acquired.texture,
+            before:  gpu::TextureUse.COLOR_ATTACHMENT,
+            after:   gpu::TextureUse.PRESENT,
+        )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
         gpu::end_commands(&device, &cmd)!;
 
@@ -481,7 +506,7 @@ fn void? run(sample_args::Options options) {
                 src:         acquired.texture,
                 width:       width,
                 height:      height,
-                format:      gpu::Format.BGRA8_UNORM,
+                format:      swapchain_info.format,
                 from_stage:  gpu::Stage.PRESENT,
                 from_hazard: gpu::Hazard.PRESENT_READ,
                 from_layout: gpu::TextureLayout.PRESENT,
@@ -492,14 +517,7 @@ fn void? run(sample_args::Options options) {
         gpu::PresentDesc present_desc = { .swapchain = swapchain };
         if (catch err = gpu::present(&device, &present_desc)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            recover_swapchain(
-                device:     &device,
-                swapchain:  swapchain,
-                window:     &window,
-                width:      &width,
-                height:     &height,
-                image_seen: image_seen[..],
-            )!;
+            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
         }
 
         gpu::end_frame(&device)!;

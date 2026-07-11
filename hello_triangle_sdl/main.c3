@@ -10,14 +10,13 @@ const char[*] TRIANGLE_VERT_SPIRV = $embed("../offscreen_triangle/shaders/offscr
 const char[*] TRIANGLE_FRAG_SPIRV = $embed("../offscreen_triangle/shaders/offscreen.frag.spv");
 
 const uint TEX_SIZE = 16;
-const uint MAX_TRACKED_IMAGES = 8;
 
-<* Re-query the window size, recreate the swapchain, and forget per-image
-   layout tracking (fresh images start UNDEFINED). *>
-fn void? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window, uint* width, uint* height, bool[] image_seen) {
-    sample_window::pixel_size(window, width, height);
-    gpu::resize_swapchain(device, swapchain, *width, *height)!;
-    foreach (&seen : image_seen) *seen = false;
+fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window) {
+    uint requested_width;
+    uint requested_height;
+    sample_window::pixel_size(window, &requested_width, &requested_height);
+    gpu::resize_swapchain(device, swapchain, requested_width, requested_height)!;
+    return gpu::get_swapchain_info(device, swapchain);
 }
 
 fn int main(String[] args) {
@@ -56,6 +55,7 @@ fn void? run(sample_args::Options options) {
         .debug_name   = "hello_triangle_swapchain",
     };
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)gpu::destroy_swapchain(&device, swapchain);
 
     gpu::TextureDesc tex_desc = {
@@ -106,9 +106,7 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
     defer (void)gpu::destroy_shader(&device, frag);
 
-    // Match the swapchain's chosen format; BGRA8_UNORM is what most surfaces
-    // pick for a non-srgb request.
-    gpu::Format[1] color_formats = { gpu::Format.BGRA8_UNORM };
+    gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
@@ -116,27 +114,33 @@ fn void? run(sample_args::Options options) {
         .color_formats   = color_formats[..],
         .debug_name      = "hello_triangle",
     };
-    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, pipeline);
+    gpu::PipelineHandle pipeline;
+    bool pipeline_valid = false;
+    if (!swapchain_info.dormant) {
+        pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
+        pipeline_valid = true;
+    }
+    defer {
+        if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
+    }
 
     bool checker_uploaded = false;
-    // Tracks which swapchain images have been presented, so the pre-render
-    // barrier uses PRESENT (not UNDEFINED) as the tracked old layout.
-    bool[MAX_TRACKED_IMAGES] image_seen;
     long frame = 0;
     bool running = true;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            recover_swapchain(
-                device:     &device,
-                swapchain:  swapchain,
-                window:     &window,
-                width:      &width,
-                height:     &height,
-                image_seen: image_seen[..],
-            )!;
+            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+        }
+        if (swapchain_info.dormant) continue;
+        if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
+            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+            if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
+            pipeline_valid = false;
+            color_formats[0] = swapchain_info.format;
+            pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
+            pipeline_valid = true;
         }
 
         gpu::begin_frame(&device)!;
@@ -145,14 +149,7 @@ fn void? run(sample_args::Options options) {
         if (try image = gpu::acquire_next_image(&device, swapchain)) {
             acquired = image;
         } else {
-            recover_swapchain(
-                device:     &device,
-                swapchain:  swapchain,
-                window:     &window,
-                width:      &width,
-                height:     &height,
-                image_seen: image_seen[..],
-            )!;
+            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
             gpu::end_frame(&device)!;
             continue;
         }
@@ -183,16 +180,21 @@ fn void? run(sample_args::Options options) {
             checker_uploaded = true;
         }
 
-        gpu::TextureUse swapchain_before = image_seen[acquired.index]
-            ? gpu::TextureUse.PRESENT
-            : gpu::TextureUse.UNDEFINED;
+        gpu::TextureUse swapchain_before;
+        switch (acquired.prior_layout) {
+            case gpu::TextureLayout.UNDEFINED:
+                swapchain_before = gpu::TextureUse.UNDEFINED;
+            case gpu::TextureLayout.PRESENT:
+                swapchain_before = gpu::TextureUse.PRESENT;
+            default:
+                return gpu::INVALID_RESOURCE_STATE~;
+        }
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
             before:  swapchain_before,
             after:   gpu::TextureUse.COLOR_ATTACHMENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
-        image_seen[acquired.index] = true;
 
         float pulse = (float)(frame % 120) / 120.0f * 0.15f;
         gpu::GpuSpan verts_span = gpu::alloc_frame_span(&device, 3 * 16, 16)!;
@@ -215,7 +217,11 @@ fn void? run(sample_args::Options options) {
             .store_op = gpu::StoreOp.STORE,
             .clear = { .rgba = { 0.05f + pulse, 0.05f, 0.12f, 1.0f } },
         }};
-        gpu::RenderPassDesc pass = { .colors = colors[..], .width = width, .height = height };
+        gpu::RenderPassDesc pass = {
+            .colors = colors[..],
+            .width  = swapchain_info.width,
+            .height = swapchain_info.height,
+        };
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_draw(
             commands:       &cmd,
@@ -243,9 +249,9 @@ fn void? run(sample_args::Options options) {
             sample_capture::capture_texture_png(
                 device:      &device,
                 src:         acquired.texture,
-                width:       width,
-                height:      height,
-                format:      gpu::Format.BGRA8_UNORM,
+                width:       swapchain_info.width,
+                height:      swapchain_info.height,
+                format:      swapchain_info.format,
                 from_stage:  gpu::Stage.PRESENT,
                 from_hazard: gpu::Hazard.PRESENT_READ,
                 from_layout: gpu::TextureLayout.PRESENT,
@@ -256,14 +262,7 @@ fn void? run(sample_args::Options options) {
         gpu::PresentDesc present_desc = { .swapchain = swapchain };
         if (catch err = gpu::present(&device, &present_desc)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            recover_swapchain(
-                device:     &device,
-                swapchain:  swapchain,
-                window:     &window,
-                width:      &width,
-                height:     &height,
-                image_seen: image_seen[..],
-            )!;
+            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
         }
 
         gpu::end_frame(&device)!;
