@@ -64,8 +64,10 @@ for MAILBOX present mode:
 - `offscreen_triangle` — headless. Textured triangles rendered into
   dynamic viewport/scissor regions, verified by readback, with optional PNG
   capture.
-- `memory_report` — headless. Creates a resource spread and prints memory
-  stats and the leak report (`--detailed` for the VMA stats string).
+- `memory_report` — headless. Creates a resource spread, prints memory stats,
+  and demonstrates the structured debug callback from
+  [gpu.c3l#140](https://github.com/fesoliveira014/gpu.c3l/issues/140) /
+  [PR #188](https://github.com/fesoliveira014/gpu.c3l/pull/188).
 - `hello_triangle_sdl` — windowed. SDL3 window + swapchain presenting the
   textured triangle.
 - `gpu_driven_draw_sdl` — windowed. Compute culls a quad grid and writes
