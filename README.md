@@ -61,8 +61,9 @@ for MAILBOX present mode:
 - `bindless_texture_compute` — headless. Writes a pattern into a storage image
   by `TextureIndex`, samples it back by the same index through the descriptor
   heap.
-- `offscreen_triangle` — headless rasterization. Textured triangle to an
-  offscreen target, dumped as PPM.
+- `offscreen_triangle` — headless. Textured triangles rendered into
+  dynamic viewport/scissor regions, verified by readback, with optional PNG
+  capture.
 - `memory_report` — headless. Creates a resource spread and prints memory
   stats and the leak report (`--detailed` for the VMA stats string).
 - `hello_triangle_sdl` — windowed. SDL3 window + swapchain presenting the

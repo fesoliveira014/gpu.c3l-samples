@@ -14,6 +14,13 @@ const uint RT_SIZE = 256;
 const usz RT_BYTES = RT_SIZE * RT_SIZE * 4;
 const uint TEX_SIZE = 16;
 
+fn bool pixel_is_clear(char[] pixels, uint x, uint y) {
+    usz offset = ((usz)y * RT_SIZE + x) * 4;
+    return pixels[offset] == (char)8
+        && pixels[offset + 1] == (char)16
+        && pixels[offset + 2] == (char)32;
+}
+
 fn int main(String[] args) {
     sample_args::Options options = sample_args::parse_options(args);
     if (catch err = run(options)) {
@@ -160,18 +167,39 @@ fn void? run(sample_args::Options options) {
         .texture = target,
         .load_op = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
-        .clear = { .rgba = { 0.05f, 0.05f, 0.1f, 1.0f } },
+        .clear = { .rgba = { 8.0f / 255.0f, 16.0f / 255.0f, 32.0f / 255.0f, 1.0f } },
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = RT_SIZE, .height = RT_SIZE };
     gpu::cmd_begin_render_pass(&cmd, &pass)!;
-    gpu::cmd_draw(
-        commands:       &cmd,
-        pipeline:       pipeline,
-        vertex_root:    verts_span.gpu,
-        fragment_root:  frag_span.gpu,
-        vertex_count:   3,
-        instance_count: 1,
-    )!;
+    gpu::Viewport[2] viewports = {
+        {
+            .width = (float)RT_SIZE / 2.0f, .height = (float)RT_SIZE,
+            .min_depth = 0.0f, .max_depth = 1.0f,
+        },
+        {
+            .x = (float)RT_SIZE / 2.0f, .width = (float)RT_SIZE / 2.0f,
+            .height = (float)RT_SIZE, .min_depth = 0.0f, .max_depth = 1.0f,
+        },
+    };
+    gpu::ScissorRect[2] scissors = {
+        { .width = (int)RT_SIZE / 2, .height = (int)RT_SIZE / 2 },
+        {
+            .x = (int)RT_SIZE / 2, .y = (int)RT_SIZE / 2,
+            .width = (int)RT_SIZE / 2, .height = (int)RT_SIZE / 2,
+        },
+    };
+    for (uint i = 0; i < viewports.len; i++) {
+        gpu::cmd_set_viewport(&cmd, &viewports[i])!;
+        gpu::cmd_set_scissor(&cmd, &scissors[i])!;
+        gpu::cmd_draw(
+            commands:       &cmd,
+            pipeline:       pipeline,
+            vertex_root:    verts_span.gpu,
+            fragment_root:  frag_span.gpu,
+            vertex_count:   3,
+            instance_count: 1,
+        )!;
+    }
     gpu::cmd_end_render_pass(&cmd)!;
 
     gpu::end_commands(&device, &cmd)!;
@@ -179,6 +207,28 @@ fn void? run(sample_args::Options options) {
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(&device, &submit)!;
     gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+
+    char[] pixels = mem::new_array(char, RT_BYTES);
+    defer mem::free(pixels.ptr);
+    gpu::readback_texture_data(
+        device:      &device,
+        src:         target,
+        mip:         0,
+        out_data:    pixels,
+        from_stage:  gpu::Stage.COLOR_ATTACHMENT,
+        from_hazard: gpu::Hazard.COLOR_WRITE,
+        from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
+    )!;
+    if (pixel_is_clear(pixels, RT_SIZE / 4, RT_SIZE * 3 / 8)
+        || pixel_is_clear(pixels, RT_SIZE * 3 / 4, RT_SIZE * 5 / 8)) {
+        io::printn("offscreen_triangle: clipped regions did not render");
+        return gpu::INVALID_ARGUMENT~;
+    }
+    if (!pixel_is_clear(pixels, RT_SIZE / 4, RT_SIZE * 3 / 4)
+        || !pixel_is_clear(pixels, RT_SIZE * 3 / 4, RT_SIZE / 4)) {
+        io::printn("offscreen_triangle: hardware scissors did not preserve the clear regions");
+        return gpu::INVALID_ARGUMENT~;
+    }
 
     if (options.wants_screenshot()) {
         sample_capture::capture_texture_png(
