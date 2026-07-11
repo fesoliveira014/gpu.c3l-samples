@@ -133,10 +133,12 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
     gpu::cmd_begin_render_pass(&preamble, &clear_pass)!;
     gpu::cmd_end_render_pass(&preamble)!;
     gpu::end_commands(device, &preamble)!;
+    gpu::CommandList[1] preamble_lists = { preamble };
+    gpu::SubmitDesc preamble_submit = { .command_lists = preamble_lists[..] };
+    gpu::submit(device, &preamble_submit)!;
     *target_seen = true;
 
-    gpu::CommandList[CHUNKS + 1] all_lists;
-    all_lists[0] = preamble;
+    gpu::CommandList[CHUNKS] all_lists;
 
     Clock clk = clock::now();
     NanoDuration record_time;
@@ -145,11 +147,12 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
             gpu::CommandList list = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
             record_chunk(&list, target, pipeline, roots_base, chunk)!;
             gpu::end_commands(device, &list)!;
-            all_lists[1 + chunk] = list;
+            all_lists[chunk] = list;
         }
         record_time = clk.mark();
     } else {
-        WorkerArgs[MAX_WORKERS] wargs;
+        WorkerArgs[] wargs = mem::new_array(WorkerArgs, MAX_WORKERS);
+        defer mem::free(wargs.ptr);
         Thread[MAX_WORKERS] threads;
         for (uint w = 0; w < workers; w++) {
             wargs[w] = {
@@ -172,7 +175,7 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
         // but keep it deterministic anyway: chunk index = w + i*workers.
         for (uint w = 0; w < workers; w++) {
             for (uint i = 0; i < wargs[w].list_count; i++) {
-                all_lists[1 + w + i * workers] = wargs[w].lists[i];
+                all_lists[w + i * workers] = wargs[w].lists[i];
             }
         }
     }
