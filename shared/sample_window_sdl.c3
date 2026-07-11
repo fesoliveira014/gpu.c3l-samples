@@ -78,6 +78,10 @@ fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHand
     return gpu::get_swapchain_info(device, swapchain);
 }
 
+fn void throttle_dormant() {
+    sdl::delay(16);
+}
+
 fn WindowEvents pump_events(SampleWindow* sample) {
     WindowEvents events;
     sdl::Event event;

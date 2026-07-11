@@ -312,7 +312,10 @@ fn void? run(sample_args::Options options) {
         if (events.resized) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-        if (swapchain_info.dormant) continue;
+        if (swapchain_info.dormant) {
+            sample_window::throttle_dormant();
+            continue;
+        }
 
         bool pipeline_changed = !resolve_pipe_valid || swap_formats[0] != swapchain_info.format;
         bool gbuffer_changed = !gbuffer_valid
@@ -344,11 +347,10 @@ fn void? run(sample_args::Options options) {
 
         gpu::begin_frame(&device)!;
 
-        gpu::AcquiredImage acquired;
-        if (try image = gpu::acquire_next_image(&device, swapchain)) {
-            acquired = image;
-        } else {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+        gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
+        if (catch err = acquired) {
+            if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             gpu::end_frame(&device)!;
             continue;
         }

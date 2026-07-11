@@ -21,6 +21,13 @@ struct ModeStats {
     long   frames;
 }
 
+struct TestcardPipeline {
+    gpu::PipelineHandle handle;
+    gpu::GraphicsPipelineDesc desc;
+    gpu::Format[1] color_formats;
+    bool valid;
+}
+
 fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
 
 fn String mode_name(gpu::PresentMode mode) {
@@ -58,7 +65,18 @@ fn int main(String[] args) {
 
 <* Render `frames` frames in the swapchain's current mode, collecting pacing
    stats. Captures a screenshot on frame `capture_at` when non-negative. *>
-fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window, gpu::PipelineHandle* pipeline, bool* pipeline_valid, gpu::GraphicsPipelineDesc* pipe_desc, gpu::Format[] color_formats, gpu::SwapchainInfo swapchain_info, uint* width, uint* height, long frames, long capture_at, String screenshot_path) {
+fn ModeStats? run_mode_window(
+    gpu::Device* device,
+    gpu::SwapchainHandle swapchain,
+    sample_window::SampleWindow* window,
+    TestcardPipeline* pipeline,
+    gpu::SwapchainInfo swapchain_info,
+    uint* width,
+    uint* height,
+    long frames,
+    long capture_at,
+    String screenshot_path
+) {
     ModeStats stats = { .min_ms = 1.0e9 };
     double total_ms = 0.0;
     double total_acquire_ms = 0.0;
@@ -72,17 +90,18 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
             swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
         }
         if (swapchain_info.dormant) {
+            sample_window::throttle_dormant();
             (void)frame_clk.mark();
             continue;
         }
 
-        if (!*pipeline_valid || color_formats[0] != swapchain_info.format) {
+        if (!pipeline.valid || pipeline.color_formats[0] != swapchain_info.format) {
             gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
-            if (*pipeline_valid) gpu::destroy_pipeline(device, *pipeline)!;
-            *pipeline_valid = false;
-            color_formats[0] = swapchain_info.format;
-            *pipeline = gpu::create_graphics_pipeline(device, pipe_desc)!;
-            *pipeline_valid = true;
+            if (pipeline.valid) gpu::destroy_pipeline(device, pipeline.handle)!;
+            pipeline.valid = false;
+            pipeline.color_formats[0] = swapchain_info.format;
+            pipeline.handle = gpu::create_graphics_pipeline(device, &pipeline.desc)!;
+            pipeline.valid = true;
         }
         *width = swapchain_info.width;
         *height = swapchain_info.height;
@@ -90,11 +109,12 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
         gpu::begin_frame(device)!;
 
         Clock acquire_clk = clock::now();
-        gpu::AcquiredImage acquired;
-        if (try image = gpu::acquire_next_image(device, swapchain)) {
-            acquired = image;
-        } else {
-            swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
+        gpu::AcquiredImage? acquired = gpu::acquire_next_image(device, swapchain);
+        if (catch err = acquired) {
+            if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
+                swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
+            }
             gpu::end_frame(device)!;
             (void)frame_clk.mark();
             continue;
@@ -124,7 +144,7 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       *pipeline,
+            pipeline:       pipeline.handle,
             vertex_root:    root_span.gpu,
             fragment_root:  root_span.gpu,
             vertex_count:   3,
@@ -214,18 +234,16 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
     defer (void)gpu::destroy_shader(&device, frag);
 
-    gpu::Format[1] color_formats;
-    gpu::GraphicsPipelineDesc pipe_desc = {
+    TestcardPipeline pipeline = {};
+    pipeline.desc = (gpu::GraphicsPipelineDesc){
         .vertex_shader   = vert,
         .fragment_shader = frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = color_formats[..],
+        .color_formats   = pipeline.color_formats[..],
         .debug_name      = "testcard",
     };
-    gpu::PipelineHandle pipeline;
-    bool pipeline_valid = false;
     defer {
-        if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
+        if (pipeline.valid) (void)gpu::destroy_pipeline(&device, pipeline.handle);
     }
 
     // Probe swapchain: FIFO is spec-guaranteed, so this always succeeds and
@@ -275,9 +293,6 @@ fn void? run(sample_args::Options options) {
             swapchain:       swapchain,
             window:          &window,
             pipeline:        &pipeline,
-            pipeline_valid:  &pipeline_valid,
-            pipe_desc:       &pipe_desc,
-            color_formats:   color_formats[..],
             swapchain_info:  swapchain_info,
             width:           &width,
             height:          &height,

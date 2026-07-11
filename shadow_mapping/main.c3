@@ -159,7 +159,13 @@ fn void? run(sample_args::Options options) {
     uint scene_depth_height;
     bool scene_depth_valid = false;
     if (!swapchain_info.dormant) {
-        scene_depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height, false, "scene_depth")!;
+        scene_depth = create_depth_texture(
+            device:  &device,
+            width:   swapchain_info.width,
+            height:  swapchain_info.height,
+            sampled: false,
+            name:    "scene_depth",
+        )!;
         scene_depth_width = swapchain_info.width;
         scene_depth_height = swapchain_info.height;
         scene_depth_valid = true;
@@ -262,7 +268,10 @@ fn void? run(sample_args::Options options) {
         if (events.resized) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-        if (swapchain_info.dormant) continue;
+        if (swapchain_info.dormant) {
+            sample_window::throttle_dormant();
+            continue;
+        }
 
         bool pipeline_changed = !scene_pipe_valid || color_formats[0] != swapchain_info.format;
         bool depth_changed = !scene_depth_valid
@@ -281,7 +290,13 @@ fn void? run(sample_args::Options options) {
         if (depth_changed) {
             if (scene_depth_valid) gpu::destroy_texture(&device, scene_depth)!;
             scene_depth_valid = false;
-            scene_depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height, false, "scene_depth")!;
+            scene_depth = create_depth_texture(
+                device:  &device,
+                width:   swapchain_info.width,
+                height:  swapchain_info.height,
+                sampled: false,
+                name:    "scene_depth",
+            )!;
             scene_depth_width = swapchain_info.width;
             scene_depth_height = swapchain_info.height;
             scene_depth_valid = true;
@@ -295,11 +310,10 @@ fn void? run(sample_args::Options options) {
 
         gpu::begin_frame(&device)!;
 
-        gpu::AcquiredImage acquired;
-        if (try image = gpu::acquire_next_image(&device, swapchain)) {
-            acquired = image;
-        } else {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+        gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
+        if (catch err = acquired) {
+            if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             gpu::end_frame(&device)!;
             continue;
         }
