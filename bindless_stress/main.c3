@@ -94,19 +94,19 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
         };
         gpu::cmd_texture_barrier(&cmd, &to_read)!;
     }
-    gpu::end_commands(device, &cmd)!;
+    gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(device, &submit)!;
     gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
 }
 
-fn void? dispatch_verify(gpu::Device* device, Fleet* fleet, gpu::PipelineHandle pipeline, gpu::GpuSpan index_span, gpu::GpuSpan out_span, gpu::SamplerIndex sampler) {
+fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fleet, gpu::PipelineHandle pipeline, gpu::GpuSpan index_span, gpu::GpuSpan out_span, gpu::SamplerIndex sampler) {
     uint* index_data = (uint*)index_span.cpu;
     for (uint i = 0; i < TEXTURE_COUNT; i++) index_data[i] = (uint)fleet.indices[i];
     gpu::flush_buffer(device, index_span.buffer, 0, 0)!;
 
-    gpu::GpuSpan root_span = gpu::alloc_frame_span(device, StressRoot::size, 16)!;
+    gpu::GpuSpan root_span = gpu::alloc_frame_span(frame, StressRoot::size, 16)!;
     StressRoot* root = (StressRoot*)root_span.cpu;
     root.indices_gpu  = index_span.gpu;
     root.output_gpu   = out_span.gpu;
@@ -126,7 +126,7 @@ fn void? dispatch_verify(gpu::Device* device, Fleet* fleet, gpu::PipelineHandle 
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-    gpu::end_commands(device, &cmd)!;
+    gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(device, &submit)!;
@@ -229,23 +229,31 @@ fn void? run() {
     }
     NanoDuration create_time = clk.mark();
 
-    gpu::begin_frame(&device)!;
+    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
     for (uint first = 0; first < TEXTURE_COUNT; first += UPLOAD_BATCH) {
         upload_slice(&device, &fleet, staging_span, first, UPLOAD_BATCH)!;
     }
     NanoDuration upload_time = clk.mark();
 
-    dispatch_verify(&device, &fleet, pipeline, index_span, out_span, sampler)!;
+    dispatch_verify(
+        frame:      &frame_token,
+        device:     &device,
+        fleet:      &fleet,
+        pipeline:   pipeline,
+        index_span: index_span,
+        out_span:   out_span,
+        sampler:    sampler,
+    )!;
     NanoDuration fill_verify_time = clk.mark();
     gpu::invalidate_buffer(&device, out_buf, 0, 0)!;
     check_results(&fleet, out_span)!;
-    gpu::end_frame(&device)!;
+    gpu::end_frame(&frame_token)!;
 
     // Churn: rolling destroy/recreate slices across frames; verify every frame.
     uint cursor = 0;
     clk = clock::now();
     for (uint frame = 0; frame < CHURN_FRAMES; frame++) {
-        gpu::begin_frame(&device)!;
+        frame_token = gpu::begin_frame(&device)!;
         for (uint i = 0; i < CHURN_SLICE; i++) {
             uint slot = (cursor + i) % TEXTURE_COUNT;
             gpu::destroy_texture_descriptor(&device, fleet.indices[slot])!;
@@ -258,10 +266,18 @@ fn void? run() {
             upload_slice(&device, &fleet, staging_span, first, UPLOAD_BATCH)!;
         }
 
-        dispatch_verify(&device, &fleet, pipeline, index_span, out_span, sampler)!;
+        dispatch_verify(
+            frame:      &frame_token,
+            device:     &device,
+            fleet:      &fleet,
+            pipeline:   pipeline,
+            index_span: index_span,
+            out_span:   out_span,
+            sampler:    sampler,
+        )!;
         gpu::invalidate_buffer(&device, out_buf, 0, 0)!;
         check_results(&fleet, out_span)!;
-        gpu::end_frame(&device)!;
+        gpu::end_frame(&frame_token)!;
         cursor = (cursor + CHURN_SLICE) % TEXTURE_COUNT;
     }
     NanoDuration churn_time = clk.mark();

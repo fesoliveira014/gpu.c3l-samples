@@ -165,13 +165,13 @@ fn void? run(sample_args::Options options) {
             draw_pipeline_valid = true;
         }
 
-        gpu::begin_frame(&device)!;
+        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&device)!;
+            gpu::end_frame(&frame_token)!;
             continue;
         }
 
@@ -180,7 +180,7 @@ fn void? run(sample_args::Options options) {
         gpu::GpuSpan write_span = even ? span_b : span_a;
 
         // Submit 1: simulation, signaling the timeline at compute completion.
-        gpu::GpuSpan sim_span = gpu::alloc_frame_span(&device, SimRoot::size, 16)!;
+        gpu::GpuSpan sim_span = gpu::alloc_frame_span(&frame_token, SimRoot::size, 16)!;
         SimRoot* sim_root = (SimRoot*)sim_span.cpu;
         sim_root.read_gpu  = read_span.gpu;
         sim_root.write_gpu = write_span.gpu;
@@ -195,14 +195,14 @@ fn void? run(sample_args::Options options) {
             root:     sim_span.gpu,
             groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
         )!;
-        gpu::end_commands(&device, &sim_cmd)!;
+        gpu::end_commands(&sim_cmd)!;
         gpu::CommandList[1] sim_lists = { sim_cmd };
         gpu::SemaphoreSignal[1] sim_signals = {{ .semaphore = sim_done, .value = (gpu::SemaphoreValue)(frame + 1), .stage = gpu::Stage.COMPUTE_SHADER }};
         gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..], .signals = sim_signals[..] };
         gpu::submit(&device, &sim_submit)!;
 
         // Submit 2: rendering, waiting on the freshly simulated state.
-        gpu::GpuSpan draw_span = gpu::alloc_frame_span(&device, ParticleDrawRoot::size, 16)!;
+        gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, ParticleDrawRoot::size, 16)!;
         ParticleDrawRoot* draw_root = (ParticleDrawRoot*)draw_span.cpu;
         sample_camera::Mat4 view_proj = sample_camera::mul(
             sample_camera::perspective(
@@ -269,7 +269,7 @@ fn void? run(sample_args::Options options) {
             .new_layout    = gpu::TextureLayout.PRESENT,
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&device, &cmd)!;
+        gpu::end_commands(&cmd)!;
 
         gpu::CommandList[1] draw_lists = { cmd };
         gpu::SemaphoreWait[1] draw_waits = {{ .semaphore = sim_done, .value = (gpu::SemaphoreValue)(frame + 1), .stage = gpu::Stage.VERTEX_SHADER }};
@@ -296,7 +296,7 @@ fn void? run(sample_args::Options options) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
-        gpu::end_frame(&device)!;
+        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

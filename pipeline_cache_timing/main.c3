@@ -129,13 +129,13 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     for (uint i = 0; i < SCALE_COUNT; i++) io_data[i] = (float)i;
     gpu::flush_buffer(device, io, 0, 0)!;
 
-    gpu::begin_frame(device)!;
-    gpu::GpuSpan quad_span = gpu::alloc_frame_span(device, QuadRoot::size, 16)!;
+    gpu::FrameToken frame_token = gpu::begin_frame(device)!;
+    gpu::GpuSpan quad_span = gpu::alloc_frame_span(&frame_token, QuadRoot::size, 16)!;
     QuadRoot* quad_root = (QuadRoot*)quad_span.cpu;
     quad_root.rect  = { -1.0f, -1.0f, 1.0f, 1.0f };
     quad_root.color = { 0.0f, 1.0f, 0.0f, 1.0f };
 
-    gpu::GpuSpan scale_span = gpu::alloc_frame_span(device, ScaleRoot::size, 16)!;
+    gpu::GpuSpan scale_span = gpu::alloc_frame_span(&frame_token, ScaleRoot::size, 16)!;
     ScaleRoot* scale_root = (ScaleRoot*)scale_span.cpu;
     scale_root.input_gpu  = io_span.gpu;
     scale_root.output_gpu = (gpu::GpuAddress)((ulong)io_span.gpu + SCALE_COUNT * float::size);
@@ -181,7 +181,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-    gpu::end_commands(device, &cmd)!;
+    gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(device, &submit)!;
@@ -212,7 +212,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
             return gpu::INVALID_ARGUMENT~;
         }
     }
-    gpu::end_frame(device)!;
+    gpu::end_frame(&frame_token)!;
 }
 
 fn gpu::Device? make_device(char[] blob) {

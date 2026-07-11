@@ -11,6 +11,22 @@ const char[*] TRIANGLE_FRAG_SPIRV = $embed("../offscreen_triangle/shaders/offscr
 
 const uint TEX_SIZE = 16;
 
+struct FrameWork {
+    gpu::Device*                 device;
+    sample_window::SampleWindow* window;
+    gpu::SwapchainHandle         swapchain;
+    gpu::SwapchainInfo*          swapchain_info;
+    gpu::PipelineHandle          pipeline;
+    gpu::TextureHandle           checker;
+    gpu::TextureIndex            tex_index;
+    gpu::SamplerIndex            smp_index;
+    gpu::GpuSpan                 staging_span;
+    sample_args::Options*        options;
+    bool*                        checker_uploaded;
+    long                         frame;
+    bool                         rendered;
+}
+
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
         io::printfn("hello_triangle_sdl: FAIL (%s)", err);
@@ -18,6 +34,128 @@ fn int main(String[] args) {
     }
     io::printn("hello_triangle_sdl: PASS");
     return 0;
+}
+
+fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
+    gpu::AcquiredImage? acquired = gpu::acquire_next_image(ctx.device, ctx.swapchain);
+    if (catch err = acquired) {
+        if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+        if (err == gpu::SWAPCHAIN_OUT_OF_DATE) *ctx.swapchain_info = sample_window::recover_swapchain(ctx.device, ctx.swapchain, ctx.window)!;
+        return;
+    }
+
+    if (ctx.frame == 0) {
+        // Swapchain-owned images must reject destroy_texture.
+        fault owned_fault = @catch(gpu::destroy_texture(ctx.device, acquired.texture));
+        if (owned_fault != gpu::INVALID_ARGUMENT) return gpu::INVALID_RESOURCE_STATE~;
+    }
+
+    gpu::CommandList cmd = gpu::begin_commands(ctx.device, gpu::QueueKind.GRAPHICS)!;
+
+    if (!*ctx.checker_uploaded) {
+        gpu::TextureBarrier to_dst = gpu::texture_transition(
+            texture: ctx.checker,
+            before:  gpu::TextureUse.UNDEFINED,
+            after:   gpu::TextureUse.TRANSFER_DESTINATION,
+        )!;
+        gpu::cmd_texture_barrier(&cmd, &to_dst)!;
+        gpu::BufferTextureCopyDesc upload = { .src = ctx.staging_span, .texture = ctx.checker };
+        gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
+        gpu::TextureBarrier to_read = gpu::texture_transition(
+            texture: ctx.checker,
+            before:  gpu::TextureUse.TRANSFER_DESTINATION,
+            after:   gpu::TextureUse.SAMPLED_FRAGMENT,
+        )!;
+        gpu::cmd_texture_barrier(&cmd, &to_read)!;
+        *ctx.checker_uploaded = true;
+    }
+
+    gpu::TextureUse swapchain_before;
+    switch (acquired.prior_layout) {
+        case gpu::TextureLayout.UNDEFINED:
+            swapchain_before = gpu::TextureUse.UNDEFINED;
+        case gpu::TextureLayout.PRESENT:
+            swapchain_before = gpu::TextureUse.PRESENT;
+        default:
+            return gpu::INVALID_RESOURCE_STATE~;
+    }
+    gpu::TextureBarrier to_attach = gpu::texture_transition(
+        texture: acquired.texture,
+        before:  swapchain_before,
+        after:   gpu::TextureUse.COLOR_ATTACHMENT,
+    )!;
+    gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+
+    float pulse = (float)(ctx.frame % 120) / 120.0f * 0.15f;
+    gpu::GpuSpan verts_span = gpu::alloc_frame_span(frame, 3 * 16, 16)!;
+    float* verts = (float*)verts_span.cpu;
+    float[12] vertex_data = {
+        -0.8f, -0.8f, 0.0f, 0.0f,
+         0.8f, -0.8f, 1.0f, 0.0f,
+         0.0f,  0.8f, 0.5f, 1.0f,
+    };
+    for (uint i = 0; i < 12; i++) verts[i] = vertex_data[i];
+
+    gpu::GpuSpan frag_span = gpu::alloc_frame_span(frame, FragRoot::size, 16)!;
+    FragRoot* frag_root = (FragRoot*)frag_span.cpu;
+    frag_root.texture_index = ctx.tex_index;
+    frag_root.sampler_index = ctx.smp_index;
+
+    gpu::ColorTargetDesc[1] colors = {{
+        .texture = acquired.texture,
+        .load_op = gpu::LoadOp.CLEAR,
+        .store_op = gpu::StoreOp.STORE,
+        .clear = { .rgba = { 0.05f + pulse, 0.05f, 0.12f, 1.0f } },
+    }};
+    gpu::RenderPassDesc pass = {
+        .colors = colors[..],
+        .width  = ctx.swapchain_info.width,
+        .height = ctx.swapchain_info.height,
+    };
+    gpu::cmd_begin_render_pass(&cmd, &pass)!;
+    gpu::cmd_draw(
+        commands:       &cmd,
+        pipeline:       ctx.pipeline,
+        vertex_root:    verts_span.gpu,
+        fragment_root:  frag_span.gpu,
+        vertex_count:   3,
+        instance_count: 1,
+    )!;
+    gpu::cmd_end_render_pass(&cmd)!;
+
+    gpu::TextureBarrier to_present = gpu::texture_transition(
+        texture: acquired.texture,
+        before:  gpu::TextureUse.COLOR_ATTACHMENT,
+        after:   gpu::TextureUse.PRESENT,
+    )!;
+    gpu::cmd_texture_barrier(&cmd, &to_present)!;
+
+    gpu::end_commands(&cmd)!;
+    gpu::CommandList[1] lists = { cmd };
+    gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = ctx.swapchain };
+    gpu::submit(ctx.device, &submit)!;
+
+    if (ctx.options.capture_frame(ctx.frame)) {
+        sample_capture::capture_texture_png(
+            device:      ctx.device,
+            src:         acquired.texture,
+            width:       ctx.swapchain_info.width,
+            height:      ctx.swapchain_info.height,
+            format:      ctx.swapchain_info.format,
+            from_stage:  gpu::Stage.PRESENT,
+            from_hazard: gpu::Hazard.PRESENT_READ,
+            from_layout: gpu::TextureLayout.PRESENT,
+            path:        ctx.options.screenshot_path,
+        )!;
+    }
+
+    gpu::PresentDesc present_desc = { .swapchain = ctx.swapchain };
+    if (catch err = gpu::present(ctx.device, &present_desc)) {
+        if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+        *ctx.swapchain_info = sample_window::recover_swapchain(ctx.device, ctx.swapchain, ctx.window)!;
+    }
+
+    ctx.rendered = true;
 }
 
 fn void? run(sample_args::Options options) {
@@ -119,6 +257,7 @@ fn void? run(sample_args::Options options) {
     bool checker_uploaded = false;
     long frame = 0;
     bool running = true;
+    gpu::FrameToken retry_frame;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -138,128 +277,26 @@ fn void? run(sample_args::Options options) {
             pipeline_valid = true;
         }
 
-        gpu::begin_frame(&device)!;
-
-        gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
-        if (catch err = acquired) {
-            if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&device)!;
-            continue;
-        }
-
-        if (frame == 0) {
-            // Swapchain-owned images must reject destroy_texture.
-            fault owned_fault = @catch(gpu::destroy_texture(&device, acquired.texture));
-            if (owned_fault != gpu::INVALID_ARGUMENT) return gpu::INVALID_RESOURCE_STATE~;
-        }
-
-        gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.GRAPHICS)!;
-
-        if (!checker_uploaded) {
-            gpu::TextureBarrier to_dst = gpu::texture_transition(
-                texture: checker,
-                before:  gpu::TextureUse.UNDEFINED,
-                after:   gpu::TextureUse.TRANSFER_DESTINATION,
-            )!;
-            gpu::cmd_texture_barrier(&cmd, &to_dst)!;
-            gpu::BufferTextureCopyDesc upload = { .src = staging_span, .texture = checker };
-            gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
-            gpu::TextureBarrier to_read = gpu::texture_transition(
-                texture: checker,
-                before:  gpu::TextureUse.TRANSFER_DESTINATION,
-                after:   gpu::TextureUse.SAMPLED_FRAGMENT,
-            )!;
-            gpu::cmd_texture_barrier(&cmd, &to_read)!;
-            checker_uploaded = true;
-        }
-
-        gpu::TextureUse swapchain_before;
-        switch (acquired.prior_layout) {
-            case gpu::TextureLayout.UNDEFINED:
-                swapchain_before = gpu::TextureUse.UNDEFINED;
-            case gpu::TextureLayout.PRESENT:
-                swapchain_before = gpu::TextureUse.PRESENT;
-            default:
-                return gpu::INVALID_RESOURCE_STATE~;
-        }
-        gpu::TextureBarrier to_attach = gpu::texture_transition(
-            texture: acquired.texture,
-            before:  swapchain_before,
-            after:   gpu::TextureUse.COLOR_ATTACHMENT,
-        )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
-
-        float pulse = (float)(frame % 120) / 120.0f * 0.15f;
-        gpu::GpuSpan verts_span = gpu::alloc_frame_span(&device, 3 * 16, 16)!;
-        float* verts = (float*)verts_span.cpu;
-        float[12] vertex_data = {
-            -0.8f, -0.8f, 0.0f, 0.0f,
-             0.8f, -0.8f, 1.0f, 0.0f,
-             0.0f,  0.8f, 0.5f, 1.0f,
+        FrameWork work = {
+            .device           = &device,
+            .window           = &window,
+            .swapchain        = swapchain,
+            .swapchain_info   = &swapchain_info,
+            .pipeline         = pipeline,
+            .checker          = checker,
+            .tex_index        = tex_index,
+            .smp_index        = smp_index,
+            .staging_span     = staging_span,
+            .options          = &options,
+            .checker_uploaded = &checker_uploaded,
+            .frame            = frame,
         };
-        for (uint i = 0; i < 12; i++) verts[i] = vertex_data[i];
-
-        gpu::GpuSpan frag_span = gpu::alloc_frame_span(&device, FragRoot::size, 16)!;
-        FragRoot* frag_root = (FragRoot*)frag_span.cpu;
-        frag_root.texture_index = tex_index;
-        frag_root.sampler_index = smp_index;
-
-        gpu::ColorTargetDesc[1] colors = {{
-            .texture = acquired.texture,
-            .load_op = gpu::LoadOp.CLEAR,
-            .store_op = gpu::StoreOp.STORE,
-            .clear = { .rgba = { 0.05f + pulse, 0.05f, 0.12f, 1.0f } },
-        }};
-        gpu::RenderPassDesc pass = {
-            .colors = colors[..],
-            .width  = swapchain_info.width,
-            .height = swapchain_info.height,
-        };
-        gpu::cmd_begin_render_pass(&cmd, &pass)!;
-        gpu::cmd_draw(
-            commands:       &cmd,
-            pipeline:       pipeline,
-            vertex_root:    verts_span.gpu,
-            fragment_root:  frag_span.gpu,
-            vertex_count:   3,
-            instance_count: 1,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
-
-        gpu::TextureBarrier to_present = gpu::texture_transition(
-            texture: acquired.texture,
-            before:  gpu::TextureUse.COLOR_ATTACHMENT,
-            after:   gpu::TextureUse.PRESENT,
-        )!;
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
-
-        gpu::end_commands(&device, &cmd)!;
-        gpu::CommandList[1] lists = { cmd };
-        gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        gpu::submit(&device, &submit)!;
-
-        if (options.capture_frame(frame)) {
-            sample_capture::capture_texture_png(
-                device:      &device,
-                src:         acquired.texture,
-                width:       swapchain_info.width,
-                height:      swapchain_info.height,
-                format:      swapchain_info.format,
-                from_stage:  gpu::Stage.PRESENT,
-                from_hazard: gpu::Hazard.PRESENT_READ,
-                from_layout: gpu::TextureLayout.PRESENT,
-                path:        options.screenshot_path,
-            )!;
+        fault frame_fault = @catch(gpu::@with_frame(&retry_frame, &device, run_frame, &work));
+        if (frame_fault) {
+            if (retry_frame.device != null) gpu::end_frame(&retry_frame)!;
+            return frame_fault~;
         }
-
-        gpu::PresentDesc present_desc = { .swapchain = swapchain };
-        if (catch err = gpu::present(&device, &present_desc)) {
-            if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-        }
-
-        gpu::end_frame(&device)!;
+        if (!work.rendered) continue;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

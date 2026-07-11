@@ -342,17 +342,17 @@ fn void? run(sample_args::Options options) {
             sample_camera::perspective(0.8f, (float)width / (float)height, 0.1f, 100.0f),
             camera.view());
 
-        gpu::begin_frame(&device)!;
+        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&device)!;
+            gpu::end_frame(&frame_token)!;
             continue;
         }
 
-        gpu::GpuSpan root_span = gpu::alloc_frame_span(&device, PbrRoot::size, 16)!;
+        gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, PbrRoot::size, 16)!;
         PbrRoot* root = (PbrRoot*)root_span.cpu;
         write_matrix(&root.view_proj_c0, view_proj);
         float[<3>] cam_pos = camera.position();
@@ -453,7 +453,7 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&device, &cmd)!;
+        gpu::end_commands(&cmd)!;
 
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
@@ -479,7 +479,7 @@ fn void? run(sample_args::Options options) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
-        gpu::end_frame(&device)!;
+        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

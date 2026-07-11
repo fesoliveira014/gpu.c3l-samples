@@ -142,9 +142,9 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, pipeline);
 
-    gpu::begin_frame(&device)!;
+    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
-    gpu::GpuSpan verts_span = gpu::alloc_frame_span(&device, 3 * 16, 16)!;
+    gpu::GpuSpan verts_span = gpu::alloc_frame_span(&frame_token, 3 * 16, 16)!;
     float[12] vertex_data = {
         -0.8f, -0.8f, 0.0f, 0.0f,
          0.8f, -0.8f, 1.0f, 0.0f,
@@ -152,7 +152,7 @@ fn void? run(sample_args::Options options) {
     };
     mem::copy(verts_span.cpu, &vertex_data, vertex_data.len * float::size);
 
-    gpu::GpuSpan frag_span = gpu::alloc_frame_span(&device, FragRoot::size, 16)!;
+    gpu::GpuSpan frag_span = gpu::alloc_frame_span(&frame_token, FragRoot::size, 16)!;
     FragRoot* frag_root = (FragRoot*)frag_span.cpu;
     frag_root.texture_index = tex_index;
     frag_root.sampler_index = smp_index;
@@ -252,7 +252,7 @@ fn void? run(sample_args::Options options) {
     )!;
     gpu::cmd_end_render_pass(&cmd)!;
 
-    gpu::end_commands(&device, &cmd)!;
+    gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::submit(&device, &submit)!;
@@ -292,6 +292,6 @@ fn void? run(sample_args::Options options) {
             height: RT_SIZE,
         )!;
     }
-    gpu::end_frame(&device)!;
+    gpu::end_frame(&frame_token)!;
 }
 
