@@ -2,9 +2,9 @@ module memory_report;
 
 import gpu;
 import std::atomic;
-import std::core::mem;
-import std::atomic::types;
 import std::io;
+
+faultdef EXPECTED_REJECTION_MISSING;
 
 // Headless: creates a resource spread, prints memory stats and the VMA
 // report, and tears down cleanly — zero leak lines under validation.
@@ -195,6 +195,7 @@ fn int main(String[] args) {
 
 fn void? run(bool detailed) {
     DebugMessageSink debug_messages = {};
+    // Registered first so LIFO prints after device teardown stops callbacks.
     defer print_debug_messages(&debug_messages);
 
     gpu::DeviceDesc device_desc = {
@@ -215,8 +216,13 @@ fn void? run(bool detailed) {
         .memory_kind = gpu::MemoryKind.DEVICE,
         .debug_name  = "report_rejected_buffer",
     };
-    fault rejected = @catch(gpu::create_buffer(&device, &rejected_desc));
-    if (rejected != gpu::INVALID_ARGUMENT) return gpu::BACKEND_ERROR~;
+    gpu::BufferHandle? maybe_rejected = gpu::create_buffer(&device, &rejected_desc);
+    if (try unexpected = maybe_rejected) {
+        gpu::destroy_buffer(&device, unexpected)!;
+        return EXPECTED_REJECTION_MISSING~;
+    }
+    fault rejected = @catch(maybe_rejected);
+    if (rejected != gpu::INVALID_ARGUMENT) return rejected~;
 
     gpu::BufferDesc device_buf = {
         .size = 1 << 20, .usage = { .storage, .addressable }, .memory_kind = gpu::MemoryKind.DEVICE,
