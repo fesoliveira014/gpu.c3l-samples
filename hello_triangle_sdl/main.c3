@@ -166,40 +166,31 @@ fn void? run(sample_args::Options options) {
         gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.GRAPHICS)!;
 
         if (!checker_uploaded) {
-            gpu::TextureBarrier to_dst = {
-                .texture       = checker,
-                .before_stage  = gpu::Stage.HOST,
-                .after_stage   = gpu::Stage.TRANSFER,
-                .before_hazard = gpu::Hazard.HOST_WRITE,
-                .after_hazard  = gpu::Hazard.TRANSFER_WRITE,
-                .old_layout    = gpu::TextureLayout.UNDEFINED,
-                .new_layout    = gpu::TextureLayout.TRANSFER_DST,
-            };
+            gpu::TextureBarrier to_dst = gpu::texture_transition(
+                texture: checker,
+                before:  gpu::TextureUse.UNDEFINED,
+                after:   gpu::TextureUse.TRANSFER_DESTINATION,
+            )!;
             gpu::cmd_texture_barrier(&cmd, &to_dst)!;
             gpu::BufferTextureCopyDesc upload = { .src = staging_span, .texture = checker };
             gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
-            gpu::TextureBarrier to_read = {
-                .texture       = checker,
-                .before_stage  = gpu::Stage.TRANSFER,
-                .after_stage   = gpu::Stage.FRAGMENT_SHADER,
-                .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-                .after_hazard  = gpu::Hazard.SHADER_READ,
-                .old_layout    = gpu::TextureLayout.TRANSFER_DST,
-                .new_layout    = gpu::TextureLayout.SHADER_READ,
-            };
+            gpu::TextureBarrier to_read = gpu::texture_transition(
+                texture: checker,
+                before:  gpu::TextureUse.TRANSFER_DESTINATION,
+                after:   gpu::TextureUse.SAMPLED_FRAGMENT,
+            )!;
             gpu::cmd_texture_barrier(&cmd, &to_read)!;
             checker_uploaded = true;
         }
 
-        gpu::TextureBarrier to_attach = {
-            .texture       = acquired.texture,
-            .before_stage  = image_seen[acquired.index] ? gpu::Stage.PRESENT : gpu::Stage.HOST,
-            .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
-            .before_hazard = image_seen[acquired.index] ? gpu::Hazard.PRESENT_READ : gpu::Hazard.HOST_WRITE,
-            .after_hazard  = gpu::Hazard.COLOR_WRITE,
-            .old_layout    = image_seen[acquired.index] ? gpu::TextureLayout.PRESENT : gpu::TextureLayout.UNDEFINED,
-            .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-        };
+        gpu::TextureUse swapchain_before = image_seen[acquired.index]
+            ? gpu::TextureUse.PRESENT
+            : gpu::TextureUse.UNDEFINED;
+        gpu::TextureBarrier to_attach = gpu::texture_transition(
+            texture: acquired.texture,
+            before:  swapchain_before,
+            after:   gpu::TextureUse.COLOR_ATTACHMENT,
+        )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
         image_seen[acquired.index] = true;
 
@@ -236,15 +227,11 @@ fn void? run(sample_args::Options options) {
         )!;
         gpu::cmd_end_render_pass(&cmd)!;
 
-        gpu::TextureBarrier to_present = {
-            .texture       = acquired.texture,
-            .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-            .after_stage   = gpu::Stage.PRESENT,
-            .before_hazard = gpu::Hazard.COLOR_WRITE,
-            .after_hazard  = gpu::Hazard.PRESENT_READ,
-            .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-            .new_layout    = gpu::TextureLayout.PRESENT,
-        };
+        gpu::TextureBarrier to_present = gpu::texture_transition(
+            texture: acquired.texture,
+            before:  gpu::TextureUse.COLOR_ATTACHMENT,
+            after:   gpu::TextureUse.PRESENT,
+        )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
         gpu::end_commands(&device, &cmd)!;
