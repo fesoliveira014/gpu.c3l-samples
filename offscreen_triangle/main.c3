@@ -2,7 +2,7 @@ module offscreen_triangle;
 
 import gpu;
 import sample_args;
-import sample_capture;
+import sample_png;
 import std::io;
 import std::io::file;
 import std::core::mem;
@@ -13,12 +13,42 @@ const char[*] OFFSCREEN_FRAG_SPIRV = $embed("shaders/offscreen.frag.spv");
 const uint RT_SIZE = 256;
 const usz RT_BYTES = RT_SIZE * RT_SIZE * 4;
 const uint TEX_SIZE = 16;
+const char CLEAR_R = 8;
+const char CLEAR_G = 16;
+const char CLEAR_B = 32;
 
 fn bool pixel_is_clear(char[] pixels, uint x, uint y) {
     usz offset = ((usz)y * RT_SIZE + x) * 4;
-    return pixels[offset] == (char)8
-        && pixels[offset + 1] == (char)16
-        && pixels[offset + 2] == (char)32;
+    return pixels[offset] == CLEAR_R
+        && pixels[offset + 1] == CLEAR_G
+        && pixels[offset + 2] == CLEAR_B;
+}
+
+fn gpu::ScissorRect clamp_scissor_rect(gpu::ScissorRect rect, int width, int height) {
+    long left = rect.x;
+    long top = rect.y;
+    long right = (long)rect.x + rect.width;
+    long bottom = (long)rect.y + rect.height;
+
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right < 0) right = 0;
+    if (bottom < 0) bottom = 0;
+
+    if (left > width) left = width;
+    if (top > height) top = height;
+    if (right > width) right = width;
+    if (bottom > height) bottom = height;
+
+    if (right < left) right = left;
+    if (bottom < top) bottom = top;
+
+    return {
+        .x      = (int)left,
+        .y      = (int)top,
+        .width  = (int)(right - left),
+        .height = (int)(bottom - top),
+    };
 }
 
 fn int main(String[] args) {
@@ -167,7 +197,7 @@ fn void? run(sample_args::Options options) {
         .texture = target,
         .load_op = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
-        .clear = { .rgba = { 8.0f / 255.0f, 16.0f / 255.0f, 32.0f / 255.0f, 1.0f } },
+        .clear = { .rgba = { (float)CLEAR_R / 255.0f, (float)CLEAR_G / 255.0f, (float)CLEAR_B / 255.0f, 1.0f } },
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = RT_SIZE, .height = RT_SIZE };
     gpu::cmd_begin_render_pass(&cmd, &pass)!;
@@ -200,6 +230,26 @@ fn void? run(sample_args::Options options) {
             instance_count: 1,
         )!;
     }
+    gpu::ScissorRect ui_clip = {
+        .x = -40, .y = 200, .width = 400, .height = 400,
+    };
+    gpu::ScissorRect ui_scissor = clamp_scissor_rect(ui_clip, (int)RT_SIZE, (int)RT_SIZE);
+    gpu::Viewport ui_viewport = {
+        .width     = (float)RT_SIZE,
+        .height    = (float)RT_SIZE,
+        .min_depth = 0.0f,
+        .max_depth = 1.0f,
+    };
+    gpu::cmd_set_viewport(&cmd, &ui_viewport)!;
+    gpu::cmd_set_scissor(&cmd, &ui_scissor)!;
+    gpu::cmd_draw(
+        commands:       &cmd,
+        pipeline:       pipeline,
+        vertex_root:    verts_span.gpu,
+        fragment_root:  frag_span.gpu,
+        vertex_count:   3,
+        instance_count: 1,
+    )!;
     gpu::cmd_end_render_pass(&cmd)!;
 
     gpu::end_commands(&device, &cmd)!;
@@ -230,17 +280,16 @@ fn void? run(sample_args::Options options) {
         return gpu::INVALID_ARGUMENT~;
     }
 
+    if (pixel_is_clear(pixels, RT_SIZE / 2, RT_SIZE * 27 / 32)) {
+        io::printn("offscreen_triangle: clamped UI scissor did not render");
+        return gpu::INVALID_ARGUMENT~;
+    }
     if (options.wants_screenshot()) {
-        sample_capture::capture_texture_png(
-            device:      &device,
-            src:         target,
-            width:       RT_SIZE,
-            height:      RT_SIZE,
-            format:      gpu::Format.RGBA8_UNORM,
-            from_stage:  gpu::Stage.COLOR_ATTACHMENT,
-            from_hazard: gpu::Hazard.COLOR_WRITE,
-            from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
-            path:        options.screenshot_path,
+        sample_png::write_png_rgba8(
+            path:   options.screenshot_path,
+            rgba:   pixels,
+            width:  RT_SIZE,
+            height: RT_SIZE,
         )!;
     }
     gpu::end_frame(&device)!;
