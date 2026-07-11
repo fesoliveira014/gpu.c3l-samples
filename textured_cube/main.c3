@@ -77,14 +77,6 @@ fn sample_camera::Mat4 spin_model(float time) {
     return sample_camera::mul(yaw_m, pitch_m);
 }
 
-fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window) {
-    uint requested_width;
-    uint requested_height;
-    sample_window::pixel_size(window, &requested_width, &requested_height);
-    gpu::resize_swapchain(device, swapchain, requested_width, requested_height)!;
-    return gpu::get_swapchain_info(device, swapchain);
-}
-
 fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uint height) {
     gpu::TextureDesc desc = {
         .dimension = gpu::TextureDimension.TEX_2D,
@@ -240,7 +232,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) continue;
 
@@ -274,7 +266,7 @@ fn void? run(sample_args::Options options) {
         if (try image = gpu::acquire_next_image(&device, swapchain)) {
             acquired = image;
         } else {
-            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             gpu::end_frame(&device)!;
             continue;
         }
@@ -421,7 +413,7 @@ fn void? run(sample_args::Options options) {
         gpu::PresentDesc present_desc = { .swapchain = swapchain };
         if (catch err = gpu::present(&device, &present_desc)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
         gpu::end_frame(&device)!;

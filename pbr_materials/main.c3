@@ -126,14 +126,6 @@ fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uin
     return gpu::create_texture(device, &desc);
 }
 
-fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window) {
-    uint width;
-    uint height;
-    sample_window::pixel_size(window, &width, &height);
-    gpu::resize_swapchain(device, swapchain, width, height)!;
-    return gpu::get_swapchain_info(device, swapchain);
-}
-
 fn gpu::TextureUse? swapchain_texture_use(gpu::TextureLayout layout) {
     switch (layout) {
         case gpu::TextureLayout.UNDEFINED: return gpu::TextureUse.UNDEFINED;
@@ -314,7 +306,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) continue;
 
@@ -353,7 +345,7 @@ fn void? run(sample_args::Options options) {
         if (try image = gpu::acquire_next_image(&device, swapchain)) {
             acquired = image;
         } else {
-            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             gpu::end_frame(&device)!;
             continue;
         }
@@ -482,7 +474,7 @@ fn void? run(sample_args::Options options) {
         gpu::PresentDesc present_desc = { .swapchain = swapchain };
         if (catch err = gpu::present(&device, &present_desc)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
         gpu::end_frame(&device)!;
