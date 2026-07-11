@@ -70,6 +70,18 @@ fn void pixel_size(SampleWindow* sample, uint* width, uint* height) {
     *height = h < 0 ? 0 : (uint)h;
 }
 
+fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, SampleWindow* sample) {
+    uint width;
+    uint height;
+    pixel_size(sample, &width, &height);
+    gpu::resize_swapchain(device, swapchain, width, height)!;
+    return gpu::get_swapchain_info(device, swapchain);
+}
+
+fn void throttle_dormant() {
+    sdl::delay(16);
+}
+
 fn WindowEvents pump_events(SampleWindow* sample) {
     WindowEvents events;
     sdl::Event event;

@@ -10,7 +10,6 @@ import std::time;
 const char[*] CARD_VERT_SPIRV = $embed("shaders/testcard.vert.spv");
 const char[*] CARD_FRAG_SPIRV = $embed("shaders/testcard.frag.spv");
 
-const uint MAX_TRACKED_IMAGES = 8;
 const uint WARMUP_FRAMES = 10;
 const long DEFAULT_FRAMES_PER_MODE = 120;
 
@@ -20,6 +19,13 @@ struct ModeStats {
     double max_ms;
     double acquire_ms;
     long   frames;
+}
+
+struct TestcardPipeline {
+    gpu::PipelineHandle handle;
+    gpu::GraphicsPipelineDesc desc;
+    gpu::Format[1] color_formats;
+    bool valid;
 }
 
 fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
@@ -40,6 +46,14 @@ fn bool mode_supported(gpu::PresentModeSupport support, gpu::PresentMode mode) {
     }
 }
 
+fn gpu::TextureUse? swapchain_texture_use(gpu::TextureLayout layout) {
+    switch (layout) {
+        case gpu::TextureLayout.UNDEFINED: return gpu::TextureUse.UNDEFINED;
+        case gpu::TextureLayout.PRESENT:   return gpu::TextureUse.PRESENT;
+        default:                           return gpu::INVALID_RESOURCE_STATE~;
+    }
+}
+
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
         io::printfn("present_mode_explorer: FAIL (%s)", err);
@@ -51,33 +65,58 @@ fn int main(String[] args) {
 
 <* Render `frames` frames in the swapchain's current mode, collecting pacing
    stats. Captures a screenshot on frame `capture_at` when non-negative. *>
-fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchain, sample_window::SampleWindow* window, gpu::PipelineHandle pipeline, uint* width, uint* height, long frames, long capture_at, String screenshot_path) {
-    bool[MAX_TRACKED_IMAGES] image_seen;
+fn ModeStats? run_mode_window(
+    gpu::Device* device,
+    gpu::SwapchainHandle swapchain,
+    sample_window::SampleWindow* window,
+    TestcardPipeline* pipeline,
+    gpu::SwapchainInfo swapchain_info,
+    uint* width,
+    uint* height,
+    long frames,
+    long capture_at,
+    String screenshot_path
+) {
     ModeStats stats = { .min_ms = 1.0e9 };
     double total_ms = 0.0;
     double total_acquire_ms = 0.0;
     Clock frame_clk = clock::now();
+    long frame = 0;
 
-    for (long frame = 0; frame < frames; frame++) {
+    while (frame < frames) {
         sample_window::WindowEvents events = sample_window::pump_events(window);
         if (events.quit) break;
         if (events.resized) {
-            sample_window::pixel_size(window, width, height);
-            gpu::resize_swapchain(device, swapchain, *width, *height)!;
-            foreach (&seen : image_seen) *seen = false;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
         }
+        if (swapchain_info.dormant) {
+            sample_window::throttle_dormant();
+            (void)frame_clk.mark();
+            continue;
+        }
+
+        if (!pipeline.valid || pipeline.color_formats[0] != swapchain_info.format) {
+            gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
+            if (pipeline.valid) gpu::destroy_pipeline(device, pipeline.handle)!;
+            pipeline.valid = false;
+            pipeline.color_formats[0] = swapchain_info.format;
+            pipeline.handle = gpu::create_graphics_pipeline(device, &pipeline.desc)!;
+            pipeline.valid = true;
+        }
+        *width = swapchain_info.width;
+        *height = swapchain_info.height;
 
         gpu::begin_frame(device)!;
 
         Clock acquire_clk = clock::now();
-        gpu::AcquiredImage acquired;
-        if (try image = gpu::acquire_next_image(device, swapchain)) {
-            acquired = image;
-        } else {
-            sample_window::pixel_size(window, width, height);
-            gpu::resize_swapchain(device, swapchain, *width, *height)!;
-            foreach (&seen : image_seen) *seen = false;
+        gpu::AcquiredImage? acquired = gpu::acquire_next_image(device, swapchain);
+        if (catch err = acquired) {
+            if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
+                swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
+            }
             gpu::end_frame(device)!;
+            (void)frame_clk.mark();
             continue;
         }
         double acquire_ms = ms(acquire_clk.mark());
@@ -88,17 +127,12 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
         root.params = { (float)frame * 0.04f, bar, (float)*width, (float)*height };
 
         gpu::CommandList cmd = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
-        gpu::TextureBarrier to_attach = {
-            .texture       = acquired.texture,
-            .before_stage  = image_seen[acquired.index] ? gpu::Stage.PRESENT : gpu::Stage.HOST,
-            .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
-            .before_hazard = image_seen[acquired.index] ? gpu::Hazard.PRESENT_READ : gpu::Hazard.HOST_WRITE,
-            .after_hazard  = gpu::Hazard.COLOR_WRITE,
-            .old_layout    = image_seen[acquired.index] ? gpu::TextureLayout.PRESENT : gpu::TextureLayout.UNDEFINED,
-            .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-        };
+        gpu::TextureBarrier to_attach = gpu::texture_transition(
+            texture: acquired.texture,
+            before:  swapchain_texture_use(acquired.prior_layout)!,
+            after:   gpu::TextureUse.COLOR_ATTACHMENT,
+        )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
-        image_seen[acquired.index] = true;
 
         gpu::ColorTargetDesc[1] colors = {{
             .texture  = acquired.texture,
@@ -110,7 +144,7 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       pipeline,
+            pipeline:       pipeline.handle,
             vertex_root:    root_span.gpu,
             fragment_root:  root_span.gpu,
             vertex_count:   3,
@@ -118,15 +152,11 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
         )!;
         gpu::cmd_end_render_pass(&cmd)!;
 
-        gpu::TextureBarrier to_present = {
-            .texture       = acquired.texture,
-            .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-            .after_stage   = gpu::Stage.PRESENT,
-            .before_hazard = gpu::Hazard.COLOR_WRITE,
-            .after_hazard  = gpu::Hazard.PRESENT_READ,
-            .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-            .new_layout    = gpu::TextureLayout.PRESENT,
-        };
+        gpu::TextureBarrier to_present = gpu::texture_transition(
+            texture: acquired.texture,
+            before:  gpu::TextureUse.COLOR_ATTACHMENT,
+            after:   gpu::TextureUse.PRESENT,
+        )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
         gpu::end_commands(device, &cmd)!;
 
@@ -140,7 +170,7 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
                 src:         acquired.texture,
                 width:       *width,
                 height:      *height,
-                format:      gpu::Format.BGRA8_UNORM,
+                format:      swapchain_info.format,
                 from_stage:  gpu::Stage.PRESENT,
                 from_hazard: gpu::Hazard.PRESENT_READ,
                 from_layout: gpu::TextureLayout.PRESENT,
@@ -151,9 +181,10 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
         gpu::PresentDesc present_desc = { .swapchain = swapchain };
         if (catch err = gpu::present(device, &present_desc)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            sample_window::pixel_size(window, width, height);
-            gpu::resize_swapchain(device, swapchain, *width, *height)!;
-            foreach (&seen : image_seen) *seen = false;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
+            gpu::end_frame(device)!;
+            (void)frame_clk.mark();
+            continue;
         }
 
         gpu::end_frame(device)!;
@@ -166,6 +197,7 @@ fn ModeStats? run_mode_window(gpu::Device* device, gpu::SwapchainHandle swapchai
             if (frame_ms < stats.min_ms) stats.min_ms = frame_ms;
             if (frame_ms > stats.max_ms) stats.max_ms = frame_ms;
         }
+        frame++;
     }
 
     gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
@@ -202,16 +234,17 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
     defer (void)gpu::destroy_shader(&device, frag);
 
-    gpu::Format[1] color_formats = { gpu::Format.BGRA8_UNORM };
-    gpu::GraphicsPipelineDesc pipe_desc = {
+    TestcardPipeline pipeline = {};
+    pipeline.desc = (gpu::GraphicsPipelineDesc){
         .vertex_shader   = vert,
         .fragment_shader = frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = color_formats[..],
+        .color_formats   = pipeline.color_formats[..],
         .debug_name      = "testcard",
     };
-    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, pipeline);
+    defer {
+        if (pipeline.valid) (void)gpu::destroy_pipeline(&device, pipeline.handle);
+    }
 
     // Probe swapchain: FIFO is spec-guaranteed, so this always succeeds and
     // gives the query a surface to inspect.
@@ -224,6 +257,7 @@ fn void? run(sample_args::Options options) {
         .debug_name       = "explorer_probe",
     };
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &probe_desc)!;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     gpu::PresentModeSupport support = gpu::get_present_mode_support(&device, swapchain)!;
     if (!support.fifo) {
         io::printn("present_mode_explorer: driver does not report FIFO — spec violation");
@@ -252,12 +286,14 @@ fn void? run(sample_args::Options options) {
             mode_desc.present_mode = mode;
             mode_desc.debug_name   = "explorer_mode";
             swapchain = gpu::create_swapchain(&device, &surface, &mode_desc)!;
+            swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
         }
         ModeStats stats = run_mode_window(
             device:          &device,
             swapchain:       swapchain,
             window:          &window,
-            pipeline:        pipeline,
+            pipeline:        &pipeline,
+            swapchain_info:  swapchain_info,
             width:           &width,
             height:          &height,
             frames:          frames_per_mode,
