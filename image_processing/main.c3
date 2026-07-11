@@ -27,7 +27,12 @@ fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_ta
         .width      = IMAGE_SIZE,
         .height     = IMAGE_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
-        .usage      = { .storage, .transfer_src = capture_target },
+        .usage      = {
+            .storage,
+            .transfer_src = capture_target,
+            // Only the capture target crosses from compute to graphics readback.
+            .shared_queues = capture_target,
+        },
         .debug_name = name,
     };
     return gpu::create_texture(device, &desc);
