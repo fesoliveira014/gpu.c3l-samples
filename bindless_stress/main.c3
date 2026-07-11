@@ -32,7 +32,8 @@ fn gpu::TextureHandle? create_stress_texture(gpu::Device* device) {
         .width     = 1,
         .height    = 1,
         .format    = gpu::Format.RGBA8_UNORM,
-        .usage     = { .sampled, .transfer_dst },
+        // Graphics uploads while compute samples; share across possible distinct queue families.
+        .usage     = { .sampled, .transfer_dst, .shared_queues },
     };
     return gpu::create_texture(device, &desc);
 }

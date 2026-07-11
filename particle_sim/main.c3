@@ -39,7 +39,8 @@ fn void seed_particles(float* out) {
 fn gpu::BufferHandle? create_particle_buffer(gpu::Device* device, ZString name) {
     gpu::BufferDesc desc = {
         .size        = PARTICLE_BYTES,
-        .usage       = { .storage, .addressable },
+        // Compute and graphics may use distinct queue families; share instead of transferring ownership.
+        .usage       = { .storage, .addressable, .shared_queues },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
         .debug_name  = name,
     };
@@ -95,7 +96,8 @@ fn void? run(sample_args::Options options) {
     gpu::flush_buffer(&device, buffer_a, 0, 0)!;
 
     // Sim signals, render waits: two submits per frame linked by this
-    // timeline. Same VkQueue today — real overlap arrives with gpu.c3l#23.
+    // timeline. Compute may use a distinct queue; the timeline orders access,
+    // while shared particle buffers make cross-family access legal.
     gpu::SemaphoreDesc sem_desc = { .initial_value = (gpu::SemaphoreValue)0, .debug_name = "sim_to_render" };
     gpu::SemaphoreHandle sim_done = gpu::create_semaphore(&device, &sem_desc)!;
     defer (void)gpu::destroy_semaphore(&device, sim_done);

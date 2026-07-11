@@ -14,10 +14,11 @@ What it demonstrates:
   GPU addresses; no descriptor churn.
 - **Split submits + timeline semaphore** — simulation is its own submit
   (queue kind COMPUTE) that *signals* a timeline value at `COMPUTE_SHADER`;
-  the render submit *waits* that value at `VERTEX_SHADER`. Today both queue
-  kinds share one hardware queue (gpu.c3l#23), so this is structure, not
-  overlap — but the moment a real async compute queue lands, this sample
-  overlaps with zero changes.
+  the render submit *waits* that value at `VERTEX_SHADER`. Compute uses a
+  distinct queue when `device.caps.async_compute` is available and aliases
+  graphics otherwise. The timeline orders the accesses; the particle buffers'
+  shared-queue usage keeps access legal when those queues belong to different
+  families.
 - **First `BlendState` use** — additive (`ONE/ONE ADD`), order-independent,
   so no sorting and no depth buffer.
 - **Instanced billboards** — 6 vertices × 65k instances; the vertex shader
