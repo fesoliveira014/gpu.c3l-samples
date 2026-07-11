@@ -11,7 +11,8 @@ const uint TEXTURE_COUNT = 8192;
 // Same-frame retires are timeline-gated and only drain on a later frame, so
 // a churn frame consumes CHURN_SLICE fresh slots before any recycling.
 const uint CAPACITY_SLACK = CHURN_SLICE + 64;
-const uint UPLOAD_BATCH = 512;
+// A command list tracks at most 16 distinct pending texture layouts.
+const uint UPLOAD_BATCH = 16;
 const uint CHURN_FRAMES = 24;
 const uint CHURN_SLICE = 256;
 
@@ -78,14 +79,7 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
             .new_layout    = gpu::TextureLayout.TRANSFER_DST,
         };
         gpu::cmd_texture_barrier(&cmd, &to_dst)!;
-        gpu::GpuSpan slice = {
-            .gpu    = (gpu::GpuAddress)((ulong)staging_span.gpu + (ulong)i * 4),
-            .cpu    = (char*)staging_span.cpu + (usz)i * 4,
-            .size   = 4,
-            .buffer = staging_span.buffer,
-            .offset = staging_span.offset + (usz)i * 4,
-            .kind   = staging_span.kind,
-        };
+        gpu::GpuSpan slice = staging_span.checked_subspan((usz)i * 4, 4)!;
         gpu::BufferTextureCopyDesc upload = { .src = slice, .texture = tex };
         gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
         gpu::TextureBarrier to_read = {
@@ -259,7 +253,9 @@ fn void? run() {
             fleet.indices[slot]  = gpu::create_texture_descriptor(&device, fleet.textures[slot], null)!;
             fleet.salts[slot]    = frame;
         }
-        upload_slice(&device, &fleet, staging_span, cursor, CHURN_SLICE)!;
+        for (uint first = cursor; first < cursor + CHURN_SLICE; first += UPLOAD_BATCH) {
+            upload_slice(&device, &fleet, staging_span, first, UPLOAD_BATCH)!;
+        }
 
         dispatch_verify(&device, &fleet, pipeline, index_span, out_span, sampler)!;
         gpu::invalidate_buffer(&device, out_buf, 0, 0)!;
