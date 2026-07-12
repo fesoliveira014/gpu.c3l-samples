@@ -36,8 +36,7 @@ fn gpu::Vec4f rect_for(uint chunk, uint draw) {
     return { x0, y0, x0 + tile_w, y0 + band_h };
 }
 
-<* Roots are precomputed into a persistent buffer (the frame arena is 1 MiB
-   fixed — gpu.c3l#28); recording is pure cmd_draw work. *>
+<* Roots are precomputed in persistent memory so recording measures cmd_draw. *>
 fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::PipelineHandle pipeline, gpu::GpuAddress roots_base, uint chunk) {
     gpu::ColorTargetDesc[1] colors = {{
         .texture  = target,
