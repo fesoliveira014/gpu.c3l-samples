@@ -28,5 +28,6 @@ Build and run from the repository root:
 
 ```sh
 python3 scripts/build_shaders.py
+mkdir -p out
 c3c run hello_triangle_sdl -- --frames 30 --screenshot out/hello_triangle_sdl.png
 ```

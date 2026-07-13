@@ -12,6 +12,7 @@ Build and run from the repository root:
 
 ```sh
 python3 scripts/build_shaders.py
+mkdir -p out
 c3c run gpu_driven_draw_sdl -- --frames 30 --screenshot out/gpu_driven_draw_sdl.png
 ```
 

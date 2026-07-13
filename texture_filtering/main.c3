@@ -171,18 +171,33 @@ fn void? run(sample_args::Options options) {
     gpu::TextureIndex tex_index = gpu::create_texture_descriptor(&device, checker, null)!;
     defer (void)gpu::destroy_texture_descriptor(&device, tex_index);
 
-    gpu::SamplerIndex nearest_smp = make_sampler(&device, gpu::Filter.NEAREST, gpu::Filter.NEAREST, 0.0f)!;
+    gpu::SamplerIndex nearest_smp = make_sampler(
+        device:     &device,
+        filter:     gpu::Filter.NEAREST,
+        mip_filter: gpu::Filter.NEAREST,
+        max_lod:    0.0f,
+    )!;
     defer (void)gpu::destroy_sampler(&device, nearest_smp);
-    gpu::SamplerIndex bilinear_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.NEAREST, 0.0f)!;
+    gpu::SamplerIndex bilinear_smp = make_sampler(
+        device:     &device,
+        filter:     gpu::Filter.LINEAR,
+        mip_filter: gpu::Filter.NEAREST,
+        max_lod:    0.0f,
+    )!;
     defer (void)gpu::destroy_sampler(&device, bilinear_smp);
-    gpu::SamplerIndex trilinear_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.NEAREST, (float)MIP_LEVELS)!;
+    gpu::SamplerIndex trilinear_smp = make_sampler(
+        device:     &device,
+        filter:     gpu::Filter.LINEAR,
+        mip_filter: gpu::Filter.NEAREST,
+        max_lod:    (float)MIP_LEVELS,
+    )!;
     defer (void)gpu::destroy_sampler(&device, trilinear_smp);
     gpu::SamplerIndex aniso_smp = make_sampler(
-        &device,
-        gpu::Filter.LINEAR,
-        gpu::Filter.LINEAR,
-        (float)MIP_LEVELS,
-        aniso: caps.max_sampler_anisotropy > 0,
+        device:     &device,
+        filter:     gpu::Filter.LINEAR,
+        mip_filter: gpu::Filter.LINEAR,
+        max_lod:    (float)MIP_LEVELS,
+        aniso:      caps.max_sampler_anisotropy > 0,
     )!;
     defer (void)gpu::destroy_sampler(&device, aniso_smp);
 
