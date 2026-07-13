@@ -38,28 +38,34 @@ Windowed samples accept `--frames N` for an automatic smoke-test exit and
 ./build/hello_triangle_sdl --frames 30
 ```
 
-## Samples
+## Smoke matrix
 
-| Sample | Type | Purpose |
-|---|---|---|
-| `root_pointer_compute` | headless | Minimal root-pointer compute and readback. |
-| `bindless_texture_compute` | headless | Storage-image write and sampled read through the bindless heap. |
-| `offscreen_triangle` | headless | Dynamic rendering, viewport/scissor, readback, and PNG output. |
-| `memory_report` | headless | Heap budgets, arena statistics, diagnostics, and clean teardown. |
-| `bindless_stress` | headless | Descriptor creation and churn at scale. |
-| `multithreaded_recording` | headless | Recording-context throughput across worker counts. |
-| `pipeline_cache_timing` | headless | Cold, duplicate, and warm pipeline-cache timing. |
-| `image_processing` | headless | Procedural image, blur, histogram, and readback. |
-| `hello_triangle_sdl` | windowed | SDL3 surface, swapchain, and textured triangle. |
-| `textured_cube` | windowed | Depth-tested textured cube. |
-| `texture_filtering` | windowed | Mip levels, LOD, and filter modes. |
-| `gpu_driven_draw_sdl` | windowed | Compute culling and indirect multi-draw. |
-| `particle_sim` | windowed | Compute particles rendered as additive billboards. |
-| `frustum_culling` | windowed | GPU frustum culling feeding indirect draws. |
-| `shadow_mapping` | windowed | Depth-only shadow map and compare sampling. |
-| `deferred_shading` | windowed | G-buffer pass and animated-light resolve. |
-| `pbr_materials` | windowed | Instanced PBR material grid. |
-| `present_mode_explorer` | windowed | Present-mode enumeration and pacing. |
+All GPU samples require Vulkan 1.3. Windowed samples also require SDL3 and
+presentation support. Build with `c3c build <target>`, then run
+`./build/<target> <smoke args>`; omit arguments shown as `—`. Create `out/`
+before commands that request screenshots.
 
-`shared_selftest` verifies shared sample helpers. Each sample directory has a
-short README with its flags and expected output.
+| Target | Type | Additional capability | Smoke args |
+|---|---|---|---|
+| `shared_selftest` | helper | none | — |
+| `root_pointer_compute` | headless | compute, buffer device address | — |
+| `bindless_texture_compute` | headless | sampled and storage images | — |
+| `offscreen_triangle` | headless | dynamic rendering, transfer readback | `--screenshot out/offscreen_triangle.png` |
+| `memory_report` | headless | memory-budget reporting | — |
+| `bindless_stress` | headless | 8,512 texture descriptors | — |
+| `multithreaded_recording` | headless | host threads, recording contexts | — |
+| `pipeline_cache_timing` | headless | graphics and compute pipeline caches | — |
+| `image_processing` | headless | storage images, buffer atomics | `--screenshot out/image_processing.png` |
+| `hello_triangle_sdl` | windowed | baseline presentation | `--frames 30 --screenshot out/hello_triangle_sdl.png` |
+| `textured_cube` | windowed | depth attachment, sampled texture | `--frames 30 --screenshot out/textured_cube.png` |
+| `texture_filtering` | windowed | mip sampling; anisotropy optional | `--frames 30 --screenshot out/texture_filtering.png` |
+| `gpu_driven_draw_sdl` | windowed | indirect multi-draw; count buffer optional | `--frames 30 --screenshot out/gpu_driven_draw_sdl.png` |
+| `particle_sim` | windowed | compute; async compute queue optional | `--frames 30 --screenshot out/particle_sim.png` |
+| `frustum_culling` | windowed | indirect multi-draw | `--frames 30 --screenshot out/frustum_culling.png` |
+| `shadow_mapping` | windowed | depth compare sampling | `--frames 30 --screenshot out/shadow_mapping.png` |
+| `deferred_shading` | windowed | three color attachments, RGBA16F | `--frames 30 --screenshot out/deferred_shading.png` |
+| `pbr_materials` | windowed | instancing, sampled textures | `--frames 30 --screenshot out/pbr_materials.png` |
+| `present_mode_explorer` | windowed | FIFO; MAILBOX and IMMEDIATE optional | `--frames 30 --screenshot out/present_mode_explorer.png` |
+
+Each sample README describes its output and optional flags. CI runs this full
+matrix on lavapipe; windowed targets use xvfb and the listed frame bound.

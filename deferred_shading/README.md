@@ -2,8 +2,7 @@
 
 Classic two-pass deferred renderer: geometry rasterizes once into a
 multi-target G-buffer, then a fullscreen resolve pass shades every pixel with
-16 animated point lights. First sample to exercise multiple color attachments
-in a single render pass.
+16 animated point lights. The geometry pass uses multiple color attachments.
 
 ![deferred_shading](screenshots/deferred_shading.png)
 

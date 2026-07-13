@@ -37,11 +37,10 @@ so every tier's pipelines are proven to actually work.
 - **dedup ~0** is the library's in-memory PipelineKey table — identical
   descriptors alias one backend pipeline. This tier is always fast,
   regardless of driver.
-- **blob size is the honest signal for the warm tier**: lavapipe returns a
+- **blob size indicates warm-cache coverage**: lavapipe returns a
   32-byte header-only blob (it keeps no compiled-shader payload), so warm ≈
   cold there minus first-compile warmup. Drivers that populate the cache
-  (NVIDIA/AMD/Intel) show warm collapsing toward dedup. Nothing asserts
-  speedups; timings are advisory.
+  (NVIDIA/AMD/Intel) may move warm results toward dedup. Timings are advisory.
 
 ## Run
 

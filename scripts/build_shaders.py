@@ -4,9 +4,6 @@
 .spv is gitignored; .glsl is the source of truth. Run after cloning and
 after editing a shader or regenerating ABI includes (scripts/gen_abi.py).
 Set GLSLC to point at a specific glslc binary.
-
-Portable replacement for the old build_shaders.sh — runs anywhere python3
-and glslc do, including native Windows (no bash required).
 """
 
 import os

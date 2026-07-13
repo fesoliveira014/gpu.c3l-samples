@@ -35,7 +35,8 @@ fn void? run(sample_args::Options options) {
     };
     gpu::Device device = gpu::create_device(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
-    bool use_count = device.caps.draw_indirect_count;
+    gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
+    bool use_count = caps.draw_indirect_count;
     io::printfn("gpu_driven_draw_sdl: count-buffer path %s", use_count ? "on" : "off");
 
     gpu::SurfaceDesc surface = sample_window::surface_desc_for(&window)!;

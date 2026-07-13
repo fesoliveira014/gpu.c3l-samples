@@ -20,11 +20,9 @@ Shaders consume `include/shaders/descriptor_heap.glsl` — the published heap
 ABI include — and receive indices inside a root struct referenced by one
 64-bit push constant.
 
-Build and run (shaders first, see `samples/README.md`):
+Build and run from the repository root:
 
 ```sh
-sh scripts/build_shaders.sh
-cd samples
-c3c build bindless_texture_compute
-./build/bindless_texture_compute
+python3 scripts/build_shaders.py
+c3c run bindless_texture_compute
 ```

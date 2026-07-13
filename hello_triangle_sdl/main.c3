@@ -293,7 +293,7 @@ fn void? run(sample_args::Options options) {
         };
         fault frame_fault = @catch(gpu::@with_frame(&retry_frame, &device, run_frame, &work));
         if (frame_fault) {
-            if (retry_frame.device != null) gpu::end_frame(&retry_frame)!;
+            if (retry_frame.is_valid()) gpu::end_frame(&retry_frame)!;
             return frame_fault~;
         }
         if (!work.rendered) continue;
