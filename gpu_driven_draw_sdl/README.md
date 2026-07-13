@@ -8,10 +8,11 @@ count where `DeviceCaps.draw_indirect_count` holds); one indirect multi-draw
 renders the visible quads, with per-draw position/color pulled through
 `gl_DrawID`.
 
-Build shaders first (`scripts/build_shaders.sh`), then:
+Build and run from the repository root:
 
 ```sh
-c3c run gpu_driven_draw_sdl --path samples -- --frames 300
+python3 scripts/build_shaders.py
+c3c run gpu_driven_draw_sdl -- --frames 30 --screenshot out/gpu_driven_draw_sdl.png
 ```
 
-`--frames N` auto-exits after N frames; `--no-vsync` selects MAILBOX.
+`--no-vsync` requests MAILBOX; draw-count buffers are used when supported.

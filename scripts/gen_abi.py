@@ -3,9 +3,6 @@
 
 Uses the generator vendored in lib/gpu.c3l. Pass --check to verify committed
 outputs instead of rewriting them (exits nonzero on drift).
-
-Portable replacement for the old gen_abi.sh — runs anywhere python3 and c3c
-do, including native Windows (no bash required).
 """
 
 import os

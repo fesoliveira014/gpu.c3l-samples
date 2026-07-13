@@ -24,12 +24,9 @@ platform-neutral `SurfaceDesc`.
 Flags: `--frames N` renders N frames then exits (validation smoke);
 `--no-vsync` requests MAILBOX (falls back to FIFO when unsupported).
 
-Build and run (shaders first, see `samples/README.md`; SDL3 static lib vendored
-in `sdl3.c3l/linked-libs/`):
+Build and run from the repository root:
 
 ```sh
-sh scripts/build_shaders.sh
-cd samples
-c3c build hello_triangle_sdl
-./build/hello_triangle_sdl
+python3 scripts/build_shaders.py
+c3c run hello_triangle_sdl -- --frames 30 --screenshot out/hello_triangle_sdl.png
 ```

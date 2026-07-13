@@ -1,8 +1,8 @@
 # present_mode_explorer
 
 Windowed explorer for the present-mode query API: enumerate what the surface
-supports, cycle the swapchain through every supported mode at runtime, and
-put numbers on frame pacing per mode. Closes M22.4.
+supports, cycle the swapchain through every supported mode, and measure frame
+pacing per mode.
 
 ![present_mode_explorer](screenshots/present_mode_explorer.png)
 
@@ -37,8 +37,7 @@ warmup) and mean acquire-wait. **xvfb caveat**: the numbers above come from
 a virtual display — there is no real vblank, so FIFO does not throttle to a
 refresh rate and its outliers are X11 sync hiccups, not missed vsyncs. On a
 real display FIFO pins to the refresh interval and the acquire column shows
-where the driver blocks. Structure of the table is the point; nothing is
-asserted on timing.
+where the driver blocks. Timings are advisory.
 
 ## Run
 

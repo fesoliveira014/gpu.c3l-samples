@@ -109,6 +109,7 @@ fn void? run(sample_args::Options options) {
     };
     gpu::Device device = gpu::create_device(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
 
     gpu::SurfaceDesc surface = sample_window::surface_desc_for(&window)!;
     uint width;
@@ -176,7 +177,13 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_sampler(&device, bilinear_smp);
     gpu::SamplerIndex trilinear_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.NEAREST, (float)MIP_LEVELS)!;
     defer (void)gpu::destroy_sampler(&device, trilinear_smp);
-    gpu::SamplerIndex aniso_smp = make_sampler(&device, gpu::Filter.LINEAR, gpu::Filter.LINEAR, (float)MIP_LEVELS, aniso: device.caps.max_sampler_anisotropy > 0)!;
+    gpu::SamplerIndex aniso_smp = make_sampler(
+        &device,
+        gpu::Filter.LINEAR,
+        gpu::Filter.LINEAR,
+        (float)MIP_LEVELS,
+        aniso: caps.max_sampler_anisotropy > 0,
+    )!;
     defer (void)gpu::destroy_sampler(&device, aniso_smp);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = PLANE_VERT_SPIRV[..], .entry_point = "main" };
