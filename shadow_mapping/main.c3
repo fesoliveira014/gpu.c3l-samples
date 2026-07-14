@@ -130,7 +130,7 @@ fn void? run(sample_args::Options options) {
         .frames_in_flight    = 2,
         .application_name    = "shadow_mapping",
     };
-    gpu::Device device = gpu::create_device(&device_desc)!;
+    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::SurfaceDesc surface = sample_window::surface_desc_for(&window)!;

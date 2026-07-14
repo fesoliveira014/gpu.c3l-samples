@@ -33,7 +33,7 @@ fn void? run(sample_args::Options options) {
         .frames_in_flight    = 2,
         .application_name    = "gpu_driven_draw_sdl",
     };
-    gpu::Device device = gpu::create_device(&device_desc)!;
+    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
     gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
     bool use_count = caps.draw_indirect_count;

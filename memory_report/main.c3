@@ -207,7 +207,7 @@ fn void? run(bool detailed) {
         .debug_callback    = &capture_debug_message,
         .debug_user_data   = &debug_messages,
     };
-    gpu::Device device = gpu::create_device(&device_desc)!;
+    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::BufferDesc rejected_desc = {

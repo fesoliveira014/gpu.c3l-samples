@@ -159,7 +159,7 @@ fn void? run() {
         .texture_capacity            = TEXTURE_COUNT + CAPACITY_SLACK,
         .application_name            = "bindless_stress",
     };
-    gpu::Device device = gpu::create_device(&device_desc)!;
+    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
 
     Fleet fleet = {

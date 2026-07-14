@@ -64,7 +64,7 @@ fn void? run() {
         .frames_in_flight  = 2,
         .application_name  = "root_pointer_compute",
     };
-    gpu::Device device = gpu::create_device(&device_desc)!;
+    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer gpu::destroy_device(&device)!!;
 
     gpu::BufferDesc io_desc = {
