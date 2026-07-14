@@ -127,17 +127,20 @@ fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l frustum culling", 1024, 600)!;
     defer sample_window::destroy_sample_window(&window);
 
-    gpu::DeviceDesc device_desc = {
-        .backend             = gpu::BackendKind.VULKAN,
-        .enable_validation   = true,
-        .enable_presentation = true,
-        .frames_in_flight    = 2,
-        .application_name    = "frustum_culling",
+    gpu::RuntimeDesc runtime_desc = {
+        .backend           = gpu::BackendKind.VULKAN,
+        .enable_validation = true,
+        .application_name  = "frustum_culling",
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+
+    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
+    defer (void)gpu::destroy_surface(&surface);
+
+    gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
 
-    gpu::SurfaceDesc surface = sample_window::surface_desc_for(&window)!;
     uint width;
     uint height;
     sample_window::pixel_size(&window, &width, &height);
