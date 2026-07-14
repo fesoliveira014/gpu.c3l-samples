@@ -223,7 +223,7 @@ fn gpu::Device? make_device(char[] blob) {
         .pipeline_cache_data = blob,
         .application_name    = "pipeline_cache_timing",
     };
-    return gpu::create_device(&desc);
+    return gpu::create_device_from_desc(&desc);
 }
 
 fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
