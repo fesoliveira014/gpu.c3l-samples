@@ -17,9 +17,9 @@ Flow per frame:
    and signals the image's present semaphore internally.
 5. `present`; `SWAPCHAIN_OUT_OF_DATE` here also triggers a resize.
 
-The core library never sees SDL: `samples/shared/sample_window_sdl.c3` extracts
-native handles from SDL3 window properties (Wayland/X11/Win32) into the
-platform-neutral `SurfaceDesc`.
+The core library never sees SDL: `shared/sample_window_sdl.c3` extracts
+native handles from SDL3 window properties and calls the matching typed surface
+module. The returned `Surface` belongs to the GPU runtime.
 
 Flags: `--frames N` renders N frames then exits (validation smoke);
 `--no-vsync` requests MAILBOX (falls back to FIFO when unsupported).

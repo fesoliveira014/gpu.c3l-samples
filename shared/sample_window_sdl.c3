@@ -2,6 +2,9 @@ module sample_window;
 
 import sdl;
 import gpu;
+import gpu::surface::wayland;
+import gpu::surface::win32;
+import gpu::surface::x11;
 
 faultdef WINDOW_INIT_FAILED, UNSUPPORTED_VIDEO_DRIVER;
 
@@ -32,34 +35,75 @@ fn void destroy_sample_window(SampleWindow* sample) {
     sdl::quit();
 }
 
-<* Extract platform-native handles from the SDL window into the gpu-neutral
-   SurfaceDesc, branching on SDL's active video driver. *>
-fn gpu::SurfaceDesc? surface_desc_for(SampleWindow* sample) {
+<* Create a runtime-owned surface for the active SDL video driver. *>
+fn gpu::Surface? create_surface(gpu::Runtime* runtime, SampleWindow* sample) {
     sdl::PropertiesID props = sdl::get_window_properties(sample.window);
     ZString driver = (ZString)sdl::get_current_video_driver();
 
     if (driver.str_view() == "wayland") {
-        return (gpu::SurfaceDesc){
-            .platform       = gpu::PlatformKind.WAYLAND,
-            .native_display = sdl::get_pointer_property(props, (char*)sdl::WindowProperties.WAYLAND_DISPLAY_POINTER, null),
-            .native_window  = sdl::get_pointer_property(props, (char*)sdl::WindowProperties.WAYLAND_SURFACE_POINTER, null),
-        };
+        return gpu::surface::wayland::create_surface(
+            runtime,
+            (gpu::surface::wayland::DisplayHandle)sdl::get_pointer_property(
+                props,
+                (char*)sdl::WindowProperties.WAYLAND_DISPLAY_POINTER,
+                null,
+            ),
+            (gpu::surface::wayland::SurfaceHandle)sdl::get_pointer_property(
+                props,
+                (char*)sdl::WindowProperties.WAYLAND_SURFACE_POINTER,
+                null,
+            ),
+        );
     }
     if (driver.str_view() == "x11") {
-        return (gpu::SurfaceDesc){
-            .platform       = gpu::PlatformKind.X11,
-            .native_display = sdl::get_pointer_property(props, (char*)sdl::WindowProperties.X11_DISPLAY_POINTER, null),
-            .native_window  = (void*)(uptr)sdl::get_number_property(props, (char*)sdl::WindowProperties.X11_WINDOW_NUMBER, 0),
-        };
+        return gpu::surface::x11::create_surface(
+            runtime,
+            (gpu::surface::x11::DisplayHandle)sdl::get_pointer_property(
+                props,
+                (char*)sdl::WindowProperties.X11_DISPLAY_POINTER,
+                null,
+            ),
+            (gpu::surface::x11::WindowHandle)sdl::get_number_property(
+                props,
+                (char*)sdl::WindowProperties.X11_WINDOW_NUMBER,
+                0,
+            ),
+        );
     }
     if (driver.str_view() == "windows") {
-        return (gpu::SurfaceDesc){
-            .platform       = gpu::PlatformKind.WIN32,
-            .native_display = sdl::get_pointer_property(props, (char*)sdl::WindowProperties.WIN32_INSTANCE_POINTER, null),
-            .native_window  = sdl::get_pointer_property(props, (char*)sdl::WindowProperties.WIN32_HWND_POINTER, null),
-        };
+        return gpu::surface::win32::create_surface(
+            runtime,
+            (gpu::surface::win32::InstanceHandle)sdl::get_pointer_property(
+                props,
+                (char*)sdl::WindowProperties.WIN32_INSTANCE_POINTER,
+                null,
+            ),
+            (gpu::surface::win32::WindowHandle)sdl::get_pointer_property(
+                props,
+                (char*)sdl::WindowProperties.WIN32_HWND_POINTER,
+                null,
+            ),
+        );
     }
     return UNSUPPORTED_VIDEO_DRIVER~;
+}
+
+fn gpu::Device? create_presentation_device(
+    gpu::Runtime* runtime,
+    gpu::Surface* surface,
+) {
+    gpu::DeviceRequest request = gpu::request_presentation(
+        gpu::strict_device_request(),
+        surface,
+    )!;
+    gpu::AdapterList adapters = gpu::enumerate_adapters(runtime)!;
+    for (uint i = 0; i < adapters.count; i++) {
+        gpu::Adapter adapter = adapters.get(i)!;
+        if (!gpu::supports_presentation(&adapter, surface)!) continue;
+        if (!gpu::supports_device_request(&adapter, &request)!.supported) continue;
+        return gpu::create_device(&adapter, &request);
+    }
+    return gpu::UNSUPPORTED_FEATURE~;
 }
 
 fn void pixel_size(SampleWindow* sample, uint* width, uint* height) {
