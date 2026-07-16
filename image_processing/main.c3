@@ -193,8 +193,8 @@ fn void? run(sample_args::Options options) {
     gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::submit(&device, &submit)!;
-    gpu::wait_queue_idle(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::CompletionPoint completion = gpu::submit(&device, &submit)!;
+    gpu::wait_completion(completion, ulong::max)!;
     gpu::invalidate_buffer(&device, bins, 0, 0)!;
 
     print_histogram(bin_counts)!;

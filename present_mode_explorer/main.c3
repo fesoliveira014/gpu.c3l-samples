@@ -82,6 +82,7 @@ fn ModeStats? run_mode_window(
     double total_acquire_ms = 0.0;
     Clock frame_clk = clock::now();
     long frame = 0;
+    gpu::CompletionPoint last_graphics;
 
     while (frame < frames) {
         sample_window::WindowEvents events = sample_window::pump_events(window);
@@ -96,7 +97,7 @@ fn ModeStats? run_mode_window(
         }
 
         if (!pipeline.valid || pipeline.color_formats[0] != swapchain_info.format) {
-            gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
+            if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (pipeline.valid) gpu::destroy_pipeline(device, pipeline.handle)!;
             pipeline.valid = false;
             pipeline.color_formats[0] = swapchain_info.format;
@@ -162,7 +163,7 @@ fn ModeStats? run_mode_window(
 
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        gpu::submit(device, &submit)!;
+        last_graphics = gpu::submit(device, &submit)!;
 
         if (frame == capture_at) {
             sample_capture::capture_texture_png(
@@ -200,7 +201,7 @@ fn ModeStats? run_mode_window(
         frame++;
     }
 
-    gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
+    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
     if (stats.frames > 0) {
         stats.mean_ms = total_ms / stats.frames;
         stats.acquire_ms = total_acquire_ms / stats.frames;

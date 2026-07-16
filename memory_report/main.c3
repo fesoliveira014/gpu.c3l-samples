@@ -108,7 +108,6 @@ fn ZString debug_resource_name(gpu::DebugResourceKind kind) {
         case gpu::DebugResourceKind.BUFFER: return "buffer";
         case gpu::DebugResourceKind.TEXTURE: return "texture";
         case gpu::DebugResourceKind.PIPELINE: return "pipeline";
-        case gpu::DebugResourceKind.SEMAPHORE: return "semaphore";
         case gpu::DebugResourceKind.SWAPCHAIN: return "swapchain";
         case gpu::DebugResourceKind.SHADER: return "shader";
         case gpu::DebugResourceKind.RECORDING_CONTEXT: return "recording_context";
