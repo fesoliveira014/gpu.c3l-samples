@@ -105,6 +105,7 @@ fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uin
         .height     = height,
         .format     = gpu::Format.D32_FLOAT,
         .usage      = { .depth_attach, .sampled = sampled },
+        .access     = { .graphics },
         .debug_name = name,
     };
     return gpu::create_texture(device, &desc);
@@ -193,6 +194,7 @@ fn void? run(sample_args::Options options) {
         .size        = CUBE_VERTEX_COUNT * 16,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "cube_vertices",
     };
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
@@ -205,6 +207,7 @@ fn void? run(sample_args::Options options) {
         .size        = INSTANCE_COUNT * 48,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "instances",
     };
     gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;

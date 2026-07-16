@@ -112,6 +112,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         .height    = SMOKE_SIZE,
         .format    = gpu::Format.RGBA8_UNORM,
         .usage     = { .color_attach, .transfer_src },
+        .access     = { .graphics },
     };
     gpu::TextureHandle target = gpu::create_texture(device, &target_desc)!;
     defer (void)gpu::destroy_texture(device, target);
@@ -120,6 +121,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         .size        = SCALE_COUNT * float::size * 2,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "cache_smoke_io",
     };
     gpu::BufferHandle io = gpu::create_buffer(device, &io_desc)!;

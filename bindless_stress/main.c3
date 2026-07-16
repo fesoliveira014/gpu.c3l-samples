@@ -32,8 +32,8 @@ fn gpu::TextureHandle? create_stress_texture(gpu::Device* device) {
         .width     = 1,
         .height    = 1,
         .format    = gpu::Format.RGBA8_UNORM,
-        // Graphics uploads while compute samples; share across possible distinct queue families.
-        .usage     = { .sampled, .transfer_dst, .shared_queues },
+        .usage     = { .sampled, .transfer_dst },
+        .access     = { .graphics, .compute },
     };
     return gpu::create_texture(device, &desc);
 }
@@ -187,6 +187,7 @@ fn void? run() {
         .size        = UPLOAD_BATCH * 4,
         .usage       = { .transfer_src },
         .memory_kind = gpu::MemoryKind.STAGING,
+        .access      = { .graphics },
         .debug_name  = "stress_staging",
     };
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
@@ -197,6 +198,7 @@ fn void? run() {
         .size        = TEXTURE_COUNT * 4,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .compute },
         .debug_name  = "stress_indices",
     };
     gpu::BufferHandle index_buf = gpu::create_buffer(&device, &index_desc)!;
@@ -207,6 +209,7 @@ fn void? run() {
         .size        = TEXTURE_COUNT * 16,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.READBACK,
+        .access      = { .compute },
         .debug_name  = "stress_results",
     };
     gpu::BufferHandle out_buf = gpu::create_buffer(&device, &out_desc)!;

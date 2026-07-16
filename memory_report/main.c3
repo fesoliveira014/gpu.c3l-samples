@@ -214,6 +214,7 @@ fn void? run(bool detailed) {
         .size        = 0,
         .usage       = { .storage },
         .memory_kind = gpu::MemoryKind.DEVICE,
+        .access      = { .graphics },
         .debug_name  = "report_rejected_buffer",
     };
     gpu::BufferHandle? maybe_rejected = gpu::create_buffer(&device, &rejected_desc);
@@ -226,21 +227,24 @@ fn void? run(bool detailed) {
 
     gpu::BufferDesc device_buf = {
         .size = 1 << 20, .usage = { .storage, .addressable }, .memory_kind = gpu::MemoryKind.DEVICE,
-        .debug_name = "report_device_buffer",
+        .access      = { .graphics },
+        .debug_name  = "report_device_buffer",
     };
     gpu::BufferHandle storage = gpu::create_buffer(&device, &device_buf)!;
     defer (void)gpu::destroy_buffer(&device, storage);
 
     gpu::BufferDesc staging_buf = {
         .size = 256 << 10, .usage = { .transfer_src }, .memory_kind = gpu::MemoryKind.STAGING,
-        .debug_name = "report_staging_buffer",
+        .access      = { .graphics },
+        .debug_name  = "report_staging_buffer",
     };
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_buf)!;
     defer (void)gpu::destroy_buffer(&device, staging);
 
     gpu::BufferDesc readback_buf = {
         .size = 64 << 10, .usage = { .transfer_dst }, .memory_kind = gpu::MemoryKind.READBACK,
-        .debug_name = "report_readback_buffer",
+        .access      = { .graphics },
+        .debug_name  = "report_readback_buffer",
     };
     gpu::BufferHandle readback = gpu::create_buffer(&device, &readback_buf)!;
     defer (void)gpu::destroy_buffer(&device, readback);
@@ -252,6 +256,7 @@ fn void? run(bool detailed) {
         .mip_levels = 4,
         .format    = gpu::Format.RGBA8_UNORM,
         .usage     = { .sampled, .transfer_dst },
+        .access     = { .graphics },
         .debug_name = "report_sampled_texture",
     };
     gpu::TextureHandle sampled = gpu::create_texture(&device, &sampled_desc)!;
@@ -263,6 +268,7 @@ fn void? run(bool detailed) {
         .height    = 512,
         .format    = gpu::Format.D32_FLOAT,
         .usage     = { .depth_attach },
+        .access     = { .graphics },
         .debug_name = "report_depth_texture",
     };
     gpu::TextureHandle depth = gpu::create_texture(&device, &depth_desc)!;

@@ -84,6 +84,7 @@ fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uin
         .height    = height,
         .format    = gpu::Format.D32_FLOAT,
         .usage     = { .depth_attach },
+        .access     = { .graphics },
         .debug_name = "cube_depth",
     };
     return gpu::create_texture(device, &desc);
@@ -149,6 +150,7 @@ fn void? run(sample_args::Options options) {
         .size        = CUBE_VERTEX_BYTES,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "cube_vertices",
     };
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
@@ -163,6 +165,7 @@ fn void? run(sample_args::Options options) {
         .height    = TEX_SIZE,
         .format    = gpu::Format.RGBA8_UNORM,
         .usage     = { .sampled, .transfer_dst },
+        .access     = { .graphics },
     };
     gpu::TextureHandle checker = gpu::create_texture(&device, &tex_desc)!;
     defer (void)gpu::destroy_texture(&device, checker);
@@ -181,6 +184,7 @@ fn void? run(sample_args::Options options) {
 
     gpu::BufferDesc staging_desc = {
         .size = TEX_SIZE * TEX_SIZE * 4, .usage = { .transfer_src }, .memory_kind = gpu::MemoryKind.STAGING,
+        .access      = { .graphics },
     };
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
     defer (void)gpu::destroy_buffer(&device, staging);

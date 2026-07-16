@@ -121,6 +121,7 @@ fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uin
         .height     = height,
         .format     = gpu::Format.D32_FLOAT,
         .usage      = { .depth_attach },
+        .access     = { .graphics },
         .debug_name = "pbr_depth",
     };
     return gpu::create_texture(device, &desc);
@@ -194,6 +195,7 @@ fn void? run(sample_args::Options options) {
         .size        = SPHERE_VERTEX_COUNT * 32,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "sphere_vertices",
     };
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
@@ -211,6 +213,7 @@ fn void? run(sample_args::Options options) {
             .height     = TEX_SIZE,
             .format     = gpu::Format.RGBA8_UNORM,
             .usage      = { .sampled, .transfer_dst },
+            .access     = { .graphics },
             .debug_name = i == 0 ? (ZString)"albedo_white" : (ZString)"albedo_checker",
         };
         textures[i] = gpu::create_texture(&device, &tex_desc)!;
@@ -237,6 +240,7 @@ fn void? run(sample_args::Options options) {
         .size        = TEXTURE_COUNT * TEX_SIZE * TEX_SIZE * 4,
         .usage       = { .transfer_src },
         .memory_kind = gpu::MemoryKind.STAGING,
+        .access      = { .graphics },
         .debug_name  = "albedo_staging",
     };
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
@@ -250,6 +254,7 @@ fn void? run(sample_args::Options options) {
         .size        = GRID * GRID * SphereInstance::size,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "sphere_instances",
     };
     gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
@@ -262,6 +267,7 @@ fn void? run(sample_args::Options options) {
         .size        = MATERIAL_COUNT * Material::size,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "material_table",
     };
     gpu::BufferHandle materials = gpu::create_buffer(&device, &materials_desc)!;
