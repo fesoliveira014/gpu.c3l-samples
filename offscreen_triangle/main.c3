@@ -258,8 +258,8 @@ fn void? run(sample_args::Options options) {
     gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::submit(&device, &submit)!;
-    gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CompletionPoint completion = gpu::submit(&device, &submit)!;
+    gpu::wait_completion(completion, ulong::max)!;
 
     char[] pixels = mem::new_array(char, RT_BYTES);
     defer mem::free(pixels.ptr);

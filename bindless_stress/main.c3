@@ -97,8 +97,8 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
     gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::submit(device, &submit)!;
-    gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::wait_completion(completion, ulong::max)!;
 }
 
 fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fleet, gpu::PipelineHandle pipeline, gpu::GpuSpan index_span, gpu::GpuSpan out_span, gpu::SamplerIndex sampler) {
@@ -129,8 +129,8 @@ fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fle
     gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::submit(device, &submit)!;
-    gpu::wait_queue_idle(device, gpu::QueueKind.COMPUTE)!;
+    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::wait_completion(completion, ulong::max)!;
 }
 
 fn void? check_results(Fleet* fleet, gpu::GpuSpan out_span) {

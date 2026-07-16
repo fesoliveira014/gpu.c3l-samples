@@ -261,6 +261,7 @@ fn void? run(sample_args::Options options) {
     bool depth_fresh = true;
     long frame = 0;
     bool running = true;
+    gpu::CompletionPoint last_graphics;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -277,7 +278,7 @@ fn void? run(sample_args::Options options) {
             || depth_width != swapchain_info.width
             || depth_height != swapchain_info.height;
         if (pipeline_changed || depth_changed) {
-            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+            if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
         }
         if (pipeline_changed) {
             if (scene_pipe_valid) gpu::destroy_pipeline(&device, scene_pipe)!;
@@ -432,10 +433,10 @@ fn void? run(sample_args::Options options) {
 
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        gpu::submit(&device, &submit)!;
+        last_graphics = gpu::submit(&device, &submit)!;
 
         if (sample_stats) {
-            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+            if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             gpu::invalidate_buffer(&device, stats, 0, 0)!;
             uint visible = *visible_count;
             io::printfn("frame %d: visible %d / %d", frame, visible, INSTANCE_COUNT);
@@ -469,7 +470,7 @@ fn void? run(sample_args::Options options) {
         if (options.frames > 0 && frame >= options.frames) running = false;
     }
 
-    gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
 
     if (max_visible == 0 || max_visible > INSTANCE_COUNT) return gpu::INVALID_RESOURCE_STATE~;
     if (min_visible >= max_visible) {

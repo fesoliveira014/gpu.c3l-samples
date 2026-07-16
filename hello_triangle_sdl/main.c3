@@ -23,6 +23,7 @@ struct FrameWork {
     gpu::GpuSpan                 staging_span;
     sample_args::Options*        options;
     bool*                        checker_uploaded;
+    gpu::CompletionPoint*         last_graphics;
     long                         frame;
     bool                         rendered;
 }
@@ -133,7 +134,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     gpu::end_commands(&cmd)!;
     gpu::CommandList[1] lists = { cmd };
     gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = ctx.swapchain };
-    gpu::submit(ctx.device, &submit)!;
+    *ctx.last_graphics = gpu::submit(ctx.device, &submit)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
         sample_capture::capture_texture_png(
@@ -262,6 +263,7 @@ fn void? run(sample_args::Options options) {
     bool checker_uploaded = false;
     long frame = 0;
     bool running = true;
+    gpu::CompletionPoint last_graphics;
     gpu::FrameToken retry_frame;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
@@ -274,7 +276,7 @@ fn void? run(sample_args::Options options) {
             continue;
         }
         if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
-            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+            if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
             color_formats[0] = swapchain_info.format;
@@ -294,6 +296,7 @@ fn void? run(sample_args::Options options) {
             .staging_span     = staging_span,
             .options          = &options,
             .checker_uploaded = &checker_uploaded,
+            .last_graphics    = &last_graphics,
             .frame            = frame,
         };
         fault frame_fault = @catch(gpu::@with_frame(&retry_frame, &device, run_frame, &work));
@@ -307,5 +310,5 @@ fn void? run(sample_args::Options options) {
         if (options.frames > 0 && frame >= options.frames) running = false;
     }
 
-    gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
 }

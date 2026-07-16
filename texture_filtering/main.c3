@@ -232,6 +232,7 @@ fn void? run(sample_args::Options options) {
     }
     long frame = 0;
     bool running = true;
+    gpu::CompletionPoint last_graphics;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -243,7 +244,7 @@ fn void? run(sample_args::Options options) {
             continue;
         }
         if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
-            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+            if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
             color_formats[0] = swapchain_info.format;
@@ -335,7 +336,7 @@ fn void? run(sample_args::Options options) {
         gpu::end_commands(&cmd)!;
         gpu::CommandList[1] lists = { cmd };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        gpu::submit(&device, &submit)!;
+        last_graphics = gpu::submit(&device, &submit)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
@@ -363,5 +364,5 @@ fn void? run(sample_args::Options options) {
         if (options.frames > 0 && frame >= options.frames) running = false;
     }
 
-    gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
 }

@@ -98,13 +98,6 @@ fn void? run(sample_args::Options options) {
     seed_particles((float*)span_a.cpu);
     gpu::flush_buffer(&device, buffer_a, 0, 0)!;
 
-    // Sim signals, render waits: two submits per frame linked by this
-    // timeline. Compute may use a distinct queue; the timeline orders access,
-    // while shared particle buffers make cross-family access legal.
-    gpu::SemaphoreDesc sem_desc = { .initial_value = (gpu::SemaphoreValue)0, .debug_name = "sim_to_render" };
-    gpu::SemaphoreHandle sim_done = gpu::create_semaphore(&device, &sem_desc)!;
-    defer (void)gpu::destroy_semaphore(&device, sim_done);
-
     gpu::ShaderDesc sim_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = SIM_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle sim_shader = gpu::create_shader(&device, &sim_sd)!;
     defer (void)gpu::destroy_shader(&device, sim_shader);
@@ -149,6 +142,8 @@ fn void? run(sample_args::Options options) {
     sample_camera::Mat4 view = sample_camera::look_at({ 0.0f, 0.6f, 2.6f }, { 0, 0, 0 }, { 0, 1, 0 });
     long frame = 0;
     bool running = true;
+    gpu::CompletionPoint last_compute;
+    gpu::CompletionPoint last_graphics;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -160,7 +155,7 @@ fn void? run(sample_args::Options options) {
             continue;
         }
         if (!draw_pipeline_valid || color_formats[0] != swapchain_info.format) {
-            gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
+            if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (draw_pipeline_valid) gpu::destroy_pipeline(&device, draw_pipe)!;
             draw_pipeline_valid = false;
             color_formats[0] = swapchain_info.format;
@@ -182,7 +177,7 @@ fn void? run(sample_args::Options options) {
         gpu::GpuSpan read_span = even ? span_a : span_b;
         gpu::GpuSpan write_span = even ? span_b : span_a;
 
-        // Submit 1: simulation, signaling the timeline at compute completion.
+        // The draw submission waits on this compute completion across queues.
         gpu::GpuSpan sim_span = gpu::alloc_frame_span(&frame_token, SimRoot::size, 16)!;
         SimRoot* sim_root = (SimRoot*)sim_span.cpu;
         sim_root.read_gpu  = read_span.gpu;
@@ -200,11 +195,9 @@ fn void? run(sample_args::Options options) {
         )!;
         gpu::end_commands(&sim_cmd)!;
         gpu::CommandList[1] sim_lists = { sim_cmd };
-        gpu::SemaphoreSignal[1] sim_signals = {{ .semaphore = sim_done, .value = (gpu::SemaphoreValue)(frame + 1), .stage = gpu::Stage.COMPUTE_SHADER }};
-        gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..], .signals = sim_signals[..] };
-        gpu::submit(&device, &sim_submit)!;
+        gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..] };
+        last_compute = gpu::submit(&device, &sim_submit)!;
 
-        // Submit 2: rendering, waiting on the freshly simulated state.
         gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, ParticleDrawRoot::size, 16)!;
         ParticleDrawRoot* draw_root = (ParticleDrawRoot*)draw_span.cpu;
         sample_camera::Mat4 view_proj = sample_camera::mul(
@@ -275,9 +268,13 @@ fn void? run(sample_args::Options options) {
         gpu::end_commands(&cmd)!;
 
         gpu::CommandList[1] draw_lists = { cmd };
-        gpu::SemaphoreWait[1] draw_waits = {{ .semaphore = sim_done, .value = (gpu::SemaphoreValue)(frame + 1), .stage = gpu::Stage.VERTEX_SHADER }};
-        gpu::SubmitDesc draw_submit = { .command_lists = draw_lists[..], .waits = draw_waits[..], .swapchain = swapchain };
-        gpu::submit(&device, &draw_submit)!;
+        gpu::CompletionPoint[1] draw_waits = { last_compute };
+        gpu::SubmitDesc draw_submit = {
+            .command_lists    = draw_lists[..],
+            .completion_waits = draw_waits[..],
+            .swapchain        = swapchain,
+        };
+        last_graphics = gpu::submit(&device, &draw_submit)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
@@ -305,6 +302,6 @@ fn void? run(sample_args::Options options) {
         if (options.frames > 0 && frame >= options.frames) running = false;
     }
 
-    gpu::wait_queue_idle(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::wait_queue_idle(&device, gpu::QueueKind.COMPUTE)!;
+    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
+    if (last_compute.is_valid()) gpu::wait_completion(last_compute, ulong::max)!;
 }

@@ -180,8 +180,8 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
     }
 
     gpu::SubmitDesc submit = { .command_lists = all_lists[..] };
-    gpu::submit(device, &submit)!;
-    gpu::wait_queue_idle(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::wait_completion(completion, ulong::max)!;
 
     gpu::readback_texture_data(
         device:      device,
