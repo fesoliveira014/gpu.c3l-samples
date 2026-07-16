@@ -77,6 +77,7 @@ fn void? run(sample_args::Options options) {
         .height     = RT_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
         .usage      = { .color_attach, .transfer_src },
+        .access     = { .graphics },
         .debug_name = "render_target",
     };
     gpu::TextureHandle target = gpu::create_texture(&device, &rt_desc)!;
@@ -88,6 +89,7 @@ fn void? run(sample_args::Options options) {
         .height     = TEX_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
         .usage      = { .sampled, .transfer_dst },
+        .access     = { .graphics },
         .debug_name = "checker",
     };
     gpu::TextureHandle checker = gpu::create_texture(&device, &tex_desc)!;
@@ -107,6 +109,7 @@ fn void? run(sample_args::Options options) {
 
     gpu::BufferDesc staging_desc = {
         .size = TEX_SIZE * TEX_SIZE * 4, .usage = { .transfer_src }, .memory_kind = gpu::MemoryKind.STAGING,
+        .access      = { .graphics },
     };
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
     defer (void)gpu::destroy_buffer(&device, staging);

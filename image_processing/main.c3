@@ -30,9 +30,8 @@ fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_ta
         .usage      = {
             .storage,
             .transfer_src = capture_target,
-            // Only the capture target crosses from compute to graphics readback.
-            .shared_queues = capture_target,
         },
+        .access     = { .graphics = capture_target, .compute },
         .debug_name = name,
     };
     return gpu::create_texture(device, &desc);
@@ -61,6 +60,7 @@ fn void? run(sample_args::Options options) {
         .size        = HISTOGRAM_BINS * 4,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .compute },
         .debug_name  = "histogram_bins",
     };
     gpu::BufferHandle bins = gpu::create_buffer(&device, &bins_desc)!;

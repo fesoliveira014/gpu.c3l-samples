@@ -39,9 +39,9 @@ fn void seed_particles(float* out) {
 fn gpu::BufferHandle? create_particle_buffer(gpu::Device* device, ZString name) {
     gpu::BufferDesc desc = {
         .size        = PARTICLE_BYTES,
-        // Compute and graphics may use distinct queue families; share instead of transferring ownership.
-        .usage       = { .storage, .addressable, .shared_queues },
+        .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics, .compute },
         .debug_name  = name,
     };
     return gpu::create_buffer(device, &desc);

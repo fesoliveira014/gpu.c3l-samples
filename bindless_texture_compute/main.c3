@@ -33,6 +33,7 @@ fn void? run() {
         .height     = TEX_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
         .usage      = { .sampled, .storage },
+        .access     = { .compute },
         .debug_name = "heap_target",
     };
     gpu::TextureHandle texture = gpu::create_texture(&device, &tex_desc)!;
@@ -55,6 +56,7 @@ fn void? run() {
         .size        = TEX_SIZE * TEX_SIZE * 16,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.READBACK,
+        .access      = { .compute },
         .debug_name  = "sample_output",
     };
     gpu::BufferHandle output = gpu::create_buffer(&device, &out_desc)!;

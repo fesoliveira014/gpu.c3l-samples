@@ -219,6 +219,7 @@ fn RunResult? run_on_device(bool validation) {
         .height     = TARGET_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
         .usage      = { .color_attach, .transfer_src },
+        .access     = { .graphics },
         .debug_name = "mtrec_target",
     };
     gpu::TextureHandle target = gpu::create_texture(&device, &target_desc)!;
@@ -253,6 +254,7 @@ fn RunResult? run_on_device(bool validation) {
         .size        = (usz)CHUNKS * DRAWS_PER_CHUNK * QuadRoot::size,
         .usage       = { .storage, .addressable },
         .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
+        .access      = { .graphics },
         .debug_name  = "mtrec_roots",
     };
     gpu::BufferHandle roots_buf = gpu::create_buffer(&device, &roots_desc)!;
