@@ -333,7 +333,9 @@ fn void? run(sample_args::Options options) {
         draw_root.instances_gpu = instances_span.gpu;
         draw_root.vertex_gpu    = vertex_span.gpu;
 
-        gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.GRAPHICS)!;
+        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+
+        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
 
         if (depth_fresh) {
             gpu::TextureBarrier depth_init = {
@@ -429,11 +431,11 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&cmd)!;
+        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
 
-        gpu::CommandList[1] lists = { cmd };
+        gpu::ExecutableCommandList[1] lists = { cmd_executable };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        last_graphics = gpu::submit(&device, &submit)!;
+        last_graphics = gpu::submit(graphics_queue, &submit)!;
 
         if (sample_stats) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;

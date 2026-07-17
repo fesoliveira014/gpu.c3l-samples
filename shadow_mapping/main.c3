@@ -350,7 +350,9 @@ fn void? run(sample_args::Options options) {
         scene_root.shadow_map     = shadow_index;
         scene_root.shadow_sampler = shadow_sampler;
 
-        gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.GRAPHICS)!;
+        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+
+        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
 
         // Shadow map: back to writable (from sampled after the first frame).
         gpu::TextureBarrier shadow_to_write = {
@@ -445,11 +447,11 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&cmd)!;
+        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
 
-        gpu::CommandList[1] lists = { cmd };
+        gpu::ExecutableCommandList[1] lists = { cmd_executable };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        last_graphics = gpu::submit(&device, &submit)!;
+        last_graphics = gpu::submit(graphics_queue, &submit)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(

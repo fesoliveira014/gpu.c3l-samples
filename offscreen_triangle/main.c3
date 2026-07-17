@@ -160,7 +160,9 @@ fn void? run(sample_args::Options options) {
     frag_root.texture_index = tex_index;
     frag_root.sampler_index = smp_index;
 
-    gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
 
     gpu::TextureBarrier checker_to_dst = {
         .texture       = checker,
@@ -255,10 +257,10 @@ fn void? run(sample_args::Options options) {
     )!;
     gpu::cmd_end_render_pass(&cmd)!;
 
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(&device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
 
     char[] pixels = mem::new_array(char, RT_BYTES);

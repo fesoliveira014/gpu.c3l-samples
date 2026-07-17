@@ -30,7 +30,9 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
     root.output_gpu = gpu::get_buffer_address(work.device, work.output)!;
     root.count      = COUNT;
 
-    gpu::CommandList cmd = gpu::begin_commands(work.device, gpu::QueueKind.COMPUTE)!;
+    gpu::Queue compute_queue = gpu::get_queue(work.device, gpu::QueueKind.COMPUTE)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: work.pipeline,
@@ -43,11 +45,11 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &bar)!;
-    gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
 
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(work.device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
 
     gpu::GpuSpan out_span = gpu::get_buffer_span(work.device, work.output)!;

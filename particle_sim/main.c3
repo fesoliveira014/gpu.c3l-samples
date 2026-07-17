@@ -186,17 +186,19 @@ fn void? run(sample_args::Options options) {
         sim_root.dt        = FRAME_DT;
         sim_root.time      = (float)frame * FRAME_DT;
 
-        gpu::CommandList sim_cmd = gpu::begin_commands(&device, gpu::QueueKind.COMPUTE)!;
+        gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+
+        gpu::CommandList sim_cmd = gpu::begin_commands(compute_queue)!;
         gpu::cmd_dispatch(
             commands: &sim_cmd,
             pipeline: sim_pipe,
             root:     sim_span.gpu,
             groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
         )!;
-        gpu::end_commands(&sim_cmd)!;
-        gpu::CommandList[1] sim_lists = { sim_cmd };
+        gpu::ExecutableCommandList sim_cmd_executable = gpu::end_commands(&sim_cmd)!;
+        gpu::ExecutableCommandList[1] sim_lists = { sim_cmd_executable };
         gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..] };
-        last_compute = gpu::submit(&device, &sim_submit)!;
+        last_compute = gpu::submit(compute_queue, &sim_submit)!;
 
         gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, ParticleDrawRoot::size, 16)!;
         ParticleDrawRoot* draw_root = (ParticleDrawRoot*)draw_span.cpu;
@@ -216,7 +218,9 @@ fn void? run(sample_args::Options options) {
         draw_root.aspect        = (float)swapchain_info.width / (float)swapchain_info.height;
         draw_root.quad_size     = 0.0045f;
 
-        gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.GRAPHICS)!;
+        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+
+        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
         gpu::TextureUse swapchain_before;
         switch (acquired.prior_layout) {
             case gpu::TextureLayout.UNDEFINED:
@@ -265,16 +269,16 @@ fn void? run(sample_args::Options options) {
             .new_layout    = gpu::TextureLayout.PRESENT,
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&cmd)!;
+        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
 
-        gpu::CommandList[1] draw_lists = { cmd };
+        gpu::ExecutableCommandList[1] draw_lists = { cmd_executable };
         gpu::CompletionPoint[1] draw_waits = { last_compute };
         gpu::SubmitDesc draw_submit = {
             .command_lists    = draw_lists[..],
             .completion_waits = draw_waits[..],
             .swapchain        = swapchain,
         };
-        last_graphics = gpu::submit(&device, &draw_submit)!;
+        last_graphics = gpu::submit(graphics_queue, &draw_submit)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(

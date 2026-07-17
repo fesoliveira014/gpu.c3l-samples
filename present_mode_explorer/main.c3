@@ -127,7 +127,9 @@ fn ModeStats? run_mode_window(
         float bar = (float)(frame % 100) / 100.0f;
         root.params = { (float)frame * 0.04f, bar, (float)*width, (float)*height };
 
-        gpu::CommandList cmd = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
+        gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
+
+        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
             before:  swapchain_texture_use(acquired.prior_layout)!,
@@ -159,11 +161,11 @@ fn ModeStats? run_mode_window(
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::end_commands(&cmd)!;
+        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
 
-        gpu::CommandList[1] lists = { cmd };
+        gpu::ExecutableCommandList[1] lists = { cmd_executable };
         gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
-        last_graphics = gpu::submit(device, &submit)!;
+        last_graphics = gpu::submit(graphics_queue, &submit)!;
 
         if (frame == capture_at) {
             sample_capture::capture_texture_png(

@@ -61,14 +61,13 @@ fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::Pi
 }
 
 struct WorkerArgs {
-    gpu::Device*                device;
-    gpu::RecordingContextHandle ctx;
+    gpu::Queue                  queue;
     gpu::TextureHandle          target;
     gpu::PipelineHandle         pipeline;
     gpu::GpuAddress             roots_base;
     uint                        first_chunk;
     uint                        stride;
-    gpu::CommandList[CHUNKS]    lists;
+    gpu::ExecutableCommandList[CHUNKS] lists;
     uint                        list_count;
     bool                        failed;
 }
@@ -77,14 +76,20 @@ fn int record_worker(void* arg) {
     WorkerArgs* args = (WorkerArgs*)arg;
     @pool_init(&allocators::LIBC_ALLOCATOR, 64 * 1024) {
         for (uint chunk = args.first_chunk; chunk < CHUNKS; chunk += args.stride) {
-            gpu::CommandList? list = gpu::begin_commands(args.device, gpu::QueueKind.GRAPHICS, args.ctx);
+            gpu::CommandList? list = gpu::begin_commands(args.queue);
             if (catch list) { args.failed = true; return 1; }
             if (catch record_chunk(&list, args.target, args.pipeline, args.roots_base, chunk)) {
+                (void)gpu::discard_commands(&list);
                 args.failed = true;
                 return 1;
             }
-            if (catch err = gpu::end_commands(&list)) { args.failed = true; return 1; }
-            args.lists[args.list_count++] = list;
+            gpu::ExecutableCommandList? executable = gpu::end_commands(&list);
+            if (catch executable) {
+                (void)gpu::discard_commands(&list);
+                args.failed = true;
+                return 1;
+            }
+            args.lists[args.list_count++] = executable;
         }
     };
     return 0;
@@ -104,10 +109,19 @@ fn int main(String[] args) {
 <* One full run: clear preamble + CHUNKS band lists + submit + readback.
    `workers` == 0 records everything on the calling thread. Returns record
    wall time; the image lands in `out`. *>
-fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::PipelineHandle pipeline, gpu::GpuAddress roots_base, gpu::RecordingContextHandle[] contexts, uint workers, char[] out, bool* target_seen) {
+fn NanoDuration? run_once(
+    gpu::Device* device,
+    gpu::TextureHandle target,
+    gpu::PipelineHandle pipeline,
+    gpu::GpuAddress roots_base,
+    uint workers,
+    char[] out,
+    bool* target_seen,
+) {
     gpu::FrameToken frame = gpu::begin_frame(device)!;
+    gpu::Queue queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
-    gpu::CommandList preamble = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandList preamble = gpu::begin_commands(queue)!;
     // Readback round-trips the layout back to COLOR_ATTACHMENT, so only the
     // first run needs a transition out of UNDEFINED.
     if (!*target_seen) {
@@ -131,22 +145,22 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
     gpu::RenderPassDesc clear_pass = { .colors = clear_colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::cmd_begin_render_pass(&preamble, &clear_pass)!;
     gpu::cmd_end_render_pass(&preamble)!;
-    gpu::end_commands(&preamble)!;
-    gpu::CommandList[1] preamble_lists = { preamble };
+    gpu::ExecutableCommandList preamble_executable = gpu::end_commands(&preamble)!;
+    gpu::ExecutableCommandList[1] preamble_lists = { preamble_executable };
     gpu::SubmitDesc preamble_submit = { .command_lists = preamble_lists[..] };
-    gpu::submit(device, &preamble_submit)!;
+    gpu::submit(queue, &preamble_submit)!;
     *target_seen = true;
 
-    gpu::CommandList[CHUNKS] all_lists;
+    gpu::ExecutableCommandList[CHUNKS] all_lists;
 
     Clock clk = clock::now();
     NanoDuration record_time;
     if (workers == 0) {
         for (uint chunk = 0; chunk < CHUNKS; chunk++) {
-            gpu::CommandList list = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
+            gpu::CommandList list = gpu::begin_commands(queue)!;
             record_chunk(&list, target, pipeline, roots_base, chunk)!;
-            gpu::end_commands(&list)!;
-            all_lists[chunk] = list;
+            gpu::ExecutableCommandList list_executable = gpu::end_commands(&list)!;
+            all_lists[chunk] = list_executable;
         }
         record_time = clk.mark();
     } else {
@@ -155,8 +169,7 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
         Thread[MAX_WORKERS] threads;
         for (uint w = 0; w < workers; w++) {
             wargs[w] = {
-                .device      = device,
-                .ctx         = contexts[w],
+                .queue       = queue,
                 .target      = target,
                 .pipeline    = pipeline,
                 .roots_base  = roots_base,
@@ -167,8 +180,15 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
         }
         for (uint w = 0; w < workers; w++) threads[w].join()!;
         record_time = clk.mark();
-        for (uint w = 0; w < workers; w++) {
-            if (wargs[w].failed) return gpu::INVALID_ARGUMENT~;
+        bool failed = false;
+        for (uint w = 0; w < workers; w++) failed = failed || wargs[w].failed;
+        if (failed) {
+            for (uint w = 0; w < workers; w++) {
+                for (uint i = 0; i < wargs[w].list_count; i++) {
+                    (void)gpu::discard_executable_commands(&wargs[w].lists[i]);
+                }
+            }
+            return gpu::INVALID_ARGUMENT~;
         }
         // Chunk order in the submit does not affect pixels (disjoint bands),
         // but keep it deterministic anyway: chunk index = w + i*workers.
@@ -180,7 +200,7 @@ fn NanoDuration? run_once(gpu::Device* device, gpu::TextureHandle target, gpu::P
     }
 
     gpu::SubmitDesc submit = { .command_lists = all_lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
 
     gpu::readback_texture_data(
@@ -244,11 +264,6 @@ fn RunResult? run_on_device(bool validation) {
     defer (void)gpu::destroy_pipeline(&device, pipeline);
 
     uint workers = MAX_WORKERS;
-    gpu::RecordingContextHandle[MAX_WORKERS] contexts;
-    for (uint w = 0; w < workers; w++) contexts[w] = gpu::create_recording_context(&device)!;
-    defer {
-        for (uint w = 0; w < workers; w++) (void)gpu::destroy_recording_context(&device, contexts[w]);
-    }
 
     gpu::BufferDesc roots_desc = {
         .size        = (usz)CHUNKS * DRAWS_PER_CHUNK * QuadRoot::size,
@@ -281,7 +296,6 @@ fn RunResult? run_on_device(bool validation) {
         target:      target,
         pipeline:    pipeline,
         roots_base:  roots_span.gpu,
-        contexts:    contexts[..],
         workers:     0,
         out:         serial_image,
         target_seen: &target_seen,
@@ -291,7 +305,6 @@ fn RunResult? run_on_device(bool validation) {
         target:      target,
         pipeline:    pipeline,
         roots_base:  roots_span.gpu,
-        contexts:    contexts[..],
         workers:     workers,
         out:         threaded_image,
         target_seen: &target_seen,
