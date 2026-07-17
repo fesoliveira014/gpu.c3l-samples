@@ -13,9 +13,10 @@ Flow per frame:
    (minimized windows stay dormant without recreate storms).
 3. Barrier the acquired image to `COLOR_ATTACHMENT` (from `UNDEFINED` on first
    use, `PRESENT` after), render the textured triangle, barrier to `PRESENT`.
-4. `submit` with `.swapchain` set — the backend waits the acquire semaphore
-   and signals the image's present semaphore internally.
-5. `present`; `SWAPCHAIN_OUT_OF_DATE` here also triggers a resize.
+4. `submit` with `acquired.readiness`; the successful graphics submission
+   consumes the one-shot readiness and returns the render completion point.
+5. `present` consumes the acquired image with that completion point;
+   `SWAPCHAIN_OUT_OF_DATE` here also triggers a resize.
 
 The core library never sees SDL: `shared/sample_window_sdl.c3` extracts
 native handles from SDL3 window properties and calls the matching typed surface

@@ -316,6 +316,7 @@ fn void? run(sample_args::Options options) {
             camera.view());
 
         gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
+        defer catch (void)gpu::end_frame(&frame_token);
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
@@ -450,7 +451,10 @@ fn void? run(sample_args::Options options) {
         gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
 
         gpu::ExecutableCommandList[1] lists = { cmd_executable };
-        gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = swapchain };
+        gpu::SubmitDesc submit = {
+            .command_lists = lists[..],
+            .readiness     = acquired.readiness,
+        };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
 
         if (options.capture_frame(frame)) {
@@ -467,8 +471,7 @@ fn void? run(sample_args::Options options) {
             )!;
         }
 
-        gpu::PresentDesc present_desc = { .swapchain = swapchain };
-        if (catch err = gpu::present(&device, &present_desc)) {
+        if (catch err = gpu::present(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }

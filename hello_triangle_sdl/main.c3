@@ -135,7 +135,10 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
 
     gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
     gpu::ExecutableCommandList[1] lists = { cmd_executable };
-    gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = ctx.swapchain };
+    gpu::SubmitDesc submit = {
+        .command_lists = lists[..],
+        .readiness     = acquired.readiness,
+    };
     *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
@@ -152,8 +155,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
         )!;
     }
 
-    gpu::PresentDesc present_desc = { .swapchain = ctx.swapchain };
-    if (catch err = gpu::present(ctx.device, &present_desc)) {
+    if (catch err = gpu::present(ctx.device, &acquired, *ctx.last_graphics)) {
         if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
         *ctx.swapchain_info = sample_window::recover_swapchain(ctx.device, ctx.swapchain, ctx.window)!;
     }
