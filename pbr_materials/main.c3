@@ -191,18 +191,18 @@ fn void? run(sample_args::Options options) {
         if (depth_valid) (void)gpu::destroy_texture(&device, depth);
     }
 
-    gpu::BufferDesc vertex_desc = {
-        .size        = SPHERE_VERTEX_COUNT * 32,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "sphere_vertices",
+    gpu::AllocationDesc vertex_desc = {
+        .size         = SPHERE_VERTEX_COUNT * 32,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "sphere_vertices",
     };
-    gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
-    defer (void)gpu::destroy_buffer(&device, vertices);
-    gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
+    gpu::GpuAllocation vertex_allocation = gpu::allocate_memory(&device, &vertex_desc)!;
+    defer (void)gpu::free_allocation(&device, &vertex_allocation);
+    gpu::GpuSpan vertex_span = gpu::get_allocation_span(&device, vertex_allocation)!;
     write_sphere_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
-    gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::flush_mapped_span(&device, vertex_span)!;
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureHandle[TEXTURE_COUNT] textures;
@@ -237,48 +237,48 @@ fn void? run(sample_args::Options options) {
     gpu::SamplerIndex albedo_sampler = gpu::create_sampler(&device, &sampler_desc)!;
     defer (void)gpu::destroy_sampler(&device, albedo_sampler);
 
-    gpu::BufferDesc staging_desc = {
-        .size        = TEXTURE_COUNT * TEX_SIZE * TEX_SIZE * 4,
-        .usage       = { .transfer_src },
-        .memory_kind = gpu::MemoryKind.STAGING,
-        .access      = { .graphics },
-        .debug_name  = "albedo_staging",
+    gpu::AllocationDesc staging_desc = {
+        .size         = TEXTURE_COUNT * TEX_SIZE * TEX_SIZE * 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "albedo_staging",
     };
-    gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
-    defer (void)gpu::destroy_buffer(&device, staging);
-    gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
+    gpu::GpuAllocation staging_allocation = gpu::allocate_memory(&device, &staging_desc)!;
+    defer (void)gpu::free_allocation(&device, &staging_allocation);
+    gpu::GpuSpan staging_span = gpu::get_allocation_span(&device, staging_allocation)!;
     char* staging_texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
     write_texels(staging_texels, false);
     write_texels(staging_texels + TEX_SIZE * TEX_SIZE * 4, true);
-    gpu::flush_buffer(&device, staging, 0, 0)!;
+    gpu::flush_mapped_span(&device, staging_span)!;
 
-    gpu::BufferDesc instances_desc = {
-        .size        = GRID * GRID * SphereInstance::size,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "sphere_instances",
+    gpu::AllocationDesc instances_desc = {
+        .size         = GRID * GRID * SphereInstance::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "sphere_instances",
     };
-    gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
-    defer (void)gpu::destroy_buffer(&device, instances);
-    gpu::GpuSpan instances_span = gpu::get_buffer_span(&device, instances)!;
+    gpu::GpuAllocation instances_allocation = gpu::allocate_memory(&device, &instances_desc)!;
+    defer (void)gpu::free_allocation(&device, &instances_allocation);
+    gpu::GpuSpan instances_span = gpu::get_allocation_span(&device, instances_allocation)!;
     write_instances((SphereInstance*)gpu::get_span_mapping(&device, instances_span)!.ptr);
-    gpu::flush_buffer(&device, instances, 0, 0)!;
+    gpu::flush_mapped_span(&device, instances_span)!;
     gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
-    gpu::BufferDesc materials_desc = {
-        .size        = MATERIAL_COUNT * Material::size,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "material_table",
+    gpu::AllocationDesc materials_desc = {
+        .size         = MATERIAL_COUNT * Material::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "material_table",
     };
-    gpu::BufferHandle materials = gpu::create_buffer(&device, &materials_desc)!;
-    defer (void)gpu::destroy_buffer(&device, materials);
-    gpu::GpuSpan materials_span = gpu::get_buffer_span(&device, materials)!;
+    gpu::GpuAllocation materials_allocation = gpu::allocate_memory(&device, &materials_desc)!;
+    defer (void)gpu::free_allocation(&device, &materials_allocation);
+    gpu::GpuSpan materials_span = gpu::get_allocation_span(&device, materials_allocation)!;
     Material* material_data = (Material*)gpu::get_span_mapping(&device, materials_span)!.ptr;
     write_materials(material_data, texture_indices[0], texture_indices[1]);
-    gpu::flush_buffer(&device, materials, 0, 0)!;
+    gpu::flush_mapped_span(&device, materials_span)!;
     gpu::GpuAddress materials_address = gpu::get_span_address(&device, materials_span)!;
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = PBR_VERT_SPIRV[..], .entry_point = "main" };
@@ -317,6 +317,9 @@ fn void? run(sample_args::Options options) {
     long frame = 0;
     bool running = true;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) (void)gpu::wait_completion(last_graphics, ulong::max);
+    }
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;

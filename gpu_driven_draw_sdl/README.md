@@ -16,4 +16,4 @@ mkdir -p out
 c3c run gpu_driven_draw_sdl -- --frames 30 --screenshot out/gpu_driven_draw_sdl.png
 ```
 
-`--no-vsync` requests MAILBOX; draw-count buffers are used when supported.
+`--no-vsync` requests MAILBOX; indirect-count spans are used when supported.

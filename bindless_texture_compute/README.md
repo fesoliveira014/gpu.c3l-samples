@@ -1,26 +1,22 @@
 # bindless_texture_compute
 
-Headless proof of the bindless descriptor heap. No window, no descriptor sets
-in application code.
+Headless bindless descriptor-heap sample. Application code uses no descriptor
+sets.
 
-Flow:
+## Flow
 
-1. Create a 16x16 `sampled|storage` texture and register it in the heap once —
-   one `TextureIndex` serves both access kinds.
-2. Create a nearest-filter sampler (`SamplerIndex`).
-3. Dispatch 1 writes a coordinate pattern into the image through
+1. Register one sampled/storage texture and one nearest sampler.
+2. The first dispatch writes a coordinate pattern through
    `store_storage_texture(TextureIndex, ...)`.
-4. A texture barrier orders the storage write against sampled reads
-   (GENERAL layout throughout).
-5. Dispatch 2 samples the image through `sample_texture_2d(TextureIndex,
-   SamplerIndex, uv)` into a root-pointer buffer.
-6. Readback verifies the pattern.
+3. A texture barrier orders the write against sampled reads.
+4. The second dispatch samples through `sample_texture_2d(TextureIndex,
+   SamplerIndex, uv)` into a `CPU_READ` allocation through its span address.
+5. A host barrier and mapping invalidation precede verification.
 
-Shaders consume `include/shaders/descriptor_heap.glsl` — the published heap
-ABI include — and receive indices inside a root struct referenced by one
-64-bit push constant.
+Both shaders consume `include/shaders/descriptor_heap.glsl` and receive heap
+indices through a root struct.
 
-Build and run from the repository root:
+Run from the repository root:
 
 ```sh
 python3 scripts/build_shaders.py

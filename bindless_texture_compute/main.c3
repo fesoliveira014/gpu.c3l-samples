@@ -52,15 +52,16 @@ fn void? run() {
     gpu::SamplerIndex smp_index = gpu::create_sampler(&device, &sampler_desc)!;
     defer (void)gpu::destroy_sampler(&device, smp_index);
 
-    gpu::BufferDesc out_desc = {
-        .size        = TEX_SIZE * TEX_SIZE * 16,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.READBACK,
-        .access      = { .compute },
-        .debug_name  = "sample_output",
+    gpu::AllocationDesc out_desc = {
+        .size         = TEX_SIZE * TEX_SIZE * 16,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .compute },
+        .debug_name   = "sample_output",
     };
-    gpu::BufferHandle output = gpu::create_buffer(&device, &out_desc)!;
-    defer (void)gpu::destroy_buffer(&device, output);
+    gpu::GpuAllocation output = gpu::allocate_memory(&device, &out_desc)!;
+    defer (void)gpu::free_allocation(&device, &output);
+    gpu::GpuSpan output_span = gpu::get_allocation_span(&device, output)!;
 
     gpu::ShaderDesc write_shader_desc = {
         .stage = gpu::ShaderStage.COMPUTE, .spirv = HEAP_WRITE_SPIRV[..], .entry_point = "main",
@@ -90,7 +91,7 @@ fn void? run() {
 
     gpu::GpuSpan sample_root_span = gpu::alloc_frame_span(&frame_token, SampleRoot::size, 16)!;
     SampleRoot* sample_root = (SampleRoot*)gpu::get_span_mapping(&device, sample_root_span)!.ptr;
-    sample_root.output_gpu    = gpu::get_buffer_address(&device, output)!;
+    sample_root.output_gpu    = gpu::get_span_address(&device, output_span)!;
     sample_root.texture_index = tex_index;
     sample_root.sampler_index = smp_index;
     sample_root.width         = TEX_SIZE;
@@ -138,7 +139,7 @@ fn void? run() {
     )!;
 
     gpu::BufferBarrier out_bar = {
-        .buffer = output, .offset = 0, .size = TEX_SIZE * TEX_SIZE * 16,
+        .span = output_span,
         .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
@@ -149,15 +150,9 @@ fn void? run() {
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
-    gpu::invalidate_buffer(
-        device: &device,
-        buffer: output,
-        offset: 0,
-        size:   0,
-    )!;
+    gpu::invalidate_mapped_span(&device, output_span)!;
 
-    gpu::GpuSpan out_span = gpu::get_buffer_span(&device, output)!;
-    float* texels = (float*)gpu::get_span_mapping(&device, out_span)!.ptr;
+    float* texels = (float*)gpu::get_span_mapping(&device, output_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             float* texel = &texels[(y * TEX_SIZE + x) * 4];

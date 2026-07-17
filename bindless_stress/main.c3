@@ -59,12 +59,12 @@ struct Fleet {
 fn void? upload_slice(
     gpu::Device* device,
     Fleet* fleet,
-    gpu::BufferHandle staging_buffer,
     gpu::GpuSpan staging_span,
     uint first,
     uint count,
 ) {
-    char* texels = (char*)gpu::get_span_mapping(device, staging_span)!.ptr;
+    gpu::GpuSpan upload_span = staging_span.checked_subspan(0, (usz)count * 4)!;
+    char* texels = (char*)gpu::get_span_mapping(device, upload_span)!.ptr;
     for (uint i = 0; i < count; i++) {
         char[4] p = payload_for(first + i, fleet.salts[first + i]);
         texels[i * 4]     = p[0];
@@ -72,16 +72,12 @@ fn void? upload_slice(
         texels[i * 4 + 2] = p[2];
         texels[i * 4 + 3] = p[3];
     }
-    gpu::flush_buffer(
-        device: device,
-        buffer: staging_buffer,
-        offset: staging_span.offset,
-        size:   (usz)count * 4,
-    )!;
+    gpu::flush_mapped_span(device, upload_span)!;
 
-    gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
 
-    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
     for (uint i = 0; i < count; i++) {
         gpu::TextureHandle tex = fleet.textures[first + i];
         gpu::TextureBarrier to_dst = {
@@ -94,7 +90,7 @@ fn void? upload_slice(
             .new_layout    = gpu::TextureLayout.TRANSFER_DST,
         };
         gpu::cmd_texture_barrier(&cmd, &to_dst)!;
-        gpu::GpuSpan slice = staging_span.checked_subspan((usz)i * 4, 4)!;
+        gpu::GpuSpan slice = upload_span.checked_subspan((usz)i * 4, 4)!;
         gpu::BufferTextureCopyDesc upload = { .src = slice, .texture = tex };
         gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
         gpu::TextureBarrier to_read = {
@@ -108,10 +104,10 @@ fn void? upload_slice(
         };
         gpu::cmd_texture_barrier(&cmd, &to_read)!;
     }
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion)!;
 }
 
@@ -120,22 +116,15 @@ fn void? dispatch_verify(
     gpu::Device* device,
     Fleet* fleet,
     gpu::PipelineHandle pipeline,
-    gpu::BufferHandle index_buffer,
     gpu::GpuSpan index_span,
     gpu::GpuAddress index_address,
-    gpu::BufferHandle out_buffer,
     gpu::GpuSpan out_span,
     gpu::GpuAddress out_address,
     gpu::SamplerIndex sampler,
 ) {
     uint* index_data = (uint*)gpu::get_span_mapping(device, index_span)!.ptr;
     for (uint i = 0; i < TEXTURE_COUNT; i++) index_data[i] = (uint)fleet.indices[i];
-    gpu::flush_buffer(
-        device: device,
-        buffer: index_buffer,
-        offset: 0,
-        size:   0,
-    )!;
+    gpu::flush_mapped_span(device, index_span)!;
 
     gpu::GpuSpan root_span = gpu::alloc_frame_span(frame, StressRoot::size, 16)!;
     StressRoot* root = (StressRoot*)gpu::get_span_mapping(device, root_span)!.ptr;
@@ -155,7 +144,7 @@ fn void? dispatch_verify(
         groups:   { (TEXTURE_COUNT + VERIFY_WORKGROUP - 1) / VERIFY_WORKGROUP, 1, 1 },
     )!;
     gpu::BufferBarrier host_read = {
-        .buffer = out_buffer, .offset = out_span.offset, .size = out_span.size,
+        .span = out_span,
         .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
@@ -217,39 +206,39 @@ fn void? run() {
     gpu::SamplerIndex sampler = gpu::create_sampler(&device, &sampler_desc)!;
     defer (void)gpu::destroy_sampler(&device, sampler);
 
-    gpu::BufferDesc staging_desc = {
-        .size        = UPLOAD_BATCH * 4,
-        .usage       = { .transfer_src },
-        .memory_kind = gpu::MemoryKind.STAGING,
-        .access      = { .graphics },
-        .debug_name  = "stress_staging",
+    gpu::AllocationDesc staging_desc = {
+        .size         = UPLOAD_BATCH * 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .compute },
+        .debug_name   = "stress_staging",
     };
-    gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
-    defer (void)gpu::destroy_buffer(&device, staging);
-    gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
+    gpu::GpuAllocation staging = gpu::allocate_memory(&device, &staging_desc)!;
+    defer (void)gpu::free_allocation(&device, &staging);
+    gpu::GpuSpan staging_span = gpu::get_allocation_span(&device, staging)!;
 
-    gpu::BufferDesc index_desc = {
-        .size        = TEXTURE_COUNT * 4,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .compute },
-        .debug_name  = "stress_indices",
+    gpu::AllocationDesc index_desc = {
+        .size         = TEXTURE_COUNT * 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .compute },
+        .debug_name   = "stress_indices",
     };
-    gpu::BufferHandle index_buf = gpu::create_buffer(&device, &index_desc)!;
-    defer (void)gpu::destroy_buffer(&device, index_buf);
-    gpu::GpuSpan index_span = gpu::get_buffer_span(&device, index_buf)!;
+    gpu::GpuAllocation index_allocation = gpu::allocate_memory(&device, &index_desc)!;
+    defer (void)gpu::free_allocation(&device, &index_allocation);
+    gpu::GpuSpan index_span = gpu::get_allocation_span(&device, index_allocation)!;
     gpu::GpuAddress index_address = gpu::get_span_address(&device, index_span)!;
 
-    gpu::BufferDesc out_desc = {
-        .size        = TEXTURE_COUNT * 16,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.READBACK,
-        .access      = { .compute },
-        .debug_name  = "stress_results",
+    gpu::AllocationDesc out_desc = {
+        .size         = TEXTURE_COUNT * 16,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .compute },
+        .debug_name   = "stress_results",
     };
-    gpu::BufferHandle out_buf = gpu::create_buffer(&device, &out_desc)!;
-    defer (void)gpu::destroy_buffer(&device, out_buf);
-    gpu::GpuSpan out_span = gpu::get_buffer_span(&device, out_buf)!;
+    gpu::GpuAllocation out_allocation = gpu::allocate_memory(&device, &out_desc)!;
+    defer (void)gpu::free_allocation(&device, &out_allocation);
+    gpu::GpuSpan out_span = gpu::get_allocation_span(&device, out_allocation)!;
     gpu::GpuAddress out_address = gpu::get_span_address(&device, out_span)!;
 
     gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = VERIFY_COMP_SPIRV[..], .entry_point = "main" };
@@ -259,7 +248,6 @@ fn void? run() {
     gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, pipeline);
 
-    // Fill: create the fleet, then upload payloads in batches.
     Clock clk = clock::now();
     for (uint i = 0; i < TEXTURE_COUNT; i++) {
         fleet.textures[i] = create_stress_texture(&device)!;
@@ -271,12 +259,11 @@ fn void? run() {
     gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
     for (uint first = 0; first < TEXTURE_COUNT; first += UPLOAD_BATCH) {
         upload_slice(
-            device:         &device,
-            fleet:          &fleet,
-            staging_buffer: staging,
-            staging_span:   staging_span,
-            first:          first,
-            count:          UPLOAD_BATCH,
+            device:       &device,
+            fleet:        &fleet,
+            staging_span: staging_span,
+            first:        first,
+            count:        UPLOAD_BATCH,
         )!;
     }
     NanoDuration upload_time = clk.mark();
@@ -286,25 +273,17 @@ fn void? run() {
         device:        &device,
         fleet:         &fleet,
         pipeline:      pipeline,
-        index_buffer:  index_buf,
         index_span:    index_span,
         index_address: index_address,
-        out_buffer:    out_buf,
         out_span:      out_span,
         out_address:   out_address,
         sampler:       sampler,
     )!;
     NanoDuration fill_verify_time = clk.mark();
-    gpu::invalidate_buffer(
-        device: &device,
-        buffer: out_buf,
-        offset: 0,
-        size:   0,
-    )!;
+    gpu::invalidate_mapped_span(&device, out_span)!;
     check_results(&device, &fleet, out_span)!;
     gpu::end_frame(&frame_token)!;
 
-    // Churn: rolling destroy/recreate slices across frames; verify every frame.
     uint cursor = 0;
     clk = clock::now();
     for (uint frame = 0; frame < CHURN_FRAMES; frame++) {
@@ -319,12 +298,11 @@ fn void? run() {
         }
         for (uint first = cursor; first < cursor + CHURN_SLICE; first += UPLOAD_BATCH) {
             upload_slice(
-                device:         &device,
-                fleet:          &fleet,
-                staging_buffer: staging,
-                staging_span:   staging_span,
-                first:          first,
-                count:          UPLOAD_BATCH,
+                device:       &device,
+                fleet:        &fleet,
+                staging_span: staging_span,
+                first:        first,
+                count:        UPLOAD_BATCH,
             )!;
         }
 
@@ -333,20 +311,13 @@ fn void? run() {
             device:        &device,
             fleet:         &fleet,
             pipeline:      pipeline,
-            index_buffer:  index_buf,
             index_span:    index_span,
             index_address: index_address,
-            out_buffer:    out_buf,
             out_span:      out_span,
             out_address:   out_address,
             sampler:       sampler,
         )!;
-        gpu::invalidate_buffer(
-            device: &device,
-            buffer: out_buf,
-            offset: 0,
-            size:   0,
-        )!;
+        gpu::invalidate_mapped_span(&device, out_span)!;
         check_results(&device, &fleet, out_span)!;
         gpu::end_frame(&frame_token)!;
         cursor = (cursor + CHURN_SLICE) % TEXTURE_COUNT;

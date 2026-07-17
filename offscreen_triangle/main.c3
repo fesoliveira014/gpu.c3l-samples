@@ -107,13 +107,15 @@ fn void? run(sample_args::Options options) {
     gpu::SamplerIndex smp_index = gpu::create_sampler(&device, &sampler_desc)!;
     defer (void)gpu::destroy_sampler(&device, smp_index);
 
-    gpu::BufferDesc staging_desc = {
-        .size = TEX_SIZE * TEX_SIZE * 4, .usage = { .transfer_src }, .memory_kind = gpu::MemoryKind.STAGING,
-        .access      = { .graphics },
+    gpu::AllocationDesc staging_desc = {
+        .size         = TEX_SIZE * TEX_SIZE * 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
     };
-    gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
-    defer (void)gpu::destroy_buffer(&device, staging);
-    gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
+    gpu::GpuAllocation staging = gpu::allocate_memory(&device, &staging_desc)!;
+    defer (void)gpu::free_allocation(&device, &staging);
+    gpu::GpuSpan staging_span = gpu::get_allocation_span(&device, staging)!;
     char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
@@ -125,7 +127,7 @@ fn void? run(sample_args::Options options) {
             texel[3] = (char)255;
         }
     }
-    gpu::flush_buffer(&device, staging, 0, 0)!;
+    gpu::flush_mapped_span(&device, staging_span)!;
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = OFFSCREEN_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;

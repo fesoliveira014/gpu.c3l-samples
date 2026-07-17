@@ -6,9 +6,6 @@ import std::io;
 
 faultdef EXPECTED_REJECTION_MISSING;
 
-// Headless: creates a resource spread, prints memory stats and the VMA
-// report, and tears down cleanly — zero leak lines under validation.
-
 const uint DEBUG_MESSAGE_CAP = 32;
 const usz DEBUG_NAME_CAP = 64;
 const usz DEBUG_TEXT_CAP = 256;
@@ -107,7 +104,7 @@ fn ZString debug_resource_name(gpu::DebugResourceKind kind) {
     switch (kind) {
         case gpu::DebugResourceKind.NONE: return "none";
         case gpu::DebugResourceKind.DEVICE: return "device";
-        case gpu::DebugResourceKind.BUFFER: return "buffer";
+        case gpu::DebugResourceKind.GPU_SPAN: return "gpu_span";
         case gpu::DebugResourceKind.TEXTURE: return "texture";
         case gpu::DebugResourceKind.PIPELINE: return "pipeline";
         case gpu::DebugResourceKind.SWAPCHAIN: return "swapchain";
@@ -248,16 +245,16 @@ fn void? run(bool detailed) {
     gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer (void)gpu::destroy_device(&device);
 
-    gpu::BufferDesc rejected_desc = {
-        .size        = 0,
-        .usage       = { .storage },
-        .memory_kind = gpu::MemoryKind.DEVICE,
-        .access      = { .graphics },
-        .debug_name  = "report_rejected_buffer",
+    gpu::AllocationDesc rejected_desc = {
+        .size         = 0,
+        .alignment    = INDEPENDENT_ALLOCATION_ALIGNMENT,
+        .memory_class = gpu::MemoryClass.GPU_PRIVATE,
+        .access       = { .graphics },
+        .debug_name   = "report_rejected_allocation",
     };
-    gpu::BufferHandle? maybe_rejected = gpu::create_buffer(&device, &rejected_desc);
+    gpu::GpuAllocation? maybe_rejected = gpu::allocate_memory(&device, &rejected_desc);
     if (try unexpected = maybe_rejected) {
-        gpu::destroy_buffer(&device, unexpected)!;
+        gpu::free_allocation(&device, &unexpected)!;
         return EXPECTED_REJECTION_MISSING~;
     }
     fault rejected = @catch(maybe_rejected);
@@ -296,30 +293,6 @@ fn void? run(bool detailed) {
         print_independent_allocation(&device, allocations[i], allocation_names[i])!;
     }
 
-    gpu::BufferDesc device_buf = {
-        .size = 1 << 20, .usage = { .storage, .addressable }, .memory_kind = gpu::MemoryKind.DEVICE,
-        .access      = { .graphics },
-        .debug_name  = "report_device_buffer",
-    };
-    gpu::BufferHandle storage = gpu::create_buffer(&device, &device_buf)!;
-    defer (void)gpu::destroy_buffer(&device, storage);
-
-    gpu::BufferDesc staging_buf = {
-        .size = 256 << 10, .usage = { .transfer_src }, .memory_kind = gpu::MemoryKind.STAGING,
-        .access      = { .graphics },
-        .debug_name  = "report_staging_buffer",
-    };
-    gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_buf)!;
-    defer (void)gpu::destroy_buffer(&device, staging);
-
-    gpu::BufferDesc readback_buf = {
-        .size = 64 << 10, .usage = { .transfer_dst }, .memory_kind = gpu::MemoryKind.READBACK,
-        .access      = { .graphics },
-        .debug_name  = "report_readback_buffer",
-    };
-    gpu::BufferHandle readback = gpu::create_buffer(&device, &readback_buf)!;
-    defer (void)gpu::destroy_buffer(&device, readback);
-
     gpu::TextureDesc sampled_desc = {
         .dimension = gpu::TextureDimension.TEX_2D,
         .width     = 256,
@@ -346,9 +319,8 @@ fn void? run(bool detailed) {
     defer (void)gpu::destroy_texture(&device, depth);
 
     gpu::MemoryStats stats = gpu::get_memory_stats(&device)!;
-    io::printfn("live buffers:  %d", stats.buffer_count);
     io::printfn("live textures: %d", stats.texture_count);
-    io::printfn("allocations:   %d", stats.live_allocation_count);
+    io::printfn("live allocations: %d", stats.live_allocation_count);
     for (uint i = 0; i < stats.heap_count; i++) {
         io::printfn("heap %d: usage %d / budget %d bytes (blocks %d)",
             i, stats.heaps[i].usage, stats.heaps[i].budget, stats.heaps[i].block_bytes);
@@ -359,6 +331,6 @@ fn void? run(bool detailed) {
 
     String report = gpu::build_memory_report(&device, detailed)!;
     defer free(report);
-    io::printfn("--- VMA report (%s) ---", detailed ? "detailed" : "summary");
+    io::printfn("--- allocator report (%s) ---", detailed ? "detailed" : "summary");
     io::printn(report);
 }

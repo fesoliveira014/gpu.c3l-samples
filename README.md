@@ -48,18 +48,18 @@ before commands that request screenshots.
 | Target | Type | Additional capability | Smoke args |
 |---|---|---|---|
 | `shared_selftest` | helper | none | — |
-| `root_pointer_compute` | headless | compute, buffer device address | — |
+| `root_pointer_compute` | headless | compute, GPU-addressed spans | — |
 | `bindless_texture_compute` | headless | sampled and storage images | — |
 | `offscreen_triangle` | headless | dynamic rendering, transfer readback | `--screenshot out/offscreen_triangle.png` |
 | `memory_report` | headless | memory-budget and independent-allocation reporting | — |
 | `bindless_stress` | headless | 8,512 texture descriptors | — |
 | `multithreaded_recording` | headless | host threads, recording contexts | — |
 | `pipeline_cache_timing` | headless | graphics and compute pipeline caches | — |
-| `image_processing` | headless | storage images, buffer atomics | `--screenshot out/image_processing.png` |
+| `image_processing` | headless | storage images, span atomics | `--screenshot out/image_processing.png` |
 | `hello_triangle_sdl` | windowed | baseline presentation | `--frames 30 --screenshot out/hello_triangle_sdl.png` |
 | `textured_cube` | windowed | depth attachment, sampled texture | `--frames 30 --screenshot out/textured_cube.png` |
 | `texture_filtering` | windowed | mip sampling; anisotropy optional | `--frames 30 --screenshot out/texture_filtering.png` |
-| `gpu_driven_draw_sdl` | windowed | indirect multi-draw; count buffer optional | `--frames 30 --screenshot out/gpu_driven_draw_sdl.png` |
+| `gpu_driven_draw_sdl` | windowed | indirect multi-draw; indirect-count span optional | `--frames 30 --screenshot out/gpu_driven_draw_sdl.png` |
 | `particle_sim` | windowed | compute; async compute queue optional | `--frames 30 --screenshot out/particle_sim.png` |
 | `frustum_culling` | windowed | indirect multi-draw | `--frames 30 --screenshot out/frustum_culling.png` |
 | `shadow_mapping` | windowed | depth compare sampling | `--frames 30 --screenshot out/shadow_mapping.png` |

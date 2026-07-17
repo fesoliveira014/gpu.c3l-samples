@@ -9,8 +9,8 @@ const uint COUNT = 256;
 
 struct FrameWork {
     gpu::Device*        device;
-    gpu::BufferHandle   input;
-    gpu::BufferHandle   output;
+    gpu::GpuSpan        input;
+    gpu::GpuSpan        output;
     gpu::PipelineHandle pipeline;
 }
 
@@ -26,8 +26,8 @@ fn int main() {
 fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
     gpu::GpuSpan root_span = gpu::alloc_frame_span(frame, ComputeRoot::size, 16)!;
     ComputeRoot* root = (ComputeRoot*)gpu::get_span_mapping(work.device, root_span)!.ptr;
-    root.input_gpu  = gpu::get_buffer_address(work.device, work.input)!;
-    root.output_gpu = gpu::get_buffer_address(work.device, work.output)!;
+    root.input_gpu  = gpu::get_span_address(work.device, work.input)!;
+    root.output_gpu = gpu::get_span_address(work.device, work.output)!;
     root.count      = COUNT;
 
     gpu::Queue compute_queue = gpu::get_queue(work.device, gpu::QueueKind.COMPUTE)!;
@@ -40,7 +40,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
         groups:   { (COUNT + ROOT_POINTER_WORKGROUP - 1) / ROOT_POINTER_WORKGROUP, 1, 1 },
     )!;
     gpu::BufferBarrier bar = {
-        .buffer = work.output, .offset = 0, .size = COUNT * float::size,
+        .span = work.output,
         .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
@@ -51,15 +51,9 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
-    gpu::invalidate_buffer(
-        device: work.device,
-        buffer: work.output,
-        offset: 0,
-        size:   0,
-    )!;
+    gpu::invalidate_mapped_span(work.device, work.output)!;
 
-    gpu::GpuSpan out_span = gpu::get_buffer_span(work.device, work.output)!;
-    float* out_data = (float*)gpu::get_span_mapping(work.device, out_span)!.ptr;
+    float* out_data = (float*)gpu::get_span_mapping(work.device, work.output)!.ptr;
     for (uint i = 0; i < COUNT; i++) {
         if (out_data[i] != (float)i * 2.0) return gpu::INVALID_RESOURCE_STATE~;
     }
@@ -75,27 +69,31 @@ fn void? run() {
     gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
     defer gpu::destroy_device(&device)!!;
 
-    gpu::BufferDesc io_desc = {
-        .size        = COUNT * float::size,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .compute },
-        .debug_name  = "io",
+    gpu::AllocationDesc input_desc = {
+        .size         = COUNT * float::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .compute },
+        .debug_name   = "input",
     };
-    gpu::BufferHandle input = gpu::create_buffer(&device, &io_desc)!;
-    defer gpu::destroy_buffer(&device, input)!!;
-    gpu::BufferHandle output = gpu::create_buffer(&device, &io_desc)!;
-    defer gpu::destroy_buffer(&device, output)!!;
+    gpu::GpuAllocation input = gpu::allocate_memory(&device, &input_desc)!;
+    defer gpu::free_allocation(&device, &input)!!;
+    gpu::GpuSpan input_span = gpu::get_allocation_span(&device, input)!;
 
-    gpu::GpuSpan in_span = gpu::get_buffer_span(&device, input)!;
-    float* in_data = (float*)gpu::get_span_mapping(&device, in_span)!.ptr;
+    gpu::AllocationDesc output_desc = {
+        .size         = COUNT * float::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .compute },
+        .debug_name   = "output",
+    };
+    gpu::GpuAllocation output = gpu::allocate_memory(&device, &output_desc)!;
+    defer gpu::free_allocation(&device, &output)!!;
+    gpu::GpuSpan output_span = gpu::get_allocation_span(&device, output)!;
+
+    float* in_data = (float*)gpu::get_span_mapping(&device, input_span)!.ptr;
     for (uint i = 0; i < COUNT; i++) in_data[i] = (float)i;
-    gpu::flush_buffer(
-        device: &device,
-        buffer: input,
-        offset: 0,
-        size:   0,
-    )!;
+    gpu::flush_mapped_span(&device, input_span)!;
 
     gpu::ShaderDesc shader_desc = {
         .stage = gpu::ShaderStage.COMPUTE, .spirv = ROOT_POINTER_SPIRV[..],
@@ -110,8 +108,8 @@ fn void? run() {
 
     FrameWork work = {
         .device   = &device,
-        .input    = input,
-        .output   = output,
+        .input    = input_span,
+        .output   = output_span,
         .pipeline = pipeline,
     };
     gpu::FrameToken retry_frame;
