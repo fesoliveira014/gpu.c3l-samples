@@ -67,7 +67,9 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
     }
     gpu::flush_buffer(device, staging_span.buffer, staging_span.offset, (usz)count * 4)!;
 
-    gpu::CommandList cmd = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
     for (uint i = 0; i < count; i++) {
         gpu::TextureHandle tex = fleet.textures[first + i];
         gpu::TextureBarrier to_dst = {
@@ -94,10 +96,10 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
         };
         gpu::cmd_texture_barrier(&cmd, &to_read)!;
     }
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
     gpu::wait_completion(completion)!;
 }
 
@@ -113,7 +115,9 @@ fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fle
     root.heap_sampler = sampler;
     root.count        = TEXTURE_COUNT;
 
-    gpu::CommandList cmd = gpu::begin_commands(device, gpu::QueueKind.COMPUTE)!;
+    gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: pipeline,
@@ -126,10 +130,10 @@ fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fle
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion)!;
 }
 

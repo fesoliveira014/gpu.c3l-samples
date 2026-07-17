@@ -96,7 +96,9 @@ fn void? run() {
     sample_root.width         = TEX_SIZE;
     sample_root.height        = TEX_SIZE;
 
-    gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
 
     gpu::TextureBarrier to_general = {
         .texture       = texture,
@@ -142,10 +144,10 @@ fn void? run() {
     };
     gpu::cmd_buffer_barrier(&cmd, &out_bar)!;
 
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(&device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
 
     gpu::GpuSpan out_span = gpu::get_buffer_span(&device, output)!;

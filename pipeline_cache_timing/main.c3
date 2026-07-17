@@ -143,7 +143,9 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     scale_root.output_gpu = (gpu::GpuAddress)((ulong)io_span.gpu + SCALE_COUNT * float::size);
     scale_root.count      = SCALE_COUNT;
 
-    gpu::CommandList cmd = gpu::begin_commands(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
     gpu::TextureBarrier to_attach = {
         .texture       = target,
         .before_stage  = gpu::Stage.HOST,
@@ -183,10 +185,10 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
 
     char[] pixels = mem::new_array(char, (usz)SMOKE_SIZE * SMOKE_SIZE * 4);

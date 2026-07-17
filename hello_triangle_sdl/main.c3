@@ -51,7 +51,9 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
         if (owned_fault != gpu::INVALID_ARGUMENT) return gpu::INVALID_RESOURCE_STATE~;
     }
 
-    gpu::CommandList cmd = gpu::begin_commands(ctx.device, gpu::QueueKind.GRAPHICS)!;
+    gpu::Queue graphics_queue = gpu::get_queue(ctx.device, gpu::QueueKind.GRAPHICS)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
 
     if (!*ctx.checker_uploaded) {
         gpu::TextureBarrier to_dst = gpu::texture_transition(
@@ -131,10 +133,10 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     )!;
     gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..], .swapchain = ctx.swapchain };
-    *ctx.last_graphics = gpu::submit(ctx.device, &submit)!;
+    *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
         sample_capture::capture_texture_png(

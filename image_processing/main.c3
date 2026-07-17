@@ -118,7 +118,9 @@ fn void? run(sample_args::Options options) {
     hist_root.src      = index_a;
     hist_root.size     = IMAGE_SIZE;
 
-    gpu::CommandList cmd = gpu::begin_commands(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+
+    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
 
     gpu::TextureHandle[2] images = { image_a, image_b };
     foreach (image : images) {
@@ -190,10 +192,10 @@ fn void? run(sample_args::Options options) {
     };
     gpu::cmd_buffer_barrier(&cmd, &bins_read)!;
 
-    gpu::end_commands(&cmd)!;
-    gpu::CommandList[1] lists = { cmd };
+    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
+    gpu::ExecutableCommandList[1] lists = { cmd_executable };
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(&device, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
     gpu::invalidate_buffer(&device, bins, 0, 0)!;
 
