@@ -1,7 +1,8 @@
 # memory_report
 
-Creates buffers and textures, prints heap budgets, resource counts, arena
-statistics, and the VMA report, then verifies clean teardown.
+Creates one independent allocation for each memory class plus representative
+buffers and textures. It prints allocation properties, heap budgets, resource
+counts, arena statistics, and the VMA report, then verifies clean teardown.
 
 A structured debug callback captures diagnostics without formatting inside the
 callback.

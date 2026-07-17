@@ -127,21 +127,24 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::BufferHandle io = gpu::create_buffer(device, &io_desc)!;
     defer (void)gpu::destroy_buffer(device, io);
     gpu::GpuSpan io_span = gpu::get_buffer_span(device, io)!;
-    float* io_data = (float*)io_span.cpu;
+    float* io_data = (float*)gpu::get_span_mapping(device, io_span)!.ptr;
     for (uint i = 0; i < SCALE_COUNT; i++) io_data[i] = (float)i;
     gpu::flush_buffer(device, io, 0, 0)!;
 
     gpu::FrameToken frame_token = gpu::begin_frame(device)!;
     gpu::GpuSpan quad_span = gpu::alloc_frame_span(&frame_token, QuadRoot::size, 16)!;
-    QuadRoot* quad_root = (QuadRoot*)quad_span.cpu;
+    QuadRoot* quad_root = (QuadRoot*)gpu::get_span_mapping(device, quad_span)!.ptr;
     quad_root.rect  = { -1.0f, -1.0f, 1.0f, 1.0f };
     quad_root.color = { 0.0f, 1.0f, 0.0f, 1.0f };
+    gpu::GpuAddress quad_address = gpu::get_span_address(device, quad_span)!;
 
     gpu::GpuSpan scale_span = gpu::alloc_frame_span(&frame_token, ScaleRoot::size, 16)!;
-    ScaleRoot* scale_root = (ScaleRoot*)scale_span.cpu;
-    scale_root.input_gpu  = io_span.gpu;
-    scale_root.output_gpu = (gpu::GpuAddress)((ulong)io_span.gpu + SCALE_COUNT * float::size);
+    ScaleRoot* scale_root = (ScaleRoot*)gpu::get_span_mapping(device, scale_span)!.ptr;
+    gpu::GpuAddress io_address = gpu::get_span_address(device, io_span)!;
+    scale_root.input_gpu  = io_address;
+    scale_root.output_gpu = (gpu::GpuAddress)((ulong)io_address + SCALE_COUNT * float::size);
     scale_root.count      = SCALE_COUNT;
+    gpu::GpuAddress scale_address = gpu::get_span_address(device, scale_span)!;
 
     gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
@@ -167,8 +170,8 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::cmd_draw(
         commands:       &cmd,
         pipeline:       quad_pipe,
-        vertex_root:    quad_span.gpu,
-        fragment_root:  quad_span.gpu,
+        vertex_root:    quad_address,
+        fragment_root:  quad_address,
         vertex_count:   6,
         instance_count: 1,
     )!;
@@ -176,7 +179,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: compute,
-        root:     scale_span.gpu,
+        root:     scale_address,
         groups:   { (SCALE_COUNT + CACHE_COMPUTE_WORKGROUP - 1) / CACHE_COMPUTE_WORKGROUP, 1, 1 },
     )!;
     gpu::BufferBarrier host_read = {

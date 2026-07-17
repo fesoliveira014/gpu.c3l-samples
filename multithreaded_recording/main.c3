@@ -275,7 +275,7 @@ fn RunResult? run_on_device(bool validation) {
     gpu::BufferHandle roots_buf = gpu::create_buffer(&device, &roots_desc)!;
     defer (void)gpu::destroy_buffer(&device, roots_buf);
     gpu::GpuSpan roots_span = gpu::get_buffer_span(&device, roots_buf)!;
-    QuadRoot* roots = (QuadRoot*)roots_span.cpu;
+    QuadRoot* roots = (QuadRoot*)gpu::get_span_mapping(&device, roots_span)!.ptr;
     for (uint chunk = 0; chunk < CHUNKS; chunk++) {
         for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
             QuadRoot* root = &roots[(usz)chunk * DRAWS_PER_CHUNK + draw];
@@ -284,6 +284,7 @@ fn RunResult? run_on_device(bool validation) {
         }
     }
     gpu::flush_buffer(&device, roots_buf, 0, 0)!;
+    gpu::GpuAddress roots_address = gpu::get_span_address(&device, roots_span)!;
 
     char[] serial_image = mem::new_array(char, READBACK_BYTES);
     defer mem::free(serial_image.ptr);
@@ -295,7 +296,7 @@ fn RunResult? run_on_device(bool validation) {
         device:      &device,
         target:      target,
         pipeline:    pipeline,
-        roots_base:  roots_span.gpu,
+        roots_base:  roots_address,
         workers:     0,
         out:         serial_image,
         target_seen: &target_seen,
@@ -304,7 +305,7 @@ fn RunResult? run_on_device(bool validation) {
         device:      &device,
         target:      target,
         pipeline:    pipeline,
-        roots_base:  roots_span.gpu,
+        roots_base:  roots_address,
         workers:     workers,
         out:         threaded_image,
         target_seen: &target_seen,

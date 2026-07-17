@@ -114,7 +114,7 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
     defer (void)gpu::destroy_buffer(&device, staging);
     gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
-    char* texels = (char*)staging_span.cpu;
+    char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             bool checkered = ((x / 4) + (y / 4)) % 2 == 0;
@@ -153,12 +153,14 @@ fn void? run(sample_args::Options options) {
          0.8f, -0.8f, 1.0f, 0.0f,
          0.0f,  0.8f, 0.5f, 1.0f,
     };
-    mem::copy(verts_span.cpu, &vertex_data, vertex_data.len * float::size);
+    mem::copy(gpu::get_span_mapping(&device, verts_span)!.ptr, &vertex_data, vertex_data.len * float::size);
+    gpu::GpuAddress verts_address = gpu::get_span_address(&device, verts_span)!;
 
     gpu::GpuSpan frag_span = gpu::alloc_frame_span(&frame_token, FragRoot::size, 16)!;
-    FragRoot* frag_root = (FragRoot*)frag_span.cpu;
+    FragRoot* frag_root = (FragRoot*)gpu::get_span_mapping(&device, frag_span)!.ptr;
     frag_root.texture_index = tex_index;
     frag_root.sampler_index = smp_index;
+    gpu::GpuAddress frag_address = gpu::get_span_address(&device, frag_span)!;
 
     gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -229,8 +231,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       pipeline,
-            vertex_root:    verts_span.gpu,
-            fragment_root:  frag_span.gpu,
+            vertex_root:    verts_address,
+            fragment_root:  frag_address,
             vertex_count:   3,
             instance_count: 1,
         )!;
@@ -250,8 +252,8 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_draw(
         commands:       &cmd,
         pipeline:       pipeline,
-        vertex_root:    verts_span.gpu,
-        fragment_root:  frag_span.gpu,
+        vertex_root:    verts_address,
+        fragment_root:  frag_address,
         vertex_count:   3,
         instance_count: 1,
     )!;

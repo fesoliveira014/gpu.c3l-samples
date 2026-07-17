@@ -91,7 +91,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
 
     float pulse = (float)(ctx.frame % 120) / 120.0f * 0.15f;
     gpu::GpuSpan verts_span = gpu::alloc_frame_span(frame, 3 * 16, 16)!;
-    float* verts = (float*)verts_span.cpu;
+    float* verts = (float*)gpu::get_span_mapping(ctx.device, verts_span)!.ptr;
     float[12] vertex_data = {
         -0.8f, -0.8f, 0.0f, 0.0f,
          0.8f, -0.8f, 1.0f, 0.0f,
@@ -100,7 +100,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     for (uint i = 0; i < 12; i++) verts[i] = vertex_data[i];
 
     gpu::GpuSpan frag_span = gpu::alloc_frame_span(frame, FragRoot::size, 16)!;
-    FragRoot* frag_root = (FragRoot*)frag_span.cpu;
+    FragRoot* frag_root = (FragRoot*)gpu::get_span_mapping(ctx.device, frag_span)!.ptr;
     frag_root.texture_index = ctx.tex_index;
     frag_root.sampler_index = ctx.smp_index;
 
@@ -119,8 +119,8 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     gpu::cmd_draw(
         commands:       &cmd,
         pipeline:       ctx.pipeline,
-        vertex_root:    verts_span.gpu,
-        fragment_root:  frag_span.gpu,
+        vertex_root:    gpu::get_span_address(ctx.device, verts_span)!,
+        fragment_root:  gpu::get_span_address(ctx.device, frag_span)!,
         vertex_count:   3,
         instance_count: 1,
     )!;
@@ -226,7 +226,7 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
     defer (void)gpu::destroy_buffer(&device, staging);
     gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
-    char* texels = (char*)staging_span.cpu;
+    char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             bool checkered = ((x / 4) + (y / 4)) % 2 == 0;

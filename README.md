@@ -51,7 +51,7 @@ before commands that request screenshots.
 | `root_pointer_compute` | headless | compute, buffer device address | — |
 | `bindless_texture_compute` | headless | sampled and storage images | — |
 | `offscreen_triangle` | headless | dynamic rendering, transfer readback | `--screenshot out/offscreen_triangle.png` |
-| `memory_report` | headless | memory-budget reporting | — |
+| `memory_report` | headless | memory-budget and independent-allocation reporting | — |
 | `bindless_stress` | headless | 8,512 texture descriptors | — |
 | `multithreaded_recording` | headless | host threads, recording contexts | — |
 | `pipeline_cache_timing` | headless | graphics and compute pipeline caches | — |

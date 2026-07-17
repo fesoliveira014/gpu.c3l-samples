@@ -95,8 +95,10 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_buffer(&device, buffer_b);
     gpu::GpuSpan span_a = gpu::get_buffer_span(&device, buffer_a)!;
     gpu::GpuSpan span_b = gpu::get_buffer_span(&device, buffer_b)!;
-    seed_particles((float*)span_a.cpu);
+    seed_particles((float*)gpu::get_span_mapping(&device, span_a)!.ptr);
     gpu::flush_buffer(&device, buffer_a, 0, 0)!;
+    gpu::GpuAddress span_a_address = gpu::get_span_address(&device, span_a)!;
+    gpu::GpuAddress span_b_address = gpu::get_span_address(&device, span_b)!;
 
     gpu::ShaderDesc sim_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = SIM_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle sim_shader = gpu::create_shader(&device, &sim_sd)!;
@@ -175,17 +177,18 @@ fn void? run(sample_args::Options options) {
         }
 
         bool even = frame % 2 == 0;
-        gpu::GpuSpan read_span = even ? span_a : span_b;
-        gpu::GpuSpan write_span = even ? span_b : span_a;
+        gpu::GpuAddress read_address = even ? span_a_address : span_b_address;
+        gpu::GpuAddress write_address = even ? span_b_address : span_a_address;
 
         // The draw submission waits on this compute completion across queues.
         gpu::GpuSpan sim_span = gpu::alloc_frame_span(&frame_token, SimRoot::size, 16)!;
-        SimRoot* sim_root = (SimRoot*)sim_span.cpu;
-        sim_root.read_gpu  = read_span.gpu;
-        sim_root.write_gpu = write_span.gpu;
+        SimRoot* sim_root = (SimRoot*)gpu::get_span_mapping(&device, sim_span)!.ptr;
+        sim_root.read_gpu  = read_address;
+        sim_root.write_gpu = write_address;
         sim_root.count     = PARTICLE_COUNT;
         sim_root.dt        = FRAME_DT;
         sim_root.time      = (float)frame * FRAME_DT;
+        gpu::GpuAddress sim_root_address = gpu::get_span_address(&device, sim_span)!;
 
         gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
 
@@ -193,7 +196,7 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_dispatch(
             commands: &sim_cmd,
             pipeline: sim_pipe,
-            root:     sim_span.gpu,
+            root:     sim_root_address,
             groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
         )!;
         gpu::ExecutableCommandList sim_cmd_executable = gpu::end_commands(&sim_cmd)!;
@@ -202,7 +205,7 @@ fn void? run(sample_args::Options options) {
         last_compute = gpu::submit(compute_queue, &sim_submit)!;
 
         gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, ParticleDrawRoot::size, 16)!;
-        ParticleDrawRoot* draw_root = (ParticleDrawRoot*)draw_span.cpu;
+        ParticleDrawRoot* draw_root = (ParticleDrawRoot*)gpu::get_span_mapping(&device, draw_span)!.ptr;
         sample_camera::Mat4 view_proj = sample_camera::mul(
             sample_camera::perspective(
                 fov_y_radians: 1.0f,
@@ -215,9 +218,10 @@ fn void? run(sample_args::Options options) {
             gpu::Vec4f* cols = &draw_root.view_proj_c0;
             cols[c] = { view_proj[c * 4], view_proj[c * 4 + 1], view_proj[c * 4 + 2], view_proj[c * 4 + 3] };
         }
-        draw_root.particles_gpu = write_span.gpu;
+        draw_root.particles_gpu = write_address;
         draw_root.aspect        = (float)swapchain_info.width / (float)swapchain_info.height;
         draw_root.quad_size     = 0.0045f;
+        gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -253,8 +257,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       draw_pipe,
-            vertex_root:    draw_span.gpu,
-            fragment_root:  draw_span.gpu,
+            vertex_root:    draw_root_address,
+            fragment_root:  draw_root_address,
             vertex_count:   6,
             instance_count: PARTICLE_COUNT,
         )!;

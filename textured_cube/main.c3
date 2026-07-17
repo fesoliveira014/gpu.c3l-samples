@@ -156,8 +156,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
     defer (void)gpu::destroy_buffer(&device, vertices);
     gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
-    write_cube_vertices((float*)vertex_span.cpu);
+    write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
     gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
         .dimension = gpu::TextureDimension.TEX_2D,
@@ -189,7 +190,7 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
     defer (void)gpu::destroy_buffer(&device, staging);
     gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
-    char* texels = (char*)staging_span.cpu;
+    char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             bool checkered = ((x / 4) + (y / 4)) % 2 == 0;
@@ -356,13 +357,14 @@ fn void? run(sample_args::Options options) {
             camera.view());
 
         gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, SceneRoot::size, 16)!;
-        SceneRoot* root = (SceneRoot*)root_span.cpu;
+        SceneRoot* root = (SceneRoot*)gpu::get_span_mapping(&device, root_span)!.ptr;
         write_matrix(&root.view_proj_c0, view_proj);
         write_matrix(&root.model_c0, spin_model(time));
-        root.vertex_gpu     = vertex_span.gpu;
+        root.vertex_gpu     = vertex_address;
         root.albedo_texture = tex_index;
         root.albedo_sampler = smp_index;
         root.time           = time;
+        gpu::GpuAddress root_address = gpu::get_span_address(&device, root_span)!;
 
         gpu::ColorTargetDesc[1] colors = {{
             .texture  = acquired.texture,
@@ -386,8 +388,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       pipeline,
-            vertex_root:    root_span.gpu,
-            fragment_root:  root_span.gpu,
+            vertex_root:    root_address,
+            fragment_root:  root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: 1,
         )!;
