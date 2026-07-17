@@ -201,8 +201,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
     defer (void)gpu::destroy_buffer(&device, vertices);
     gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
-    write_sphere_vertices((float*)vertex_span.cpu);
+    write_sphere_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
     gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureHandle[TEXTURE_COUNT] textures;
     gpu::TextureIndex[TEXTURE_COUNT] texture_indices;
@@ -246,8 +247,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
     defer (void)gpu::destroy_buffer(&device, staging);
     gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
-    write_texels((char*)staging_span.cpu, false);
-    write_texels((char*)staging_span.cpu + TEX_SIZE * TEX_SIZE * 4, true);
+    char* staging_texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
+    write_texels(staging_texels, false);
+    write_texels(staging_texels + TEX_SIZE * TEX_SIZE * 4, true);
     gpu::flush_buffer(&device, staging, 0, 0)!;
 
     gpu::BufferDesc instances_desc = {
@@ -260,8 +262,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
     defer (void)gpu::destroy_buffer(&device, instances);
     gpu::GpuSpan instances_span = gpu::get_buffer_span(&device, instances)!;
-    write_instances((SphereInstance*)instances_span.cpu);
+    write_instances((SphereInstance*)gpu::get_span_mapping(&device, instances_span)!.ptr);
     gpu::flush_buffer(&device, instances, 0, 0)!;
+    gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
     gpu::BufferDesc materials_desc = {
         .size        = MATERIAL_COUNT * Material::size,
@@ -273,8 +276,10 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle materials = gpu::create_buffer(&device, &materials_desc)!;
     defer (void)gpu::destroy_buffer(&device, materials);
     gpu::GpuSpan materials_span = gpu::get_buffer_span(&device, materials)!;
-    write_materials((Material*)materials_span.cpu, texture_indices[0], texture_indices[1]);
+    Material* material_data = (Material*)gpu::get_span_mapping(&device, materials_span)!.ptr;
+    write_materials(material_data, texture_indices[0], texture_indices[1]);
     gpu::flush_buffer(&device, materials, 0, 0)!;
+    gpu::GpuAddress materials_address = gpu::get_span_address(&device, materials_span)!;
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = PBR_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
@@ -364,14 +369,15 @@ fn void? run(sample_args::Options options) {
         }
 
         gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, PbrRoot::size, 16)!;
-        PbrRoot* root = (PbrRoot*)root_span.cpu;
+        PbrRoot* root = (PbrRoot*)gpu::get_span_mapping(&device, root_span)!.ptr;
         write_matrix(&root.view_proj_c0, view_proj);
         float[<3>] cam_pos = camera.position();
         root.camera_pos     = { cam_pos[0], cam_pos[1], cam_pos[2], 1.0f };
-        root.vertex_gpu     = vertex_span.gpu;
-        root.instances_gpu  = instances_span.gpu;
-        root.materials_gpu  = materials_span.gpu;
+        root.vertex_gpu     = vertex_address;
+        root.instances_gpu  = instances_address;
+        root.materials_gpu  = materials_address;
         root.albedo_sampler = albedo_sampler;
+        gpu::GpuAddress root_address = gpu::get_span_address(&device, root_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -390,14 +396,7 @@ fn void? run(sample_args::Options options) {
                 };
                 gpu::cmd_texture_barrier(&cmd, &to_dst)!;
                 usz byte_offset = (usz)i * TEX_SIZE * TEX_SIZE * 4;
-                gpu::GpuSpan slice = {
-                    .gpu    = (gpu::GpuAddress)((ulong)staging_span.gpu + byte_offset),
-                    .cpu    = (char*)staging_span.cpu + byte_offset,
-                    .size   = TEX_SIZE * TEX_SIZE * 4,
-                    .buffer = staging_span.buffer,
-                    .offset = staging_span.offset + byte_offset,
-                    .kind   = staging_span.kind,
-                };
+                gpu::GpuSpan slice = staging_span.checked_subspan(byte_offset, TEX_SIZE * TEX_SIZE * 4)!;
                 gpu::BufferTextureCopyDesc upload = { .src = slice, .texture = textures[i] };
                 gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
                 gpu::TextureBarrier to_read = {
@@ -453,8 +452,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       pipeline,
-            vertex_root:    root_span.gpu,
-            fragment_root:  root_span.gpu,
+            vertex_root:    root_address,
+            fragment_root:  root_address,
             vertex_count:   SPHERE_VERTEX_COUNT,
             instance_count: GRID * GRID,
         )!;

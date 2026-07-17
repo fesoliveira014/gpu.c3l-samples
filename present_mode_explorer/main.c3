@@ -124,9 +124,10 @@ fn ModeStats? run_mode_window(
         double acquire_ms = ms(acquire_clk.mark());
 
         gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, ExplorerRoot::size, 16)!;
-        ExplorerRoot* root = (ExplorerRoot*)root_span.cpu;
+        ExplorerRoot* root = (ExplorerRoot*)gpu::get_span_mapping(device, root_span)!.ptr;
         float bar = (float)(frame % 100) / 100.0f;
         root.params = { (float)frame * 0.04f, bar, (float)*width, (float)*height };
+        gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
@@ -149,8 +150,8 @@ fn ModeStats? run_mode_window(
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       pipeline.handle,
-            vertex_root:    root_span.gpu,
-            fragment_root:  root_span.gpu,
+            vertex_root:    root_address,
+            fragment_root:  root_address,
             vertex_count:   3,
             instance_count: 1,
         )!;

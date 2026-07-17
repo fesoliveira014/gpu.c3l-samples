@@ -200,8 +200,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
     defer (void)gpu::destroy_buffer(&device, vertices);
     gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
-    write_cube_vertices((float*)vertex_span.cpu);
+    write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
     gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::BufferDesc instances_desc = {
         .size        = INSTANCE_COUNT * 48,
@@ -213,8 +214,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
     defer (void)gpu::destroy_buffer(&device, instances);
     gpu::GpuSpan instances_span = gpu::get_buffer_span(&device, instances)!;
-    write_instances((float*)instances_span.cpu);
+    write_instances((float*)gpu::get_span_mapping(&device, instances_span)!.ptr);
     gpu::flush_buffer(&device, instances, 0, 0)!;
+    gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
     gpu::ShaderDesc sh_vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = SHADOW_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle sh_vert = gpu::create_shader(&device, &sh_vert_sd)!;
@@ -336,20 +338,22 @@ fn void? run(sample_args::Options options) {
             sample_camera::look_at(light_pos, { 0, 0, 0 }, { 0, 1, 0 }));
 
         gpu::GpuSpan shadow_span = gpu::alloc_frame_span(&frame_token, ShadowPassRoot::size, 16)!;
-        ShadowPassRoot* shadow_root = (ShadowPassRoot*)shadow_span.cpu;
+        ShadowPassRoot* shadow_root = (ShadowPassRoot*)gpu::get_span_mapping(&device, shadow_span)!.ptr;
         write_matrix(&shadow_root.light_vp_c0, light_vp);
-        shadow_root.vertex_gpu    = vertex_span.gpu;
-        shadow_root.instances_gpu = instances_span.gpu;
+        shadow_root.vertex_gpu    = vertex_address;
+        shadow_root.instances_gpu = instances_address;
+        gpu::GpuAddress shadow_root_address = gpu::get_span_address(&device, shadow_span)!;
 
         gpu::GpuSpan scene_span = gpu::alloc_frame_span(&frame_token, ScenePassRoot::size, 16)!;
-        ScenePassRoot* scene_root = (ScenePassRoot*)scene_span.cpu;
+        ScenePassRoot* scene_root = (ScenePassRoot*)gpu::get_span_mapping(&device, scene_span)!.ptr;
         write_matrix(&scene_root.view_proj_c0, view_proj);
         write_matrix(&scene_root.light_vp_c0, light_vp);
         scene_root.light_dir      = { light_dir_v[0], light_dir_v[1], light_dir_v[2], 0.0f };
-        scene_root.vertex_gpu     = vertex_span.gpu;
-        scene_root.instances_gpu  = instances_span.gpu;
+        scene_root.vertex_gpu     = vertex_address;
+        scene_root.instances_gpu  = instances_address;
         scene_root.shadow_map     = shadow_index;
         scene_root.shadow_sampler = shadow_sampler;
+        gpu::GpuAddress scene_root_address = gpu::get_span_address(&device, scene_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -379,8 +383,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       shadow_pipe,
-            vertex_root:    shadow_span.gpu,
-            fragment_root:  shadow_span.gpu,
+            vertex_root:    shadow_root_address,
+            fragment_root:  shadow_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: INSTANCE_COUNT,
         )!;
@@ -435,8 +439,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       scene_pipe,
-            vertex_root:    scene_span.gpu,
-            fragment_root:  scene_span.gpu,
+            vertex_root:    scene_root_address,
+            fragment_root:  scene_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: INSTANCE_COUNT,
         )!;

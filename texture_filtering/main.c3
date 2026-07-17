@@ -140,8 +140,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
     defer (void)gpu::destroy_buffer(&device, vertices);
     gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
-    write_plane_vertices((float*)vertex_span.cpu);
+    write_plane_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
     gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
         .dimension  = gpu::TextureDimension.TEX_2D,
@@ -293,15 +294,16 @@ fn void? run(sample_args::Options options) {
             sample_camera::look_at({ 0.0f, 2.0f, 12.0f }, { 0.0f, 0.0f, -40.0f }, { 0, 1, 0 }));
 
         gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, FilterRoot::size, 16)!;
-        FilterRoot* root = (FilterRoot*)root_span.cpu;
+        FilterRoot* root = (FilterRoot*)gpu::get_span_mapping(&device, root_span)!.ptr;
         write_matrix(&root.view_proj_c0, view_proj);
-        root.vertex_gpu    = vertex_span.gpu;
+        root.vertex_gpu    = vertex_address;
         root.checker       = tex_index;
         root.nearest_smp   = nearest_smp;
         root.bilinear_smp  = bilinear_smp;
         root.trilinear_smp = trilinear_smp;
         root.aniso_smp     = aniso_smp;
         root.strip_width   = (float)swapchain_info.width / 4.0f;
+        gpu::GpuAddress root_address = gpu::get_span_address(&device, root_span)!;
 
         gpu::ColorTargetDesc[1] colors = {{
             .texture  = acquired.texture,
@@ -318,8 +320,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       pipeline,
-            vertex_root:    root_span.gpu,
-            fragment_root:  root_span.gpu,
+            vertex_root:    root_address,
+            fragment_root:  root_address,
             vertex_count:   PLANE_VERTEX_COUNT,
             instance_count: 1,
         )!;

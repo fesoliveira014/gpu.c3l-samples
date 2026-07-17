@@ -66,7 +66,7 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle bins = gpu::create_buffer(&device, &bins_desc)!;
     defer (void)gpu::destroy_buffer(&device, bins);
     gpu::GpuSpan bins_span = gpu::get_buffer_span(&device, bins)!;
-    uint* bin_counts = (uint*)bins_span.cpu;
+    uint* bin_counts = (uint*)gpu::get_span_mapping(&device, bins_span)!.ptr;
     for (uint i = 0; i < HISTOGRAM_BINS; i++) bin_counts[i] = 0;
     gpu::flush_buffer(&device, bins, 0, 0)!;
 
@@ -93,28 +93,28 @@ fn void? run(sample_args::Options options) {
     gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
 
     gpu::GpuSpan gen_span = gpu::alloc_frame_span(&frame_token, GenerateRoot::size, 16)!;
-    GenerateRoot* gen_root = (GenerateRoot*)gen_span.cpu;
+    GenerateRoot* gen_root = (GenerateRoot*)gpu::get_span_mapping(&device, gen_span)!.ptr;
     gen_root.target = index_a;
     gen_root.size   = IMAGE_SIZE;
     gen_root.seed   = 3.7f;
 
     gpu::GpuSpan blur_h_span = gpu::alloc_frame_span(&frame_token, BlurRoot::size, 16)!;
-    BlurRoot* blur_h = (BlurRoot*)blur_h_span.cpu;
+    BlurRoot* blur_h = (BlurRoot*)gpu::get_span_mapping(&device, blur_h_span)!.ptr;
     blur_h.src        = index_a;
     blur_h.dst        = index_b;
     blur_h.size       = IMAGE_SIZE;
     blur_h.horizontal = 1;
 
     gpu::GpuSpan blur_v_span = gpu::alloc_frame_span(&frame_token, BlurRoot::size, 16)!;
-    BlurRoot* blur_v = (BlurRoot*)blur_v_span.cpu;
+    BlurRoot* blur_v = (BlurRoot*)gpu::get_span_mapping(&device, blur_v_span)!.ptr;
     blur_v.src        = index_b;
     blur_v.dst        = index_a;
     blur_v.size       = IMAGE_SIZE;
     blur_v.horizontal = 0;
 
     gpu::GpuSpan hist_span = gpu::alloc_frame_span(&frame_token, HistogramRoot::size, 16)!;
-    HistogramRoot* hist_root = (HistogramRoot*)hist_span.cpu;
-    hist_root.bins_gpu = bins_span.gpu;
+    HistogramRoot* hist_root = (HistogramRoot*)gpu::get_span_mapping(&device, hist_span)!.ptr;
+    hist_root.bins_gpu = gpu::get_span_address(&device, bins_span)!;
     hist_root.src      = index_a;
     hist_root.size     = IMAGE_SIZE;
 
@@ -142,7 +142,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: gen_pipe,
-        root:     gen_span.gpu,
+        root:     gpu::get_span_address(&device, gen_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;
 
@@ -161,7 +161,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: blur_pipe,
-        root:     blur_h_span.gpu,
+        root:     gpu::get_span_address(&device, blur_h_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
     )!;
 
@@ -172,7 +172,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: blur_pipe,
-        root:     blur_v_span.gpu,
+        root:     gpu::get_span_address(&device, blur_v_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
     )!;
 
@@ -181,7 +181,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: hist_pipe,
-        root:     hist_span.gpu,
+        root:     gpu::get_span_address(&device, hist_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;
 

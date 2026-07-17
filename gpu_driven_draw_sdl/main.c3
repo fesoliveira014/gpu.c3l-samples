@@ -125,7 +125,7 @@ fn void? run(sample_args::Options options) {
         float time = (float)frame / 60.0f;
 
         gpu::GpuSpan instances_span = gpu::alloc_frame_span(&frame_token, INSTANCES * Instance::size, 16)!;
-        Instance* instances = (Instance*)instances_span.cpu;
+        Instance* instances = (Instance*)gpu::get_span_mapping(&device, instances_span)!.ptr;
         for (uint y = 0; y < GRID; y++) {
             for (uint x = 0; x < GRID; x++) {
                 uint i = y * GRID + x;
@@ -138,32 +138,38 @@ fn void? run(sample_args::Options options) {
                 };
             }
         }
+        gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
         gpu::GpuSpan corners_span = gpu::alloc_frame_span(&frame_token, 4 * 8, 16)!;
-        float* corners = (float*)corners_span.cpu;
+        float* corners = (float*)gpu::get_span_mapping(&device, corners_span)!.ptr;
         float[8] corner_data = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
         for (uint i = 0; i < 8; i++) corners[i] = corner_data[i];
+        gpu::GpuAddress corners_address = gpu::get_span_address(&device, corners_span)!;
 
         gpu::GpuSpan index_span = gpu::alloc_frame_span(&frame_token, 6 * 4, 4)!;
-        uint* indices = (uint*)index_span.cpu;
+        uint* indices = (uint*)gpu::get_span_mapping(&device, index_span)!.ptr;
         uint[6] index_data = { 0, 1, 2, 2, 1, 3 };
         for (uint i = 0; i < 6; i++) indices[i] = index_data[i];
 
         gpu::GpuSpan args_span = gpu::alloc_frame_span(&frame_token, INSTANCES * gpu::DrawIndexedIndirectCommand::size, 16)!;
+        gpu::GpuAddress args_address = gpu::get_span_address(&device, args_span)!;
         gpu::GpuSpan count_span = gpu::alloc_frame_span(&frame_token, 4, 4)!;
+        gpu::GpuAddress count_address = gpu::get_span_address(&device, count_span)!;
 
         gpu::GpuSpan build_root_span = gpu::alloc_frame_span(&frame_token, BuildRoot::size, 16)!;
-        BuildRoot* build_root = (BuildRoot*)build_root_span.cpu;
-        build_root.instances_gpu  = instances_span.gpu;
-        build_root.args_gpu       = args_span.gpu;
-        build_root.count_gpu      = count_span.gpu;
+        BuildRoot* build_root = (BuildRoot*)gpu::get_span_mapping(&device, build_root_span)!.ptr;
+        build_root.instances_gpu  = instances_address;
+        build_root.args_gpu       = args_address;
+        build_root.count_gpu      = count_address;
         build_root.instance_count = INSTANCES;
         build_root.time           = time;
+        gpu::GpuAddress build_root_address = gpu::get_span_address(&device, build_root_span)!;
 
         gpu::GpuSpan draw_root_span = gpu::alloc_frame_span(&frame_token, DrawRoot::size, 16)!;
-        DrawRoot* draw_root = (DrawRoot*)draw_root_span.cpu;
-        draw_root.corners_gpu   = corners_span.gpu;
-        draw_root.instances_gpu = instances_span.gpu;
+        DrawRoot* draw_root = (DrawRoot*)gpu::get_span_mapping(&device, draw_root_span)!.ptr;
+        draw_root.corners_gpu   = corners_address;
+        draw_root.instances_gpu = instances_address;
+        gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_root_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -172,30 +178,17 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_dispatch(
             commands: &cmd,
             pipeline: build_pipeline,
-            root:     build_root_span.gpu,
+            root:     build_root_address,
             groups:   { (INSTANCES + BUILD_WORKGROUP - 1) / BUILD_WORKGROUP, 1, 1 },
         )!;
 
-        gpu::BufferBarrier args_ready = {
-            .buffer        = args_span.buffer,
-            .offset        = args_span.offset,
-            .size          = args_span.size,
+        gpu::GlobalBarrier indirect_ready = {
             .before_stage  = gpu::Stage.COMPUTE_SHADER,
             .after_stage   = gpu::Stage.INDIRECT_COMMAND,
             .before_hazard = gpu::Hazard.SHADER_WRITE,
             .after_hazard  = gpu::Hazard.INDIRECT_READ,
         };
-        gpu::cmd_buffer_barrier(&cmd, &args_ready)!;
-        gpu::BufferBarrier count_ready = {
-            .buffer        = count_span.buffer,
-            .offset        = count_span.offset,
-            .size          = count_span.size,
-            .before_stage  = gpu::Stage.COMPUTE_SHADER,
-            .after_stage   = gpu::Stage.INDIRECT_COMMAND,
-            .before_hazard = gpu::Hazard.SHADER_WRITE,
-            .after_hazard  = gpu::Hazard.INDIRECT_READ,
-        };
-        gpu::cmd_buffer_barrier(&cmd, &count_ready)!;
+        gpu::cmd_global_barrier(&cmd, &indirect_ready)!;
 
         gpu::TextureUse swapchain_before;
         switch (acquired.prior_layout) {
@@ -229,7 +222,7 @@ fn void? run(sample_args::Options options) {
             gpu::cmd_draw_indexed_indirect_count(
                 commands:       &cmd,
                 pipeline:       pipeline,
-                vertex_root:    draw_root_span.gpu,
+                vertex_root:    draw_root_address,
                 fragment_root:  (gpu::GpuAddress)0,
                 args:           args_span,
                 count_span:     count_span,
@@ -240,7 +233,7 @@ fn void? run(sample_args::Options options) {
             gpu::cmd_draw_indexed_indirect(
                 commands:      &cmd,
                 pipeline:      pipeline,
-                vertex_root:   draw_root_span.gpu,
+                vertex_root:   draw_root_address,
                 fragment_root: (gpu::GpuAddress)0,
                 args:          args_span,
                 draw_count:    INSTANCES,

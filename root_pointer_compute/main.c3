@@ -25,7 +25,7 @@ fn int main() {
 
 fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
     gpu::GpuSpan root_span = gpu::alloc_frame_span(frame, ComputeRoot::size, 16)!;
-    ComputeRoot* root = (ComputeRoot*)root_span.cpu;
+    ComputeRoot* root = (ComputeRoot*)gpu::get_span_mapping(work.device, root_span)!.ptr;
     root.input_gpu  = gpu::get_buffer_address(work.device, work.input)!;
     root.output_gpu = gpu::get_buffer_address(work.device, work.output)!;
     root.count      = COUNT;
@@ -36,7 +36,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: work.pipeline,
-        root:     root_span.gpu,
+        root:     gpu::get_span_address(work.device, root_span)!,
         groups:   { (COUNT + ROOT_POINTER_WORKGROUP - 1) / ROOT_POINTER_WORKGROUP, 1, 1 },
     )!;
     gpu::BufferBarrier bar = {
@@ -51,9 +51,15 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* work) {
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
+    gpu::invalidate_buffer(
+        device: work.device,
+        buffer: work.output,
+        offset: 0,
+        size:   0,
+    )!;
 
     gpu::GpuSpan out_span = gpu::get_buffer_span(work.device, work.output)!;
-    float* out_data = (float*)out_span.cpu;
+    float* out_data = (float*)gpu::get_span_mapping(work.device, out_span)!.ptr;
     for (uint i = 0; i < COUNT; i++) {
         if (out_data[i] != (float)i * 2.0) return gpu::INVALID_RESOURCE_STATE~;
     }
@@ -82,8 +88,14 @@ fn void? run() {
     defer gpu::destroy_buffer(&device, output)!!;
 
     gpu::GpuSpan in_span = gpu::get_buffer_span(&device, input)!;
-    float* in_data = (float*)in_span.cpu;
+    float* in_data = (float*)gpu::get_span_mapping(&device, in_span)!.ptr;
     for (uint i = 0; i < COUNT; i++) in_data[i] = (float)i;
+    gpu::flush_buffer(
+        device: &device,
+        buffer: input,
+        offset: 0,
+        size:   0,
+    )!;
 
     gpu::ShaderDesc shader_desc = {
         .stage = gpu::ShaderStage.COMPUTE, .spirv = ROOT_POINTER_SPIRV[..],

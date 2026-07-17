@@ -56,8 +56,15 @@ struct Fleet {
 }
 
 <* Upload payloads for texture slice [first, first+count) in one command list. *>
-fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_span, uint first, uint count) {
-    char* texels = (char*)staging_span.cpu;
+fn void? upload_slice(
+    gpu::Device* device,
+    Fleet* fleet,
+    gpu::BufferHandle staging_buffer,
+    gpu::GpuSpan staging_span,
+    uint first,
+    uint count,
+) {
+    char* texels = (char*)gpu::get_span_mapping(device, staging_span)!.ptr;
     for (uint i = 0; i < count; i++) {
         char[4] p = payload_for(first + i, fleet.salts[first + i]);
         texels[i * 4]     = p[0];
@@ -65,7 +72,12 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
         texels[i * 4 + 2] = p[2];
         texels[i * 4 + 3] = p[3];
     }
-    gpu::flush_buffer(device, staging_span.buffer, staging_span.offset, (usz)count * 4)!;
+    gpu::flush_buffer(
+        device: device,
+        buffer: staging_buffer,
+        offset: staging_span.offset,
+        size:   (usz)count * 4,
+    )!;
 
     gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
@@ -103,17 +115,35 @@ fn void? upload_slice(gpu::Device* device, Fleet* fleet, gpu::GpuSpan staging_sp
     gpu::wait_completion(completion)!;
 }
 
-fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fleet, gpu::PipelineHandle pipeline, gpu::GpuSpan index_span, gpu::GpuSpan out_span, gpu::SamplerIndex sampler) {
-    uint* index_data = (uint*)index_span.cpu;
+fn void? dispatch_verify(
+    gpu::FrameToken* frame,
+    gpu::Device* device,
+    Fleet* fleet,
+    gpu::PipelineHandle pipeline,
+    gpu::BufferHandle index_buffer,
+    gpu::GpuSpan index_span,
+    gpu::GpuAddress index_address,
+    gpu::BufferHandle out_buffer,
+    gpu::GpuSpan out_span,
+    gpu::GpuAddress out_address,
+    gpu::SamplerIndex sampler,
+) {
+    uint* index_data = (uint*)gpu::get_span_mapping(device, index_span)!.ptr;
     for (uint i = 0; i < TEXTURE_COUNT; i++) index_data[i] = (uint)fleet.indices[i];
-    gpu::flush_buffer(device, index_span.buffer, 0, 0)!;
+    gpu::flush_buffer(
+        device: device,
+        buffer: index_buffer,
+        offset: 0,
+        size:   0,
+    )!;
 
     gpu::GpuSpan root_span = gpu::alloc_frame_span(frame, StressRoot::size, 16)!;
-    StressRoot* root = (StressRoot*)root_span.cpu;
-    root.indices_gpu  = index_span.gpu;
-    root.output_gpu   = out_span.gpu;
+    StressRoot* root = (StressRoot*)gpu::get_span_mapping(device, root_span)!.ptr;
+    root.indices_gpu  = index_address;
+    root.output_gpu   = out_address;
     root.heap_sampler = sampler;
     root.count        = TEXTURE_COUNT;
+    gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
 
     gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
 
@@ -121,11 +151,11 @@ fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fle
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: pipeline,
-        root:     root_span.gpu,
+        root:     root_address,
         groups:   { (TEXTURE_COUNT + VERIFY_WORKGROUP - 1) / VERIFY_WORKGROUP, 1, 1 },
     )!;
     gpu::BufferBarrier host_read = {
-        .buffer = out_span.buffer, .offset = out_span.offset, .size = out_span.size,
+        .buffer = out_buffer, .offset = out_span.offset, .size = out_span.size,
         .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
@@ -137,8 +167,8 @@ fn void? dispatch_verify(gpu::FrameToken* frame, gpu::Device* device, Fleet* fle
     gpu::wait_completion(completion)!;
 }
 
-fn void? check_results(Fleet* fleet, gpu::GpuSpan out_span) {
-    float* results = (float*)out_span.cpu;
+fn void? check_results(gpu::Device* device, Fleet* fleet, gpu::GpuSpan out_span) {
+    float* results = (float*)gpu::get_span_mapping(device, out_span)!.ptr;
     for (uint i = 0; i < TEXTURE_COUNT; i++) {
         char[4] expect = payload_for(i, fleet.salts[i]);
         for (uint c = 0; c < 4; c++) {
@@ -208,6 +238,7 @@ fn void? run() {
     gpu::BufferHandle index_buf = gpu::create_buffer(&device, &index_desc)!;
     defer (void)gpu::destroy_buffer(&device, index_buf);
     gpu::GpuSpan index_span = gpu::get_buffer_span(&device, index_buf)!;
+    gpu::GpuAddress index_address = gpu::get_span_address(&device, index_span)!;
 
     gpu::BufferDesc out_desc = {
         .size        = TEXTURE_COUNT * 16,
@@ -219,6 +250,7 @@ fn void? run() {
     gpu::BufferHandle out_buf = gpu::create_buffer(&device, &out_desc)!;
     defer (void)gpu::destroy_buffer(&device, out_buf);
     gpu::GpuSpan out_span = gpu::get_buffer_span(&device, out_buf)!;
+    gpu::GpuAddress out_address = gpu::get_span_address(&device, out_span)!;
 
     gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = VERIFY_COMP_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle shader = gpu::create_shader(&device, &comp_sd)!;
@@ -238,22 +270,38 @@ fn void? run() {
 
     gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
     for (uint first = 0; first < TEXTURE_COUNT; first += UPLOAD_BATCH) {
-        upload_slice(&device, &fleet, staging_span, first, UPLOAD_BATCH)!;
+        upload_slice(
+            device:         &device,
+            fleet:          &fleet,
+            staging_buffer: staging,
+            staging_span:   staging_span,
+            first:          first,
+            count:          UPLOAD_BATCH,
+        )!;
     }
     NanoDuration upload_time = clk.mark();
 
     dispatch_verify(
-        frame:      &frame_token,
-        device:     &device,
-        fleet:      &fleet,
-        pipeline:   pipeline,
-        index_span: index_span,
-        out_span:   out_span,
-        sampler:    sampler,
+        frame:         &frame_token,
+        device:        &device,
+        fleet:         &fleet,
+        pipeline:      pipeline,
+        index_buffer:  index_buf,
+        index_span:    index_span,
+        index_address: index_address,
+        out_buffer:    out_buf,
+        out_span:      out_span,
+        out_address:   out_address,
+        sampler:       sampler,
     )!;
     NanoDuration fill_verify_time = clk.mark();
-    gpu::invalidate_buffer(&device, out_buf, 0, 0)!;
-    check_results(&fleet, out_span)!;
+    gpu::invalidate_buffer(
+        device: &device,
+        buffer: out_buf,
+        offset: 0,
+        size:   0,
+    )!;
+    check_results(&device, &fleet, out_span)!;
     gpu::end_frame(&frame_token)!;
 
     // Churn: rolling destroy/recreate slices across frames; verify every frame.
@@ -270,20 +318,36 @@ fn void? run() {
             fleet.salts[slot]    = frame;
         }
         for (uint first = cursor; first < cursor + CHURN_SLICE; first += UPLOAD_BATCH) {
-            upload_slice(&device, &fleet, staging_span, first, UPLOAD_BATCH)!;
+            upload_slice(
+                device:         &device,
+                fleet:          &fleet,
+                staging_buffer: staging,
+                staging_span:   staging_span,
+                first:          first,
+                count:          UPLOAD_BATCH,
+            )!;
         }
 
         dispatch_verify(
-            frame:      &frame_token,
-            device:     &device,
-            fleet:      &fleet,
-            pipeline:   pipeline,
-            index_span: index_span,
-            out_span:   out_span,
-            sampler:    sampler,
+            frame:         &frame_token,
+            device:        &device,
+            fleet:         &fleet,
+            pipeline:      pipeline,
+            index_buffer:  index_buf,
+            index_span:    index_span,
+            index_address: index_address,
+            out_buffer:    out_buf,
+            out_span:      out_span,
+            out_address:   out_address,
+            sampler:       sampler,
         )!;
-        gpu::invalidate_buffer(&device, out_buf, 0, 0)!;
-        check_results(&fleet, out_span)!;
+        gpu::invalidate_buffer(
+            device: &device,
+            buffer: out_buf,
+            offset: 0,
+            size:   0,
+        )!;
+        check_results(&device, &fleet, out_span)!;
         gpu::end_frame(&frame_token)!;
         cursor = (cursor + CHURN_SLICE) % TEXTURE_COUNT;
     }

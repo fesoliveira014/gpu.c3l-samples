@@ -248,8 +248,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
     defer (void)gpu::destroy_buffer(&device, vertices);
     gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
-    write_cube_vertices((float*)vertex_span.cpu);
+    write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
     gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::BufferDesc instances_desc = {
         .size        = INSTANCE_COUNT * 48,
@@ -261,8 +262,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
     defer (void)gpu::destroy_buffer(&device, instances);
     gpu::GpuSpan instances_span = gpu::get_buffer_span(&device, instances)!;
-    write_instances((float*)instances_span.cpu);
+    write_instances((float*)gpu::get_span_mapping(&device, instances_span)!.ptr);
     gpu::flush_buffer(&device, instances, 0, 0)!;
+    gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
     gpu::ShaderDesc gv_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = GEOM_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle geom_vert = gpu::create_shader(&device, &gv_sd)!;
@@ -367,24 +369,27 @@ fn void? run(sample_args::Options options) {
         // Lights live in the frame arena: frame N-1 may still be reading its
         // copy on the GPU while this one is written.
         gpu::GpuSpan lights_span = gpu::alloc_frame_span(&frame_token, LIGHT_COUNT * 32, 16)!;
-        write_lights((float*)lights_span.cpu, (float)frame / 60.0f);
+        write_lights((float*)gpu::get_span_mapping(&device, lights_span)!.ptr, (float)frame / 60.0f);
+        gpu::GpuAddress lights_address = gpu::get_span_address(&device, lights_span)!;
 
         gpu::GpuSpan geom_span = gpu::alloc_frame_span(&frame_token, GeometryRoot::size, 16)!;
-        GeometryRoot* geom_root = (GeometryRoot*)geom_span.cpu;
+        GeometryRoot* geom_root = (GeometryRoot*)gpu::get_span_mapping(&device, geom_span)!.ptr;
         write_matrix(&geom_root.view_proj_c0, view_proj);
-        geom_root.vertex_gpu    = vertex_span.gpu;
-        geom_root.instances_gpu = instances_span.gpu;
+        geom_root.vertex_gpu    = vertex_address;
+        geom_root.instances_gpu = instances_address;
+        gpu::GpuAddress geometry_root_address = gpu::get_span_address(&device, geom_span)!;
 
         float[<3>] cam_pos = camera.position();
         gpu::GpuSpan resolve_span = gpu::alloc_frame_span(&frame_token, ResolveRoot::size, 16)!;
-        ResolveRoot* resolve_root = (ResolveRoot*)resolve_span.cpu;
+        ResolveRoot* resolve_root = (ResolveRoot*)gpu::get_span_mapping(&device, resolve_span)!.ptr;
         resolve_root.camera_pos      = { cam_pos[0], cam_pos[1], cam_pos[2], 1.0f };
-        resolve_root.lights_gpu      = lights_span.gpu;
+        resolve_root.lights_gpu      = lights_address;
         resolve_root.albedo_target   = gbuffer.albedo_index;
         resolve_root.normal_target   = gbuffer.normal_index;
         resolve_root.position_target = gbuffer.position_index;
         resolve_root.gbuffer_sampler = gbuffer_sampler;
         resolve_root.light_count     = LIGHT_COUNT;
+        gpu::GpuAddress resolve_root_address = gpu::get_span_address(&device, resolve_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -448,8 +453,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       geom_pipe,
-            vertex_root:    geom_span.gpu,
-            fragment_root:  geom_span.gpu,
+            vertex_root:    geometry_root_address,
+            fragment_root:  geometry_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: INSTANCE_COUNT,
         )!;
@@ -486,8 +491,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw(
             commands:       &cmd,
             pipeline:       resolve_pipe,
-            vertex_root:    resolve_span.gpu,
-            fragment_root:  resolve_span.gpu,
+            vertex_root:    resolve_root_address,
+            fragment_root:  resolve_root_address,
             vertex_count:   3,
             instance_count: 1,
         )!;

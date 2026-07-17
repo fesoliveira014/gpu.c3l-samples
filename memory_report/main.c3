@@ -12,6 +12,8 @@ faultdef EXPECTED_REJECTION_MISSING;
 const uint DEBUG_MESSAGE_CAP = 32;
 const usz DEBUG_NAME_CAP = 64;
 const usz DEBUG_TEXT_CAP = 256;
+const usz INDEPENDENT_ALLOCATION_SIZE = 256 << 10;
+const usz INDEPENDENT_ALLOCATION_ALIGNMENT = 256;
 
 struct DebugMessageCopy {
     gpu::DebugMessageSeverity severity;
@@ -115,11 +117,49 @@ fn ZString debug_resource_name(gpu::DebugResourceKind kind) {
         case gpu::DebugResourceKind.SAMPLER: return "sampler";
         case gpu::DebugResourceKind.FRAME: return "frame";
         case gpu::DebugResourceKind.PERSISTENT_SPAN: return "persistent_span";
+        case gpu::DebugResourceKind.ALLOCATION: return "allocation";
     }
 }
 
 fn ZString copied_text(char* text) {
     return text[0] == 0 ? (ZString)"-" : (ZString)text;
+}
+
+fn void? print_independent_allocation(
+    gpu::Device* device,
+    gpu::GpuAllocation allocation,
+    ZString name,
+) {
+    gpu::AllocationInfo info = gpu::get_allocation_info(device, allocation)!;
+    gpu::GpuSpan span = gpu::get_allocation_span(device, allocation)!;
+    gpu::GpuAddress address = gpu::get_span_address(device, span)!;
+    if (!info.addressable || (ulong)address == 0) {
+        return gpu::INVALID_RESOURCE_STATE~;
+    }
+    if (info.mapped) {
+        char[] mapping = gpu::get_span_mapping(device, span)!;
+        if (mapping.len != info.size) return gpu::INVALID_RESOURCE_STATE~;
+        if (info.memory_class == gpu::MemoryClass.CPU_WRITE) {
+            mapping[0] = (char)0x2A;
+        }
+    } else {
+        char[]? maybe_mapping = gpu::get_span_mapping(device, span);
+        if (try unexpected = maybe_mapping) {
+            (void)unexpected;
+            return EXPECTED_REJECTION_MISSING~;
+        }
+        fault mapping_fault = @catch(maybe_mapping);
+        if (mapping_fault != gpu::INVALID_ARGUMENT) return mapping_fault~;
+    }
+    io::printfn(
+        "  %s: %d bytes, alignment %d, mapped=%s, coherent=%s, address=%d",
+        name,
+        info.size,
+        info.alignment,
+        info.mapped ? "yes" : "no",
+        info.coherent ? "yes" : "no",
+        (ulong)address,
+    );
 }
 
 fn void print_debug_category(gpu::DebugMessageCategory category) {
@@ -222,6 +262,39 @@ fn void? run(bool detailed) {
     }
     fault rejected = @catch(maybe_rejected);
     if (rejected != gpu::INVALID_ARGUMENT) return rejected~;
+
+    gpu::MemoryClass[3] allocation_classes = {
+        gpu::MemoryClass.CPU_WRITE,
+        gpu::MemoryClass.GPU_PRIVATE,
+        gpu::MemoryClass.CPU_READ,
+    };
+    ZString[3] allocation_names = {
+        "report_cpu_write",
+        "report_gpu_private",
+        "report_cpu_read",
+    };
+    gpu::GpuAllocation[3] allocations = {};
+    uint allocation_count = 0;
+    defer {
+        for (uint i = 0; i < allocation_count; i++) {
+            if (allocations[i].is_valid()) {
+                (void)gpu::free_allocation(&device, &allocations[i]);
+            }
+        }
+    }
+    io::printn("independent allocations:");
+    for (uint i = 0; i < allocation_classes.len; i++) {
+        gpu::AllocationDesc allocation_desc = {
+            .size         = INDEPENDENT_ALLOCATION_SIZE,
+            .alignment    = INDEPENDENT_ALLOCATION_ALIGNMENT,
+            .memory_class = allocation_classes[i],
+            .access       = { .graphics },
+            .debug_name   = allocation_names[i],
+        };
+        allocations[i] = gpu::allocate_memory(&device, &allocation_desc)!;
+        allocation_count++;
+        print_independent_allocation(&device, allocations[i], allocation_names[i])!;
+    }
 
     gpu::BufferDesc device_buf = {
         .size = 1 << 20, .usage = { .storage, .addressable }, .memory_kind = gpu::MemoryKind.DEVICE,

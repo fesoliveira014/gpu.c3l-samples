@@ -181,8 +181,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
     defer (void)gpu::destroy_buffer(&device, vertices);
     gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
-    write_cube_vertices((float*)vertex_span.cpu);
+    write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
     gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::BufferDesc instances_desc = {
         .size        = INSTANCE_COUNT * 32,
@@ -194,8 +195,9 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
     defer (void)gpu::destroy_buffer(&device, instances);
     gpu::GpuSpan instances_span = gpu::get_buffer_span(&device, instances)!;
-    seed_instances((float*)instances_span.cpu);
+    seed_instances((float*)gpu::get_span_mapping(&device, instances_span)!.ptr);
     gpu::flush_buffer(&device, instances, 0, 0)!;
+    gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
     gpu::BufferDesc args_desc = {
         .size        = ARGS_BYTES,
@@ -207,6 +209,7 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle args = gpu::create_buffer(&device, &args_desc)!;
     defer (void)gpu::destroy_buffer(&device, args);
     gpu::GpuSpan args_span = gpu::get_buffer_span(&device, args)!;
+    gpu::GpuAddress args_address = gpu::get_span_address(&device, args_span)!;
 
     gpu::BufferDesc stats_desc = {
         .size        = 4,
@@ -218,7 +221,8 @@ fn void? run(sample_args::Options options) {
     gpu::BufferHandle stats = gpu::create_buffer(&device, &stats_desc)!;
     defer (void)gpu::destroy_buffer(&device, stats);
     gpu::GpuSpan stats_span = gpu::get_buffer_span(&device, stats)!;
-    uint* visible_count = (uint*)stats_span.cpu;
+    uint* visible_count = (uint*)gpu::get_span_mapping(&device, stats_span)!.ptr;
+    gpu::GpuAddress stats_address = gpu::get_span_address(&device, stats_span)!;
 
     gpu::ShaderDesc cull_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = CULL_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle cull_shader = gpu::create_shader(&device, &cull_sd)!;
@@ -318,21 +322,23 @@ fn void? run(sample_args::Options options) {
             camera.view());
 
         gpu::GpuSpan cull_span = gpu::alloc_frame_span(&frame_token, CullRoot::size, 16)!;
-        CullRoot* cull_root = (CullRoot*)cull_span.cpu;
+        CullRoot* cull_root = (CullRoot*)gpu::get_span_mapping(&device, cull_span)!.ptr;
         extract_planes(&cull_root.plane0, view_proj);
-        cull_root.instances_gpu = instances_span.gpu;
-        cull_root.args_gpu      = args_span.gpu;
-        cull_root.stats_gpu     = stats_span.gpu;
+        cull_root.instances_gpu = instances_address;
+        cull_root.args_gpu      = args_address;
+        cull_root.stats_gpu     = stats_address;
         cull_root.count         = INSTANCE_COUNT;
+        gpu::GpuAddress cull_root_address = gpu::get_span_address(&device, cull_span)!;
 
         gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, SceneDrawRoot::size, 16)!;
-        SceneDrawRoot* draw_root = (SceneDrawRoot*)draw_span.cpu;
+        SceneDrawRoot* draw_root = (SceneDrawRoot*)gpu::get_span_mapping(&device, draw_span)!.ptr;
         for (uint c = 0; c < 4; c++) {
             gpu::Vec4f* cols = &draw_root.view_proj_c0;
             cols[c] = { view_proj[c * 4], view_proj[c * 4 + 1], view_proj[c * 4 + 2], view_proj[c * 4 + 3] };
         }
-        draw_root.instances_gpu = instances_span.gpu;
-        draw_root.vertex_gpu    = vertex_span.gpu;
+        draw_root.instances_gpu = instances_address;
+        draw_root.vertex_gpu    = vertex_address;
+        gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -376,7 +382,7 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_dispatch(
             commands: &cmd,
             pipeline: cull_pipe,
-            root:     cull_span.gpu,
+            root:     cull_root_address,
             groups:   { (INSTANCE_COUNT + CULL_TILE - 1) / CULL_TILE, 1, 1 },
         )!;
 
@@ -419,8 +425,8 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_draw_indirect(
             commands:      &cmd,
             pipeline:      scene_pipe,
-            vertex_root:   draw_span.gpu,
-            fragment_root: draw_span.gpu,
+            vertex_root:   draw_root_address,
+            fragment_root: draw_root_address,
             args:          args_span,
             draw_count:    INSTANCE_COUNT,
         )!;
