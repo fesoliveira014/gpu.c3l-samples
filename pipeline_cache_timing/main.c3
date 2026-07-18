@@ -117,19 +117,31 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::TextureHandle target = gpu::create_texture(device, &target_desc)!;
     defer (void)gpu::destroy_texture(device, target);
 
-    gpu::BufferDesc io_desc = {
-        .size        = SCALE_COUNT * float::size * 2,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "cache_smoke_io",
+    gpu::AllocationDesc input_desc = {
+        .size         = SCALE_COUNT * float::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "cache_smoke_input",
     };
-    gpu::BufferHandle io = gpu::create_buffer(device, &io_desc)!;
-    defer (void)gpu::destroy_buffer(device, io);
-    gpu::GpuSpan io_span = gpu::get_buffer_span(device, io)!;
-    float* io_data = (float*)gpu::get_span_mapping(device, io_span)!.ptr;
-    for (uint i = 0; i < SCALE_COUNT; i++) io_data[i] = (float)i;
-    gpu::flush_buffer(device, io, 0, 0)!;
+    gpu::GpuAllocation input = gpu::allocate_memory(device, &input_desc)!;
+    defer (void)gpu::free_allocation(device, &input);
+    gpu::GpuSpan input_span = gpu::get_allocation_span(device, input)!;
+    float* input_data = (float*)gpu::get_span_mapping(device, input_span)!.ptr;
+    for (uint i = 0; i < SCALE_COUNT; i++) input_data[i] = (float)i;
+    gpu::flush_mapped_span(device, input_span)!;
+
+    gpu::AllocationDesc output_desc = {
+        .size         = SCALE_COUNT * float::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .graphics },
+        .debug_name   = "cache_smoke_output",
+    };
+    gpu::GpuAllocation output = gpu::allocate_memory(device, &output_desc)!;
+    defer (void)gpu::free_allocation(device, &output);
+    gpu::GpuSpan output_span = gpu::get_allocation_span(device, output)!;
+    float* output_data = (float*)gpu::get_span_mapping(device, output_span)!.ptr;
 
     gpu::FrameToken frame_token = gpu::begin_frame(device)!;
     gpu::GpuSpan quad_span = gpu::alloc_frame_span(&frame_token, QuadRoot::size, 16)!;
@@ -140,9 +152,8 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
 
     gpu::GpuSpan scale_span = gpu::alloc_frame_span(&frame_token, ScaleRoot::size, 16)!;
     ScaleRoot* scale_root = (ScaleRoot*)gpu::get_span_mapping(device, scale_span)!.ptr;
-    gpu::GpuAddress io_address = gpu::get_span_address(device, io_span)!;
-    scale_root.input_gpu  = io_address;
-    scale_root.output_gpu = (gpu::GpuAddress)((ulong)io_address + SCALE_COUNT * float::size);
+    scale_root.input_gpu  = gpu::get_span_address(device, input_span)!;
+    scale_root.output_gpu = gpu::get_span_address(device, output_span)!;
     scale_root.count      = SCALE_COUNT;
     gpu::GpuAddress scale_address = gpu::get_span_address(device, scale_span)!;
 
@@ -183,7 +194,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         groups:   { (SCALE_COUNT + CACHE_COMPUTE_WORKGROUP - 1) / CACHE_COMPUTE_WORKGROUP, 1, 1 },
     )!;
     gpu::BufferBarrier host_read = {
-        .buffer = io, .offset = 0, .size = io_span.size,
+        .span = output_span,
         .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
@@ -212,9 +223,9 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         return gpu::INVALID_ARGUMENT~;
     }
 
-    gpu::invalidate_buffer(device, io, 0, 0)!;
+    gpu::invalidate_mapped_span(device, output_span)!;
     for (uint i = 0; i < SCALE_COUNT; i++) {
-        if (io_data[SCALE_COUNT + i] != (float)i * 3.0f) {
+        if (output_data[i] != (float)i * 3.0f) {
             io::printn("pipeline_cache_timing: compute smoke failed");
             return gpu::INVALID_ARGUMENT~;
         }
@@ -254,20 +265,16 @@ fn void? run() {
     gpu::PipelineHandle[VARIANTS] graphics_b;
     gpu::PipelineHandle compute;
 
-    // Tier 1: cold — first build of every variant on device A.
     gpu::Device device_a = make_device({})!;
     Shaders shaders_a = create_shaders(&device_a)!;
     TierResult cold = build_all(&device_a, &shaders_a, graphics_a[..], &compute)!;
     smoke(&device_a, graphics_a[0], compute)!;
 
-    // Tier 2: dedup — identical descriptors on the same device alias the
-    // library's cache entries; no driver compile happens.
     gpu::PipelineHandle[VARIANTS] graphics_dedup;
     gpu::PipelineHandle compute_dedup;
     TierResult dedup = build_all(&device_a, &shaders_a, graphics_dedup[..], &compute_dedup)!;
     destroy_all(&device_a, graphics_dedup[..], compute_dedup);
 
-    // Export the driver blob, then tear device A down.
     usz blob_size = gpu::get_pipeline_cache_size(&device_a)!;
     char[] blob = mem::new_array(char, (sz)blob_size);
     defer mem::free(blob.ptr);
@@ -276,7 +283,6 @@ fn void? run() {
     destroy_shaders(&device_a, &shaders_a);
     gpu::destroy_device(&device_a)!;
 
-    // Tier 3: warm — device B's only head start is the imported blob.
     gpu::Device device_b = make_device(blob[:written])!;
     defer (void)gpu::destroy_device(&device_b);
     Shaders shaders_b = create_shaders(&device_b)!;

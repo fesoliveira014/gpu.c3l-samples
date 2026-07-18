@@ -2,33 +2,17 @@
 
 ![hello_triangle_sdl](screenshots/hello_triangle_sdl.png)
 
-The offscreen triangle, presented: SDL3 window, platform-neutral surface,
-swapchain with fault-driven resize.
+Presents a textured triangle through an SDL3 window and a GPU surface.
 
-Flow per frame:
+It demonstrates:
 
-1. Pump SDL events — quit exits, resize calls `resize_swapchain` with the new
-   pixel size.
-2. `acquire_next_image`; on `SWAPCHAIN_OUT_OF_DATE` resize and skip the frame
-   (minimized windows stay dormant without recreate storms).
-3. Barrier the acquired image to `COLOR_ATTACHMENT` (from `UNDEFINED` on first
-   use, `PRESENT` after), render the textured triangle, barrier to `PRESENT`.
-4. `submit` with `acquired.readiness`; the successful graphics submission
-   consumes the one-shot readiness and returns the render completion point.
-5. `present` consumes the acquired image with that completion point;
-   `SWAPCHAIN_OUT_OF_DATE` here also triggers a resize.
+- Platform handle extraction confined to `shared/sample_window_sdl.c3`.
+- Swapchain acquire readiness, color rendering, and presentation.
+- Explicit `COLOR_ATTACHMENT` and `PRESENT` transitions.
+- Resize recovery and dormant minimized-window handling.
 
-The core library never sees SDL: `shared/sample_window_sdl.c3` extracts
-native handles from SDL3 window properties and calls the matching typed surface
-module. The returned `Surface` belongs to the GPU runtime.
-
-Flags: `--frames N` renders N frames then exits (validation smoke);
-`--no-vsync` requests MAILBOX (falls back to FIFO when unsupported).
-
-Build and run from the repository root:
+Use `--frames N` for automatic exit and `--no-vsync` to request MAILBOX.
 
 ```sh
-python3 scripts/build_shaders.py
-mkdir -p out
 c3c run hello_triangle_sdl -- --frames 30 --screenshot out/hello_triangle_sdl.png
 ```

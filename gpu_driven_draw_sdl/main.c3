@@ -41,7 +41,7 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_device(&device);
     gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
     bool use_count = caps.draw_indirect_count;
-    io::printfn("gpu_driven_draw_sdl: count-buffer path %s", use_count ? "on" : "off");
+    io::printfn("gpu_driven_draw_sdl: indirect-count path %s", use_count ? "on" : "off");
 
     uint width;
     uint height;

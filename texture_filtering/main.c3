@@ -130,18 +130,18 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)gpu::destroy_swapchain(&device, swapchain);
 
-    gpu::BufferDesc vertex_desc = {
-        .size        = PLANE_VERTEX_BYTES,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "plane_vertices",
+    gpu::AllocationDesc vertex_desc = {
+        .size         = PLANE_VERTEX_BYTES,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "plane_vertices",
     };
-    gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
-    defer (void)gpu::destroy_buffer(&device, vertices);
-    gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
+    gpu::GpuAllocation vertices = gpu::allocate_memory(&device, &vertex_desc)!;
+    defer (void)gpu::free_allocation(&device, &vertices);
+    gpu::GpuSpan vertex_span = gpu::get_allocation_span(&device, vertices)!;
     write_plane_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
-    gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::flush_mapped_span(&device, vertex_span)!;
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
@@ -234,6 +234,9 @@ fn void? run(sample_args::Options options) {
     long frame = 0;
     bool running = true;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) (void)gpu::wait_completion(last_graphics, ulong::max);
+    }
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;

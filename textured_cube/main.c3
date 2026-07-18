@@ -146,18 +146,18 @@ fn void? run(sample_args::Options options) {
         if (depth_valid) (void)gpu::destroy_texture(&device, depth);
     }
 
-    gpu::BufferDesc vertex_desc = {
-        .size        = CUBE_VERTEX_BYTES,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "cube_vertices",
+    gpu::AllocationDesc vertex_desc = {
+        .size         = CUBE_VERTEX_BYTES,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "cube_vertices",
     };
-    gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
-    defer (void)gpu::destroy_buffer(&device, vertices);
-    gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
+    gpu::GpuAllocation vertices = gpu::allocate_memory(&device, &vertex_desc)!;
+    defer (void)gpu::free_allocation(&device, &vertices);
+    gpu::GpuSpan vertex_span = gpu::get_allocation_span(&device, vertices)!;
     write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
-    gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::flush_mapped_span(&device, vertex_span)!;
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
@@ -183,13 +183,15 @@ fn void? run(sample_args::Options options) {
     gpu::SamplerIndex smp_index = gpu::create_sampler(&device, &sampler_desc)!;
     defer (void)gpu::destroy_sampler(&device, smp_index);
 
-    gpu::BufferDesc staging_desc = {
-        .size = TEX_SIZE * TEX_SIZE * 4, .usage = { .transfer_src }, .memory_kind = gpu::MemoryKind.STAGING,
-        .access      = { .graphics },
+    gpu::AllocationDesc staging_desc = {
+        .size         = TEX_SIZE * TEX_SIZE * 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
     };
-    gpu::BufferHandle staging = gpu::create_buffer(&device, &staging_desc)!;
-    defer (void)gpu::destroy_buffer(&device, staging);
-    gpu::GpuSpan staging_span = gpu::get_buffer_span(&device, staging)!;
+    gpu::GpuAllocation staging = gpu::allocate_memory(&device, &staging_desc)!;
+    defer (void)gpu::free_allocation(&device, &staging);
+    gpu::GpuSpan staging_span = gpu::get_allocation_span(&device, staging)!;
     char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
@@ -201,7 +203,7 @@ fn void? run(sample_args::Options options) {
             texel[3] = (char)255;
         }
     }
-    gpu::flush_buffer(&device, staging, 0, 0)!;
+    gpu::flush_mapped_span(&device, staging_span)!;
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = CUBE_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
@@ -237,6 +239,9 @@ fn void? run(sample_args::Options options) {
     long frame = 0;
     bool running = true;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) (void)gpu::wait_completion(last_graphics, ulong::max);
+    }
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -343,8 +348,6 @@ fn void? run(sample_args::Options options) {
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
-        // The per-frame-data pattern: everything the shaders need this frame
-        // is written into a fresh frame-arena span; nothing persists.
         float time = (float)frame / 60.0f;
         camera.yaw = time * 0.5f;
         sample_camera::Mat4 view_proj = sample_camera::mul(

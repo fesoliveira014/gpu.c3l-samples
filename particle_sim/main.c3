@@ -36,15 +36,15 @@ fn void seed_particles(float* out) {
     }
 }
 
-fn gpu::BufferHandle? create_particle_buffer(gpu::Device* device, ZString name) {
-    gpu::BufferDesc desc = {
-        .size        = PARTICLE_BYTES,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics, .compute },
-        .debug_name  = name,
+fn gpu::GpuAllocation? create_particle_allocation(gpu::Device* device, ZString name) {
+    gpu::AllocationDesc desc = {
+        .size         = PARTICLE_BYTES,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.GPU_PRIVATE,
+        .access       = { .graphics, .compute },
+        .debug_name   = name,
     };
-    return gpu::create_buffer(device, &desc);
+    return gpu::allocate_memory(device, &desc);
 }
 
 fn int main(String[] args) {
@@ -89,14 +89,39 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)gpu::destroy_swapchain(&device, swapchain);
 
-    gpu::BufferHandle buffer_a = create_particle_buffer(&device, "particles_a")!;
-    defer (void)gpu::destroy_buffer(&device, buffer_a);
-    gpu::BufferHandle buffer_b = create_particle_buffer(&device, "particles_b")!;
-    defer (void)gpu::destroy_buffer(&device, buffer_b);
-    gpu::GpuSpan span_a = gpu::get_buffer_span(&device, buffer_a)!;
-    gpu::GpuSpan span_b = gpu::get_buffer_span(&device, buffer_b)!;
-    seed_particles((float*)gpu::get_span_mapping(&device, span_a)!.ptr);
-    gpu::flush_buffer(&device, buffer_a, 0, 0)!;
+    gpu::GpuAllocation allocation_a = create_particle_allocation(&device, "particles_a")!;
+    defer (void)gpu::free_allocation(&device, &allocation_a);
+    gpu::GpuAllocation allocation_b = create_particle_allocation(&device, "particles_b")!;
+    defer (void)gpu::free_allocation(&device, &allocation_b);
+    gpu::GpuSpan span_a = gpu::get_allocation_span(&device, allocation_a)!;
+    gpu::GpuSpan span_b = gpu::get_allocation_span(&device, allocation_b)!;
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+    {
+        float[] seed_data = mem::new_array(float, PARTICLE_BYTES / float::size);
+        defer mem::free(seed_data.ptr);
+        seed_particles(seed_data.ptr);
+
+        gpu::CommandList upload_cmd = gpu::begin_commands(compute_queue)!;
+        defer (void)gpu::discard_commands(&upload_cmd);
+        gpu::cmd_upload_buffer(
+            &upload_cmd,
+            span_a,
+            ((char*)seed_data.ptr)[:PARTICLE_BYTES],
+        )!;
+        gpu::BufferBarrier seed_ready = {
+            .span          = span_a,
+            .before_stage  = gpu::Stage.TRANSFER,
+            .after_stage   = gpu::Stage.COMPUTE_SHADER,
+            .before_hazard = gpu::Hazard.TRANSFER_WRITE,
+            .after_hazard  = gpu::Hazard.SHADER_READ,
+        };
+        gpu::cmd_buffer_barrier(&upload_cmd, &seed_ready)!;
+        gpu::ExecutableCommandList[1] upload_lists = { gpu::end_commands(&upload_cmd)! };
+        defer (void)gpu::discard_executable_commands(&upload_lists[0]);
+        gpu::SubmitDesc upload_submit = { .command_lists = upload_lists[..] };
+        gpu::CompletionPoint upload_completion = gpu::submit(compute_queue, &upload_submit)!;
+        gpu::wait_completion(upload_completion, ulong::max)!;
+    }
     gpu::GpuAddress span_a_address = gpu::get_span_address(&device, span_a)!;
     gpu::GpuAddress span_b_address = gpu::get_span_address(&device, span_b)!;
 
@@ -146,6 +171,10 @@ fn void? run(sample_args::Options options) {
     bool running = true;
     gpu::CompletionPoint last_compute;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) (void)gpu::wait_completion(last_graphics, ulong::max);
+        if (last_compute.is_valid()) (void)gpu::wait_completion(last_compute, ulong::max);
+    }
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -189,8 +218,6 @@ fn void? run(sample_args::Options options) {
         sim_root.dt        = FRAME_DT;
         sim_root.time      = (float)frame * FRAME_DT;
         gpu::GpuAddress sim_root_address = gpu::get_span_address(&device, sim_span)!;
-
-        gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
 
         gpu::CommandList sim_cmd = gpu::begin_commands(compute_queue)!;
         gpu::cmd_dispatch(

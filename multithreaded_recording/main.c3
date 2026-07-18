@@ -265,16 +265,16 @@ fn RunResult? run_on_device(bool validation) {
 
     uint workers = MAX_WORKERS;
 
-    gpu::BufferDesc roots_desc = {
-        .size        = (usz)CHUNKS * DRAWS_PER_CHUNK * QuadRoot::size,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "mtrec_roots",
+    gpu::AllocationDesc roots_desc = {
+        .size         = (usz)CHUNKS * DRAWS_PER_CHUNK * QuadRoot::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "mtrec_roots",
     };
-    gpu::BufferHandle roots_buf = gpu::create_buffer(&device, &roots_desc)!;
-    defer (void)gpu::destroy_buffer(&device, roots_buf);
-    gpu::GpuSpan roots_span = gpu::get_buffer_span(&device, roots_buf)!;
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
+    defer (void)gpu::free_allocation(&device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
     QuadRoot* roots = (QuadRoot*)gpu::get_span_mapping(&device, roots_span)!.ptr;
     for (uint chunk = 0; chunk < CHUNKS; chunk++) {
         for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
@@ -283,7 +283,7 @@ fn RunResult? run_on_device(bool validation) {
             root.color = color_for(chunk, draw);
         }
     }
-    gpu::flush_buffer(&device, roots_buf, 0, 0)!;
+    gpu::flush_mapped_span(&device, roots_span)!;
     gpu::GpuAddress roots_address = gpu::get_span_address(&device, roots_span)!;
 
     char[] serial_image = mem::new_array(char, READBACK_BYTES);

@@ -171,56 +171,56 @@ fn void? run(sample_args::Options options) {
         if (depth_valid) (void)gpu::destroy_texture(&device, depth);
     }
 
-    gpu::BufferDesc vertex_desc = {
-        .size        = CUBE_VERTEX_COUNT * 16,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "cube_vertices",
+    gpu::AllocationDesc vertex_desc = {
+        .size         = CUBE_VERTEX_COUNT * 16,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "cube_vertices",
     };
-    gpu::BufferHandle vertices = gpu::create_buffer(&device, &vertex_desc)!;
-    defer (void)gpu::destroy_buffer(&device, vertices);
-    gpu::GpuSpan vertex_span = gpu::get_buffer_span(&device, vertices)!;
+    gpu::GpuAllocation vertex_allocation = gpu::allocate_memory(&device, &vertex_desc)!;
+    defer (void)gpu::free_allocation(&device, &vertex_allocation);
+    gpu::GpuSpan vertex_span = gpu::get_allocation_span(&device, vertex_allocation)!;
     write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
-    gpu::flush_buffer(&device, vertices, 0, 0)!;
+    gpu::flush_mapped_span(&device, vertex_span)!;
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
-    gpu::BufferDesc instances_desc = {
-        .size        = INSTANCE_COUNT * 32,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "instances",
+    gpu::AllocationDesc instances_desc = {
+        .size         = INSTANCE_COUNT * 32,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "instances",
     };
-    gpu::BufferHandle instances = gpu::create_buffer(&device, &instances_desc)!;
-    defer (void)gpu::destroy_buffer(&device, instances);
-    gpu::GpuSpan instances_span = gpu::get_buffer_span(&device, instances)!;
+    gpu::GpuAllocation instances_allocation = gpu::allocate_memory(&device, &instances_desc)!;
+    defer (void)gpu::free_allocation(&device, &instances_allocation);
+    gpu::GpuSpan instances_span = gpu::get_allocation_span(&device, instances_allocation)!;
     seed_instances((float*)gpu::get_span_mapping(&device, instances_span)!.ptr);
-    gpu::flush_buffer(&device, instances, 0, 0)!;
+    gpu::flush_mapped_span(&device, instances_span)!;
     gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
-    gpu::BufferDesc args_desc = {
-        .size        = ARGS_BYTES,
-        .usage       = { .storage, .addressable, .indirect },
-        .memory_kind = gpu::MemoryKind.DEVICE,
-        .access      = { .graphics },
-        .debug_name  = "draw_args",
+    gpu::AllocationDesc args_desc = {
+        .size         = ARGS_BYTES,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.GPU_PRIVATE,
+        .access       = { .graphics },
+        .debug_name   = "draw_args",
     };
-    gpu::BufferHandle args = gpu::create_buffer(&device, &args_desc)!;
-    defer (void)gpu::destroy_buffer(&device, args);
-    gpu::GpuSpan args_span = gpu::get_buffer_span(&device, args)!;
+    gpu::GpuAllocation args_allocation = gpu::allocate_memory(&device, &args_desc)!;
+    defer (void)gpu::free_allocation(&device, &args_allocation);
+    gpu::GpuSpan args_span = gpu::get_allocation_span(&device, args_allocation)!;
     gpu::GpuAddress args_address = gpu::get_span_address(&device, args_span)!;
 
-    gpu::BufferDesc stats_desc = {
-        .size        = 4,
-        .usage       = { .storage, .addressable, .transfer_dst },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .graphics },
-        .debug_name  = "cull_stats",
+    gpu::AllocationDesc stats_desc = {
+        .size         = 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .graphics },
+        .debug_name   = "cull_stats",
     };
-    gpu::BufferHandle stats = gpu::create_buffer(&device, &stats_desc)!;
-    defer (void)gpu::destroy_buffer(&device, stats);
-    gpu::GpuSpan stats_span = gpu::get_buffer_span(&device, stats)!;
+    gpu::GpuAllocation stats_allocation = gpu::allocate_memory(&device, &stats_desc)!;
+    defer (void)gpu::free_allocation(&device, &stats_allocation);
+    gpu::GpuSpan stats_span = gpu::get_allocation_span(&device, stats_allocation)!;
     uint* visible_count = (uint*)gpu::get_span_mapping(&device, stats_span)!.ptr;
     gpu::GpuAddress stats_address = gpu::get_span_address(&device, stats_span)!;
 
@@ -266,6 +266,9 @@ fn void? run(sample_args::Options options) {
     long frame = 0;
     bool running = true;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) (void)gpu::wait_completion(last_graphics, ulong::max);
+    }
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -365,14 +368,14 @@ fn void? run(sample_args::Options options) {
             // first barrier orders the fill after all prior compute writes, the
             // second makes the zero visible to this frame's dispatch.
             gpu::BufferBarrier stats_before_clear = {
-                .buffer = stats, .offset = 0, .size = 4,
+                .span = stats_span,
                 .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.TRANSFER,
                 .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.TRANSFER_WRITE,
             };
             gpu::cmd_buffer_barrier(&cmd, &stats_before_clear)!;
-            gpu::cmd_fill_buffer(&cmd, stats, 0, 4, 0)!;
+            gpu::cmd_fill_buffer(&cmd, stats_span, 0)!;
             gpu::BufferBarrier stats_after_clear = {
-                .buffer = stats, .offset = 0, .size = 4,
+                .span = stats_span,
                 .before_stage = gpu::Stage.TRANSFER, .after_stage = gpu::Stage.COMPUTE_SHADER,
                 .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.SHADER_WRITE,
             };
@@ -387,14 +390,14 @@ fn void? run(sample_args::Options options) {
         )!;
 
         gpu::BufferBarrier args_ready = {
-            .buffer = args, .offset = 0, .size = ARGS_BYTES,
+            .span = args_span,
             .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.INDIRECT_COMMAND,
             .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.INDIRECT_READ,
         };
         gpu::cmd_buffer_barrier(&cmd, &args_ready)!;
         if (sample_stats) {
             gpu::BufferBarrier stats_ready = {
-                .buffer = stats, .offset = 0, .size = 4,
+                .span = stats_span,
                 .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
                 .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
             };
@@ -449,7 +452,7 @@ fn void? run(sample_args::Options options) {
 
         if (sample_stats) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
-            gpu::invalidate_buffer(&device, stats, 0, 0)!;
+            gpu::invalidate_mapped_span(&device, stats_span)!;
             uint visible = *visible_count;
             io::printfn("frame %d: visible %d / %d", frame, visible, INSTANCE_COUNT);
             if (visible < min_visible) min_visible = visible;

@@ -56,19 +56,17 @@ fn void? run(sample_args::Options options) {
     gpu::TextureIndex index_b = gpu::create_texture_descriptor(&device, image_b, null)!;
     defer (void)gpu::destroy_texture_descriptor(&device, index_b);
 
-    gpu::BufferDesc bins_desc = {
-        .size        = HISTOGRAM_BINS * 4,
-        .usage       = { .storage, .addressable },
-        .memory_kind = gpu::MemoryKind.PERSISTENT_UPLOAD,
-        .access      = { .compute },
-        .debug_name  = "histogram_bins",
+    gpu::AllocationDesc bins_desc = {
+        .size         = HISTOGRAM_BINS * 4,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .compute },
+        .debug_name   = "histogram_bins",
     };
-    gpu::BufferHandle bins = gpu::create_buffer(&device, &bins_desc)!;
-    defer (void)gpu::destroy_buffer(&device, bins);
-    gpu::GpuSpan bins_span = gpu::get_buffer_span(&device, bins)!;
+    gpu::GpuAllocation bins = gpu::allocate_memory(&device, &bins_desc)!;
+    defer (void)gpu::free_allocation(&device, &bins);
+    gpu::GpuSpan bins_span = gpu::get_allocation_span(&device, bins)!;
     uint* bin_counts = (uint*)gpu::get_span_mapping(&device, bins_span)!.ptr;
-    for (uint i = 0; i < HISTOGRAM_BINS; i++) bin_counts[i] = 0;
-    gpu::flush_buffer(&device, bins, 0, 0)!;
 
     gpu::ShaderDesc gen_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = GENERATE_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle gen_shader = gpu::create_shader(&device, &gen_sd)!;
@@ -121,6 +119,15 @@ fn void? run(sample_args::Options options) {
     gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
 
     gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+
+    gpu::cmd_fill_buffer(&cmd, bins_span, 0)!;
+    gpu::BufferBarrier bins_cleared = {
+        .span = bins_span,
+        .before_stage = gpu::Stage.TRANSFER, .after_stage = gpu::Stage.COMPUTE_SHADER,
+        .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.SHADER_READ_WRITE,
+    };
+    gpu::cmd_buffer_barrier(&cmd, &bins_cleared)!;
+
 
     gpu::TextureHandle[2] images = { image_a, image_b };
     foreach (image : images) {
@@ -186,7 +193,7 @@ fn void? run(sample_args::Options options) {
     )!;
 
     gpu::BufferBarrier bins_read = {
-        .buffer = bins, .offset = 0, .size = HISTOGRAM_BINS * 4,
+        .span = bins_span,
         .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
@@ -197,7 +204,7 @@ fn void? run(sample_args::Options options) {
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
     gpu::wait_completion(completion, ulong::max)!;
-    gpu::invalidate_buffer(&device, bins, 0, 0)!;
+    gpu::invalidate_mapped_span(&device, bins_span)!;
 
     print_histogram(bin_counts)!;
 
