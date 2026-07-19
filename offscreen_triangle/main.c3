@@ -287,6 +287,9 @@ fn void? run(sample_args::Options options) {
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = RT_SIZE, .height = RT_SIZE };
     gpu::cmd_begin_render_pass(&cmd, &pass)!;
+    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+    gpu::DepthState depth_state = {};
+    gpu::cmd_set_depth_state(&cmd, &depth_state)!;
     gpu::Viewport[2] viewports = {
         {
             .width = (float)RT_SIZE / 2.0f, .height = (float)RT_SIZE,
@@ -309,7 +312,6 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_set_scissor(&cmd, &scissors[i])!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       pipeline,
             vertex_root:    verts_address,
             fragment_root:  frag_address,
             vertex_count:   3,
@@ -330,7 +332,6 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_set_scissor(&cmd, &ui_scissor)!;
     gpu::cmd_draw(
         commands:       &cmd,
-        pipeline:       pipeline,
         vertex_root:    verts_address,
         fragment_root:  frag_address,
         vertex_count:   3,

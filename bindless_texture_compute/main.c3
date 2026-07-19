@@ -122,9 +122,9 @@ fn void? run() {
     gpu::cmd_texture_barrier(&cmd, &to_general)!;
 
     const uint GROUPS = (TEX_SIZE + HEAP_TILE - 1) / HEAP_TILE;
+    gpu::cmd_bind_pipeline(&cmd, write_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: write_pipe,
         root:     gpu::get_span_address(&device, write_root_span)!,
         groups:   { GROUPS, GROUPS, 1 },
     )!;
@@ -140,9 +140,9 @@ fn void? run() {
     };
     gpu::cmd_texture_barrier(&cmd, &write_to_sample)!;
 
+    gpu::cmd_bind_pipeline(&cmd, sample_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: sample_pipe,
         root:     gpu::get_span_address(&device, sample_root_span)!,
         groups:   { GROUPS, GROUPS, 1 },
     )!;

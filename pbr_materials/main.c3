@@ -306,7 +306,6 @@ fn void? run(sample_args::Options options) {
         .fragment_shader = frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
         .raster          = { .cull_mode = gpu::CullMode.BACK },
-        .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
         .color_formats   = color_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "pbr_forward",
@@ -473,9 +472,15 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc pass = { .colors = colors[..], .depth = &depth_target, .width = width, .height = height };
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+        gpu::DepthState depth_state = {
+            .test_enable  = true,
+            .write_enable = true,
+            .compare      = gpu::CompareOp.LESS,
+        };
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       pipeline,
             vertex_root:    root_address,
             fragment_root:  root_address,
             vertex_count:   SPHERE_VERTEX_COUNT,

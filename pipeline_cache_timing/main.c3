@@ -34,7 +34,7 @@ fn Shaders? prepare_shaders() {
 }
 
 <* Variant v spreads over blend enable x topology x color format x depth
-   presence — 24 distinct immutable-state keys, each a real driver compile. *>
+   format presence — 24 distinct immutable-state keys, each a real driver compile. *>
 fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::Format[] color_slot) {
     bool blend_on  = (v & 1) != 0;
     uint topo      = (v >> 1) & 1;
@@ -48,7 +48,6 @@ fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::Format[] colo
         .color_formats   = color_slot,
     };
     if (has_depth) {
-        desc.depth        = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS };
         desc.depth_format = gpu::Format.D32_FLOAT;
     }
     if (blend_on) {
@@ -184,18 +183,20 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = SMOKE_SIZE, .height = SMOKE_SIZE };
     gpu::cmd_begin_render_pass(&cmd, &pass)!;
+    gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
+    gpu::DepthState depth_state = {};
+    gpu::cmd_set_depth_state(&cmd, &depth_state)!;
     gpu::cmd_draw(
         commands:       &cmd,
-        pipeline:       quad_pipe,
         vertex_root:    quad_address,
         fragment_root:  quad_address,
         vertex_count:   6,
         instance_count: 1,
     )!;
     gpu::cmd_end_render_pass(&cmd)!;
+    gpu::cmd_bind_pipeline(&cmd, compute)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: compute,
         root:     scale_address,
         groups:   { (SCALE_COUNT + CACHE_COMPUTE_WORKGROUP - 1) / CACHE_COMPUTE_WORKGROUP, 1, 1 },
     )!;

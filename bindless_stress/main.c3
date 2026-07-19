@@ -138,9 +138,9 @@ fn void? dispatch_verify(
 
     gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
     defer (void)gpu::discard_commands(&cmd);
+    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: pipeline,
         root:     root_address,
         groups:   { (TEXTURE_COUNT + VERIFY_WORKGROUP - 1) / VERIFY_WORKGROUP, 1, 1 },
     )!;

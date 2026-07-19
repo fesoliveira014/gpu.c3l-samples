@@ -233,9 +233,9 @@ fn void? run(sample_args::Options options) {
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
         defer (void)gpu::discard_commands(&cmd);
 
+        gpu::cmd_bind_pipeline(&cmd, build_pipeline)!;
         gpu::cmd_dispatch(
             commands: &cmd,
-            pipeline: build_pipeline,
             root:     build_root_address,
             groups:   { (INSTANCES + BUILD_WORKGROUP - 1) / BUILD_WORKGROUP, 1, 1 },
         )!;
@@ -276,12 +276,14 @@ fn void? run(sample_args::Options options) {
             .height = swapchain_info.height,
         };
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+        gpu::DepthState depth_state = {};
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         if (use_count) {
             gpu::cmd_draw_indexed_indirect_count(
                 commands:       &cmd,
-                pipeline:       pipeline,
                 vertex_root:    draw_root_address,
-                fragment_root:  (gpu::GpuAddress)0,
+                fragment_root:  draw_root_address,
                 args:           args_span,
                 count_span:     count_span,
                 max_draw_count: INSTANCES,
@@ -290,9 +292,8 @@ fn void? run(sample_args::Options options) {
         } else {
             gpu::cmd_draw_indexed_indirect(
                 commands:      &cmd,
-                pipeline:      pipeline,
                 vertex_root:   draw_root_address,
-                fragment_root: (gpu::GpuAddress)0,
+                fragment_root: draw_root_address,
                 args:          args_span,
                 draw_count:    INSTANCES,
                 index_span:    index_span,

@@ -252,7 +252,6 @@ fn void? run(sample_args::Options options) {
         .vertex_shader   = vert,
         .fragment_shader = frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
         .color_formats   = color_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "culled_scene",
@@ -405,9 +404,9 @@ fn void? run(sample_args::Options options) {
             gpu::cmd_buffer_barrier(&cmd, &stats_after_clear)!;
         }
 
+        gpu::cmd_bind_pipeline(&cmd, cull_pipe)!;
         gpu::cmd_dispatch(
             commands: &cmd,
-            pipeline: cull_pipe,
             root:     cull_root_address,
             groups:   { (INSTANCE_COUNT + CULL_TILE - 1) / CULL_TILE, 1, 1 },
         )!;
@@ -448,9 +447,15 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc pass = { .colors = colors[..], .depth = &depth_target, .width = width, .height = height };
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
+        gpu::DepthState depth_state = {
+            .test_enable  = true,
+            .write_enable = true,
+            .compare      = gpu::CompareOp.LESS,
+        };
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw_indirect(
             commands:      &cmd,
-            pipeline:      scene_pipe,
             vertex_root:   draw_root_address,
             fragment_root: draw_root_address,
             args:          args_span,

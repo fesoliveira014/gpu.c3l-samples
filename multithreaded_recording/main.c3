@@ -45,12 +45,14 @@ fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::Pi
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::cmd_begin_render_pass(list, &pass)!;
+    gpu::cmd_bind_pipeline(list, pipeline)!;
+    gpu::DepthState depth_state = {};
+    gpu::cmd_set_depth_state(list, &depth_state)!;
     for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
         ulong index = (ulong)chunk * DRAWS_PER_CHUNK + draw;
         gpu::GpuAddress root = (gpu::GpuAddress)((ulong)roots_base + index * QuadRoot::size);
         gpu::cmd_draw(
             commands:       list,
-            pipeline:       pipeline,
             vertex_root:    root,
             fragment_root:  root,
             vertex_count:   6,

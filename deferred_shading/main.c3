@@ -300,7 +300,6 @@ fn void? run(sample_args::Options options) {
         .vertex_shader   = geom_vert,
         .fragment_shader = geom_frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
         .color_formats   = gbuffer_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "gbuffer_pass",
@@ -484,9 +483,15 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc geometry_pass = { .colors = gbuffer_colors[..], .depth = &gbuffer_depth, .width = width, .height = height };
         gpu::cmd_begin_render_pass(&cmd, &geometry_pass)!;
+        gpu::cmd_bind_pipeline(&cmd, geom_pipe)!;
+        gpu::DepthState geometry_depth_state = {
+            .test_enable  = true,
+            .write_enable = true,
+            .compare      = gpu::CompareOp.LESS,
+        };
+        gpu::cmd_set_depth_state(&cmd, &geometry_depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       geom_pipe,
             vertex_root:    geometry_root_address,
             fragment_root:  geometry_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
@@ -522,9 +527,11 @@ fn void? run(sample_args::Options options) {
         }};
         gpu::RenderPassDesc resolve_pass = { .colors = swap_colors[..], .width = width, .height = height };
         gpu::cmd_begin_render_pass(&cmd, &resolve_pass)!;
+        gpu::cmd_bind_pipeline(&cmd, resolve_pipe)!;
+        gpu::DepthState resolve_depth_state = {};
+        gpu::cmd_set_depth_state(&cmd, &resolve_depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       resolve_pipe,
             vertex_root:    resolve_root_address,
             fragment_root:  resolve_root_address,
             vertex_count:   3,

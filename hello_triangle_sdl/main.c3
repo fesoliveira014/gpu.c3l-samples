@@ -136,9 +136,11 @@ fn void? render_frame(FrameWork* ctx) {
         .height = ctx.swapchain_info.height,
     };
     gpu::cmd_begin_render_pass(&cmd, &pass)!;
+    gpu::cmd_bind_pipeline(&cmd, ctx.pipeline)!;
+    gpu::DepthState depth_state = {};
+    gpu::cmd_set_depth_state(&cmd, &depth_state)!;
     gpu::cmd_draw(
         commands:       &cmd,
-        pipeline:       ctx.pipeline,
         vertex_root:    gpu::get_span_address(ctx.device, verts_span)!,
         fragment_root:  gpu::get_span_address(ctx.device, frag_span)!,
         vertex_count:   3,
