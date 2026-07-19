@@ -65,6 +65,11 @@ fn void? run(sample_args::Options options) {
     gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
     bool use_count = caps.draw_indirect_count;
     io::printfn("gpu_driven_draw_sdl: indirect-count path %s", use_count ? "on" : "off");
+    io::printfn(
+        "gpu_driven_draw_sdl: generated-root records %s (max %d)",
+        caps.generated_work ? "available" : "unavailable",
+        caps.max_generated_work_count,
+    );
 
     uint width;
     uint height;

@@ -17,3 +17,5 @@ c3c run gpu_driven_draw_sdl -- --frames 30 --screenshot out/gpu_driven_draw_sdl.
 ```
 
 `--no-vsync` requests MAILBOX; indirect-count spans are used when supported.
+Startup also reports the semantic generated-root-record capability and its work
+limit. Rendering remains on the portable shared-root indirect path shown here.
