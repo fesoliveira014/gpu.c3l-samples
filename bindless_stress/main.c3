@@ -203,8 +203,8 @@ fn void? run() {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex sampler = gpu::create_sampler(&device, &sampler_desc)!;
-    defer (void)gpu::destroy_sampler(&device, sampler);
+    gpu::Sampler sampler_identity = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex sampler = gpu::publish_sampler(&device, sampler_identity)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = UPLOAD_BATCH * 4,

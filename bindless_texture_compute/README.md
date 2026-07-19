@@ -5,7 +5,8 @@ sets.
 
 ## Flow
 
-1. Register one sampled/storage texture and one nearest sampler.
+1. Register one sampled/storage texture, intern one nearest sampler, and
+   publish it to the strict heap.
 2. The first dispatch writes a coordinate pattern through
    `store_storage_texture(TextureIndex, ...)`.
 3. A texture barrier orders the write against sampled reads.
