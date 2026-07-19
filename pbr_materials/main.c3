@@ -217,6 +217,7 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureHandle[TEXTURE_COUNT] textures;
+    gpu::TextureView[TEXTURE_COUNT] texture_views;
     gpu::TextureIndex[TEXTURE_COUNT] texture_indices;
     for (uint i = 0; i < TEXTURE_COUNT; i++) {
         gpu::TextureDesc tex_desc = {
@@ -229,11 +230,12 @@ fn void? run(sample_args::Options options) {
             .debug_name = i == 0 ? (ZString)"albedo_white" : (ZString)"albedo_checker",
         };
         textures[i] = gpu::create_texture(&device, &tex_desc)!;
-        texture_indices[i] = gpu::create_texture_descriptor(&device, textures[i], null)!;
+        texture_views[i] = gpu::create_texture_view(&device, textures[i], null)!;
+        texture_indices[i] = texture_views[i].index;
     }
     defer {
         for (uint i = 0; i < TEXTURE_COUNT; i++) {
-            (void)gpu::destroy_texture_descriptor(&device, texture_indices[i]);
+            (void)gpu::destroy_texture_view(&device, texture_views[i]);
             (void)gpu::destroy_texture(&device, textures[i]);
         }
     }

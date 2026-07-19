@@ -167,8 +167,9 @@ fn void? run(sample_args::Options options) {
 
     gpu::TextureHandle shadow_map = create_depth_texture(&device, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, true, "shadow_map")!;
     defer (void)gpu::destroy_texture(&device, shadow_map);
-    gpu::TextureIndex shadow_index = gpu::create_texture_descriptor(&device, shadow_map, null)!;
-    defer (void)gpu::destroy_texture_descriptor(&device, shadow_index);
+    gpu::TextureView shadow_view = gpu::create_texture_view(&device, shadow_map, null)!;
+    defer (void)gpu::destroy_texture_view(&device, shadow_view);
+    gpu::TextureIndex shadow_index = shadow_view.index;
 
     gpu::TextureHandle scene_depth;
     uint scene_depth_width;

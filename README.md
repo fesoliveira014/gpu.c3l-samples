@@ -52,7 +52,7 @@ before commands that request screenshots.
 | `bindless_texture_compute` | headless | sampled and storage images | — |
 | `offscreen_triangle` | headless | dynamic rendering, transfer readback | `--screenshot out/offscreen_triangle.png` |
 | `memory_report` | headless | memory-budget and independent-allocation reporting | — |
-| `bindless_stress` | headless | 8,512 texture descriptors | — |
+| `bindless_stress` | headless | 8,192 published texture views with churn | — |
 | `multithreaded_recording` | headless | host threads, recording contexts | — |
 | `pipeline_cache_timing` | headless | graphics and compute pipeline caches | — |
 | `image_processing` | headless | storage images, span atomics | `--screenshot out/image_processing.png` |
