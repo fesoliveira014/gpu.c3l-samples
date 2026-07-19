@@ -198,11 +198,9 @@ fn void? run(sample_args::Options options) {
     gpu::flush_mapped_span(&device, staging_span)!;
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = OFFSCREEN_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, vert);
+    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = OFFSCREEN_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, frag);
+    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::GraphicsPipelineDesc pipe_desc = {

@@ -156,14 +156,11 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress span_b_address = gpu::get_span_address(&device, span_b)!;
 
     gpu::ShaderDesc sim_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = SIM_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle sim_shader = gpu::create_shader(&device, &sim_sd)!;
-    defer (void)gpu::destroy_shader(&device, sim_shader);
+    gpu::ShaderCode sim_shader = gpu::prepare_shader_code(&sim_sd)!;
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, vert);
+    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, frag);
+    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     gpu::ComputePipelineDesc sim_pd = { .shader = sim_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "particle_sim" };
     gpu::PipelineHandle sim_pipe = gpu::create_compute_pipeline(&device, &sim_pd)!;

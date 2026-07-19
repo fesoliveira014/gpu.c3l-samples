@@ -330,11 +330,9 @@ fn RunResult? run_on_device(bool validation) {
     defer (void)gpu::destroy_texture(&device, target);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = QUAD_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, vert);
+    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = QUAD_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, frag);
+    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::GraphicsPipelineDesc pipe_desc = {

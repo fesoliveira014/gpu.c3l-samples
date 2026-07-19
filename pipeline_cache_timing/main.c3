@@ -17,26 +17,20 @@ const gpu::Format[3] COLOR_FORMATS = { gpu::Format.RGBA8_UNORM, gpu::Format.BGRA
 const uint VARIANTS = 2 * 2 * 3 * 2;
 
 struct Shaders {
-    gpu::ShaderHandle vert;
-    gpu::ShaderHandle frag;
-    gpu::ShaderHandle comp;
+    gpu::ShaderCode vert;
+    gpu::ShaderCode frag;
+    gpu::ShaderCode comp;
 }
 
-fn Shaders? create_shaders(gpu::Device* device) {
+fn Shaders? prepare_shaders() {
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = QUAD_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = QUAD_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = SCALE_COMP_SPIRV[..], .entry_point = "main" };
     Shaders s;
-    s.vert = gpu::create_shader(device, &vert_sd)!;
-    s.frag = gpu::create_shader(device, &frag_sd)!;
-    s.comp = gpu::create_shader(device, &comp_sd)!;
+    s.vert = gpu::prepare_shader_code(&vert_sd)!;
+    s.frag = gpu::prepare_shader_code(&frag_sd)!;
+    s.comp = gpu::prepare_shader_code(&comp_sd)!;
     return s;
-}
-
-fn void destroy_shaders(gpu::Device* device, Shaders* s) {
-    (void)gpu::destroy_shader(device, s.comp);
-    (void)gpu::destroy_shader(device, s.frag);
-    (void)gpu::destroy_shader(device, s.vert);
 }
 
 <* Variant v spreads over blend enable x topology x color format x depth
@@ -339,15 +333,15 @@ fn void? run() {
     gpu::PipelineHandle[VARIANTS] graphics_a;
     gpu::PipelineHandle[VARIANTS] graphics_b;
     gpu::PipelineHandle compute;
+    Shaders shaders = prepare_shaders()!;
 
     gpu::Device device_a = make_device({})!;
-    Shaders shaders_a = create_shaders(&device_a)!;
-    TierResult cold = build_all(&device_a, &shaders_a, graphics_a[..], &compute)!;
+    TierResult cold = build_all(&device_a, &shaders, graphics_a[..], &compute)!;
     smoke(&device_a, graphics_a[0], compute)!;
 
     gpu::PipelineHandle[VARIANTS] graphics_dedup;
     gpu::PipelineHandle compute_dedup;
-    TierResult dedup = build_all(&device_a, &shaders_a, graphics_dedup[..], &compute_dedup)!;
+    TierResult dedup = build_all(&device_a, &shaders, graphics_dedup[..], &compute_dedup)!;
     destroy_all(&device_a, graphics_dedup[..], compute_dedup);
 
     usz blob_size = gpu::get_pipeline_cache_size(&device_a)!;
@@ -355,14 +349,11 @@ fn void? run() {
     defer mem::free(blob.ptr);
     usz written = gpu::get_pipeline_cache_data(&device_a, blob)!;
     destroy_all(&device_a, graphics_a[..], compute);
-    destroy_shaders(&device_a, &shaders_a);
     gpu::destroy_device(&device_a)!;
 
     gpu::Device device_b = make_device(blob[:written])!;
     defer (void)gpu::destroy_device(&device_b);
-    Shaders shaders_b = create_shaders(&device_b)!;
-    defer destroy_shaders(&device_b, &shaders_b);
-    TierResult warm = build_all(&device_b, &shaders_b, graphics_b[..], &compute)!;
+    TierResult warm = build_all(&device_b, &shaders, graphics_b[..], &compute)!;
     smoke(&device_b, graphics_b[0], compute)!;
     destroy_all(&device_b, graphics_b[..], compute);
 
