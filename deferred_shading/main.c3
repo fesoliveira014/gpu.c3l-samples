@@ -124,6 +124,9 @@ struct GBuffer {
     gpu::TextureHandle normal;
     gpu::TextureHandle position;
     gpu::TextureHandle depth;
+    gpu::TextureView   albedo_view;
+    gpu::TextureView   normal_view;
+    gpu::TextureView   position_view;
     gpu::TextureIndex  albedo_index;
     gpu::TextureIndex  normal_index;
     gpu::TextureIndex  position_index;
@@ -158,17 +161,20 @@ fn GBuffer? create_gbuffer(gpu::Device* device, uint width, uint height) {
         .debug_name = "g_depth",
     };
     g.depth = gpu::create_texture(device, &depth_desc)!;
-    g.albedo_index   = gpu::create_texture_descriptor(device, g.albedo, null)!;
-    g.normal_index   = gpu::create_texture_descriptor(device, g.normal, null)!;
-    g.position_index = gpu::create_texture_descriptor(device, g.position, null)!;
+    g.albedo_view   = gpu::create_texture_view(device, g.albedo, null)!;
+    g.normal_view   = gpu::create_texture_view(device, g.normal, null)!;
+    g.position_view = gpu::create_texture_view(device, g.position, null)!;
+    g.albedo_index   = g.albedo_view.index;
+    g.normal_index   = g.normal_view.index;
+    g.position_index = g.position_view.index;
     g.fresh = true;
     return g;
 }
 
 fn void destroy_gbuffer(gpu::Device* device, GBuffer* g) {
-    (void)gpu::destroy_texture_descriptor(device, g.position_index);
-    (void)gpu::destroy_texture_descriptor(device, g.normal_index);
-    (void)gpu::destroy_texture_descriptor(device, g.albedo_index);
+    (void)gpu::destroy_texture_view(device, g.position_view);
+    (void)gpu::destroy_texture_view(device, g.normal_view);
+    (void)gpu::destroy_texture_view(device, g.albedo_view);
     (void)gpu::destroy_texture(device, g.depth);
     (void)gpu::destroy_texture(device, g.position);
     (void)gpu::destroy_texture(device, g.normal);

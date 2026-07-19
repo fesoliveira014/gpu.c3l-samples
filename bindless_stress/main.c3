@@ -50,6 +50,7 @@ fn int main(String[] args) {
 
 struct Fleet {
     gpu::TextureHandle[] textures;
+    gpu::TextureView[]   views;
     gpu::TextureIndex[]  indices;
     uint[]               salts;
 }
@@ -187,12 +188,14 @@ fn void? run() {
 
     Fleet fleet = {
         .textures = mem::new_array(gpu::TextureHandle, TEXTURE_COUNT),
+        .views    = mem::new_array(gpu::TextureView, TEXTURE_COUNT),
         .indices  = mem::new_array(gpu::TextureIndex, TEXTURE_COUNT),
         .salts    = mem::new_array(uint, TEXTURE_COUNT),
     };
     defer {
         mem::free(fleet.salts.ptr);
         mem::free(fleet.indices.ptr);
+        mem::free(fleet.views.ptr);
         mem::free(fleet.textures.ptr);
     }
 
@@ -262,7 +265,8 @@ fn void? run() {
     Clock clk = clock::now();
     for (uint i = 0; i < TEXTURE_COUNT; i++) {
         fleet.textures[i] = create_stress_texture(&device)!;
-        fleet.indices[i]  = gpu::create_texture_descriptor(&device, fleet.textures[i], null)!;
+        fleet.views[i]    = gpu::create_texture_view(&device, fleet.textures[i], null)!;
+        fleet.indices[i]  = fleet.views[i].index;
         fleet.salts[i]    = 0xAB;
     }
     NanoDuration create_time = clk.mark();
@@ -298,10 +302,11 @@ fn void? run() {
     for (uint frame = 0; frame < CHURN_FRAMES; frame++) {
         for (uint i = 0; i < CHURN_SLICE; i++) {
             uint slot = (cursor + i) % TEXTURE_COUNT;
-            gpu::destroy_texture_descriptor(&device, fleet.indices[slot])!;
+            gpu::destroy_texture_view(&device, fleet.views[slot])!;
             gpu::destroy_texture(&device, fleet.textures[slot])!;
             fleet.textures[slot] = create_stress_texture(&device)!;
-            fleet.indices[slot]  = gpu::create_texture_descriptor(&device, fleet.textures[slot], null)!;
+            fleet.views[slot]    = gpu::create_texture_view(&device, fleet.textures[slot], null)!;
+            fleet.indices[slot]  = fleet.views[slot].index;
             fleet.salts[slot]    = frame;
         }
         for (uint first = cursor; first < cursor + CHURN_SLICE; first += UPLOAD_BATCH) {
@@ -332,7 +337,7 @@ fn void? run() {
     NanoDuration churn_time = clk.mark();
 
     for (uint i = 0; i < TEXTURE_COUNT; i++) {
-        gpu::destroy_texture_descriptor(&device, fleet.indices[i])!;
+        gpu::destroy_texture_view(&device, fleet.views[i])!;
         gpu::destroy_texture(&device, fleet.textures[i])!;
     }
 

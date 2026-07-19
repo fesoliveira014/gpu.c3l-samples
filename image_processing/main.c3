@@ -50,10 +50,12 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_texture(&device, image_a);
     gpu::TextureHandle image_b = create_storage_image(&device, false, "plasma_b")!;
     defer (void)gpu::destroy_texture(&device, image_b);
-    gpu::TextureIndex index_a = gpu::create_texture_descriptor(&device, image_a, null)!;
-    defer (void)gpu::destroy_texture_descriptor(&device, index_a);
-    gpu::TextureIndex index_b = gpu::create_texture_descriptor(&device, image_b, null)!;
-    defer (void)gpu::destroy_texture_descriptor(&device, index_b);
+    gpu::TextureView view_a = gpu::create_texture_view(&device, image_a, null)!;
+    defer (void)gpu::destroy_texture_view(&device, view_a);
+    gpu::TextureIndex index_a = view_a.index;
+    gpu::TextureView view_b = gpu::create_texture_view(&device, image_b, null)!;
+    defer (void)gpu::destroy_texture_view(&device, view_b);
+    gpu::TextureIndex index_b = view_b.index;
 
     gpu::AllocationDesc bins_desc = {
         .size         = HISTOGRAM_BINS * 4,

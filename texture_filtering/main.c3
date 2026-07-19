@@ -244,8 +244,9 @@ fn void? run(sample_args::Options options) {
             gpu::submit(graphics_queue, &upload_submit)!;
         gpu::wait_completion(upload_completion)!;
     }
-    gpu::TextureIndex tex_index = gpu::create_texture_descriptor(&device, checker, null)!;
-    defer (void)gpu::destroy_texture_descriptor(&device, tex_index);
+    gpu::TextureView tex_view = gpu::create_texture_view(&device, checker, null)!;
+    defer (void)gpu::destroy_texture_view(&device, tex_view);
+    gpu::TextureIndex tex_index = tex_view.index;
 
     gpu::SamplerIndex nearest_smp = make_sampler(
         device:     &device,
