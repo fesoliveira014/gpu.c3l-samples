@@ -228,7 +228,6 @@ fn void? run(sample_args::Options options) {
         .vertex_shader   = vert,
         .fragment_shader = frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
         .color_formats   = color_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "textured_cube",
@@ -408,9 +407,15 @@ fn void? run(sample_args::Options options) {
             .height = swapchain_info.height,
         };
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+        gpu::DepthState depth_state = {
+            .test_enable  = true,
+            .write_enable = true,
+            .compare      = gpu::CompareOp.LESS,
+        };
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       pipeline,
             vertex_root:    root_address,
             fragment_root:  root_address,
             vertex_count:   CUBE_VERTEX_COUNT,

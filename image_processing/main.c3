@@ -154,9 +154,9 @@ fn void? run(sample_args::Options options) {
     const uint TILE_GROUPS = (IMAGE_SIZE + GEN_TILE - 1) / GEN_TILE;
     const uint STRIP_GROUPS = (IMAGE_SIZE + BLUR_TILE - 1) / BLUR_TILE;
 
+    gpu::cmd_bind_pipeline(&cmd, gen_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: gen_pipe,
         root:     gpu::get_span_address(&device, gen_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;
@@ -173,9 +173,9 @@ fn void? run(sample_args::Options options) {
     };
     gpu::cmd_texture_barrier(&cmd, &a_written)!;
 
+    gpu::cmd_bind_pipeline(&cmd, blur_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: blur_pipe,
         root:     gpu::get_span_address(&device, blur_h_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
     )!;
@@ -186,16 +186,15 @@ fn void? run(sample_args::Options options) {
 
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: blur_pipe,
         root:     gpu::get_span_address(&device, blur_v_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
     )!;
 
     gpu::cmd_texture_barrier(&cmd, &a_written)!;
 
+    gpu::cmd_bind_pipeline(&cmd, hist_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: hist_pipe,
         root:     gpu::get_span_address(&device, hist_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;

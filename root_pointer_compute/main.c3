@@ -42,9 +42,9 @@ fn void? dispatch_compute(
 
     gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
     defer (void)gpu::discard_commands(&cmd);
+    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        pipeline: pipeline,
         root:     gpu::get_span_address(device, root_span)!,
         groups:   { (COUNT + ROOT_POINTER_WORKGROUP - 1) / ROOT_POINTER_WORKGROUP, 1, 1 },
     )!;

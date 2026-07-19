@@ -246,7 +246,6 @@ fn void? run(sample_args::Options options) {
         .vertex_shader   = sh_vert,
         .fragment_shader = sh_frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
         .raster          = { .cull_mode = gpu::CullMode.FRONT, .depth_bias_slope = 1.0f },
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadow_pass",
@@ -259,7 +258,6 @@ fn void? run(sample_args::Options options) {
         .vertex_shader   = sc_vert,
         .fragment_shader = sc_frag,
         .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .depth           = { .test_enable = true, .write_enable = true, .compare = gpu::CompareOp.LESS },
         .color_formats   = color_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadowed_scene",
@@ -408,9 +406,15 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc shadow_pass = { .depth = &shadow_target, .width = SHADOW_MAP_SIZE, .height = SHADOW_MAP_SIZE };
         gpu::cmd_begin_render_pass(&cmd, &shadow_pass)!;
+        gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
+        gpu::DepthState depth_state = {
+            .test_enable  = true,
+            .write_enable = true,
+            .compare      = gpu::CompareOp.LESS,
+        };
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       shadow_pipe,
             vertex_root:    shadow_root_address,
             fragment_root:  shadow_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
@@ -464,9 +468,10 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc scene_pass = { .colors = colors[..], .depth = &scene_depth_target, .width = width, .height = height };
         gpu::cmd_begin_render_pass(&cmd, &scene_pass)!;
+        gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       scene_pipe,
             vertex_root:    scene_root_address,
             fragment_root:  scene_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,

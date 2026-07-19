@@ -283,9 +283,9 @@ fn void? run(sample_args::Options options) {
 
         gpu::CommandList sim_cmd = gpu::begin_commands(compute_queue)!;
         defer (void)gpu::discard_commands(&sim_cmd);
+        gpu::cmd_bind_pipeline(&sim_cmd, sim_pipe)!;
         gpu::cmd_dispatch(
             commands: &sim_cmd,
-            pipeline: sim_pipe,
             root:     sim_root_address,
             groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
         )!;
@@ -327,9 +327,11 @@ fn void? run(sample_args::Options options) {
             .height = swapchain_info.height,
         };
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::cmd_bind_pipeline(&cmd, draw_pipe)!;
+        gpu::DepthState depth_state = {};
+        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,
-            pipeline:       draw_pipe,
             vertex_root:    draw_root_address,
             fragment_root:  draw_root_address,
             vertex_count:   6,
