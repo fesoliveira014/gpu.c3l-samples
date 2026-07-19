@@ -234,17 +234,13 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
     gpu::ShaderDesc sh_vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = SHADOW_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle sh_vert = gpu::create_shader(&device, &sh_vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, sh_vert);
+    gpu::ShaderCode sh_vert = gpu::prepare_shader_code(&sh_vert_sd)!;
     gpu::ShaderDesc sh_frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = SHADOW_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle sh_frag = gpu::create_shader(&device, &sh_frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, sh_frag);
+    gpu::ShaderCode sh_frag = gpu::prepare_shader_code(&sh_frag_sd)!;
     gpu::ShaderDesc sc_vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = SCENE_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle sc_vert = gpu::create_shader(&device, &sc_vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, sc_vert);
+    gpu::ShaderCode sc_vert = gpu::prepare_shader_code(&sc_vert_sd)!;
     gpu::ShaderDesc sc_frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = SCENE_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle sc_frag = gpu::create_shader(&device, &sc_frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, sc_frag);
+    gpu::ShaderCode sc_frag = gpu::prepare_shader_code(&sc_frag_sd)!;
 
     gpu::GraphicsPipelineDesc shadow_pd = {
         .vertex_shader   = sh_vert,

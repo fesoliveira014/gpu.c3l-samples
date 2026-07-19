@@ -262,11 +262,9 @@ fn void? run(sample_args::Options options) {
     sample_window::pixel_size(&window, &width, &height);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = CARD_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, vert);
+    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = CARD_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, frag);
+    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     TestcardPipeline pipeline = {};
     pipeline.desc = (gpu::GraphicsPipelineDesc){

@@ -237,14 +237,11 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress stats_address = gpu::get_span_address(&device, stats_span)!;
 
     gpu::ShaderDesc cull_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = CULL_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle cull_shader = gpu::create_shader(&device, &cull_sd)!;
-    defer (void)gpu::destroy_shader(&device, cull_shader);
+    gpu::ShaderCode cull_shader = gpu::prepare_shader_code(&cull_sd)!;
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;
-    defer (void)gpu::destroy_shader(&device, vert);
+    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle frag = gpu::create_shader(&device, &frag_sd)!;
-    defer (void)gpu::destroy_shader(&device, frag);
+    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     gpu::ComputePipelineDesc cull_pd = { .shader = cull_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "cull" };
     gpu::PipelineHandle cull_pipe = gpu::create_compute_pipeline(&device, &cull_pd)!;

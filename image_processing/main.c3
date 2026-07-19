@@ -70,14 +70,11 @@ fn void? run(sample_args::Options options) {
     uint* bin_counts = (uint*)gpu::get_span_mapping(&device, bins_span)!.ptr;
 
     gpu::ShaderDesc gen_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = GENERATE_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle gen_shader = gpu::create_shader(&device, &gen_sd)!;
-    defer (void)gpu::destroy_shader(&device, gen_shader);
+    gpu::ShaderCode gen_shader = gpu::prepare_shader_code(&gen_sd)!;
     gpu::ShaderDesc blur_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = BLUR_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle blur_shader = gpu::create_shader(&device, &blur_sd)!;
-    defer (void)gpu::destroy_shader(&device, blur_shader);
+    gpu::ShaderCode blur_shader = gpu::prepare_shader_code(&blur_sd)!;
     gpu::ShaderDesc hist_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = HISTOGRAM_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle hist_shader = gpu::create_shader(&device, &hist_sd)!;
-    defer (void)gpu::destroy_shader(&device, hist_shader);
+    gpu::ShaderCode hist_shader = gpu::prepare_shader_code(&hist_sd)!;
 
     gpu::ComputePipelineDesc gen_pd = { .shader = gen_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "generate" };
     gpu::PipelineHandle gen_pipe = gpu::create_compute_pipeline(&device, &gen_pd)!;

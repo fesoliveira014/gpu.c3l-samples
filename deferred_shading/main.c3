@@ -287,17 +287,13 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
     gpu::ShaderDesc gv_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = GEOM_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle geom_vert = gpu::create_shader(&device, &gv_sd)!;
-    defer (void)gpu::destroy_shader(&device, geom_vert);
+    gpu::ShaderCode geom_vert = gpu::prepare_shader_code(&gv_sd)!;
     gpu::ShaderDesc gf_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = GEOM_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle geom_frag = gpu::create_shader(&device, &gf_sd)!;
-    defer (void)gpu::destroy_shader(&device, geom_frag);
+    gpu::ShaderCode geom_frag = gpu::prepare_shader_code(&gf_sd)!;
     gpu::ShaderDesc rv_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = RESOLVE_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle resolve_vert = gpu::create_shader(&device, &rv_sd)!;
-    defer (void)gpu::destroy_shader(&device, resolve_vert);
+    gpu::ShaderCode resolve_vert = gpu::prepare_shader_code(&rv_sd)!;
     gpu::ShaderDesc rf_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = RESOLVE_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderHandle resolve_frag = gpu::create_shader(&device, &rf_sd)!;
-    defer (void)gpu::destroy_shader(&device, resolve_frag);
+    gpu::ShaderCode resolve_frag = gpu::prepare_shader_code(&rf_sd)!;
 
     gpu::Format[3] gbuffer_formats = { gpu::Format.RGBA8_UNORM, gpu::Format.RGBA16_FLOAT, gpu::Format.RGBA16_FLOAT };
     gpu::GraphicsPipelineDesc geom_pd = {
