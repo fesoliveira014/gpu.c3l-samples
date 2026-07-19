@@ -51,6 +51,74 @@ fn gpu::ScissorRect clamp_scissor_rect(gpu::ScissorRect rect, int width, int hei
     };
 }
 
+fn void? read_color_target(
+    gpu::Device* device,
+    gpu::Queue queue,
+    gpu::TextureHandle target,
+    gpu::CompletionPoint producer_completion,
+    char[] out,
+) {
+    defer (void)gpu::wait_completion(producer_completion, ulong::max);
+
+    gpu::AllocationDesc readback_desc = {
+        .size         = out.len,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .graphics },
+        .debug_name   = "color_readback",
+    };
+    gpu::GpuAllocation readback_allocation = gpu::allocate_memory(device, &readback_desc)!;
+    defer (void)gpu::free_allocation(device, &readback_allocation);
+    gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback_allocation)!;
+
+    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    defer (void)gpu::discard_commands(&commands);
+    gpu::TextureBarrier to_source = {
+        .texture       = target,
+        .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
+        .after_stage   = gpu::Stage.TRANSFER,
+        .before_hazard = gpu::Hazard.COLOR_WRITE,
+        .after_hazard  = gpu::Hazard.TRANSFER_READ,
+        .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
+    };
+    gpu::cmd_texture_barrier(&commands, &to_source)!;
+    gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::BufferBarrier to_host = {
+        .span          = readback_span,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.HOST,
+        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
+        .after_hazard  = gpu::Hazard.HOST_READ,
+    };
+    gpu::cmd_buffer_barrier(&commands, &to_host)!;
+    gpu::TextureBarrier restore = {
+        .texture       = target,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
+        .before_hazard = gpu::Hazard.TRANSFER_READ,
+        .after_hazard  = gpu::Hazard.COLOR_WRITE,
+        .old_layout    = gpu::TextureLayout.TRANSFER_SRC,
+        .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+    };
+    gpu::cmd_texture_barrier(&commands, &restore)!;
+
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
+    gpu::CompletionPoint[1] waits = { producer_completion };
+    gpu::SubmitDesc submit = {
+        .command_lists    = lists[..],
+        .completion_waits = waits[..],
+    };
+    gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
+    defer (void)gpu::wait_completion(completion, ulong::max);
+    gpu::wait_completion(completion, ulong::max)!;
+    gpu::invalidate_mapped_span(device, readback_span)!;
+    char[] mapping = gpu::get_span_mapping(device, readback_span)!;
+    mem::copy(out.ptr, mapping.ptr, out.len);
+}
+
 fn int main(String[] args) {
     sample_args::Options options = sample_args::parse_options(args);
     if (catch err = run(options)) {
@@ -65,7 +133,6 @@ fn void? run(sample_args::Options options) {
     gpu::DeviceDesc device_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
-        .frames_in_flight  = 2,
         .application_name  = "offscreen_triangle",
     };
     gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
@@ -147,9 +214,18 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, pipeline);
 
-    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
+    gpu::AllocationDesc roots_desc = {
+        .size         = 3 * 16 + FragRoot::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "offscreen_roots",
+    };
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
+    defer (void)gpu::free_allocation(&device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
 
-    gpu::GpuSpan verts_span = gpu::alloc_frame_span(&frame_token, 3 * 16, 16)!;
+    gpu::GpuSpan verts_span = roots_span.checked_subspan(0, 3 * 16)!;
     float[12] vertex_data = {
         -0.8f, -0.8f, 0.0f, 0.0f,
          0.8f, -0.8f, 1.0f, 0.0f,
@@ -158,15 +234,17 @@ fn void? run(sample_args::Options options) {
     mem::copy(gpu::get_span_mapping(&device, verts_span)!.ptr, &vertex_data, vertex_data.len * float::size);
     gpu::GpuAddress verts_address = gpu::get_span_address(&device, verts_span)!;
 
-    gpu::GpuSpan frag_span = gpu::alloc_frame_span(&frame_token, FragRoot::size, 16)!;
+    gpu::GpuSpan frag_span = roots_span.checked_subspan(3 * 16, FragRoot::size)!;
     FragRoot* frag_root = (FragRoot*)gpu::get_span_mapping(&device, frag_span)!.ptr;
     frag_root.texture_index = tex_index;
     frag_root.sampler_index = smp_index;
     gpu::GpuAddress frag_address = gpu::get_span_address(&device, frag_span)!;
+    gpu::flush_mapped_span(&device, roots_span)!;
 
     gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
     gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier checker_to_dst = {
         .texture       = checker,
@@ -261,22 +339,19 @@ fn void? run(sample_args::Options options) {
     )!;
     gpu::cmd_end_render_pass(&cmd)!;
 
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
-    gpu::wait_completion(completion, ulong::max)!;
 
     char[] pixels = mem::new_array(char, RT_BYTES);
     defer mem::free(pixels.ptr);
-    gpu::readback_texture_data(
-        device:      &device,
-        src:         target,
-        mip:         0,
-        out_data:    pixels,
-        from_stage:  gpu::Stage.COLOR_ATTACHMENT,
-        from_hazard: gpu::Hazard.COLOR_WRITE,
-        from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
+    read_color_target(
+        device:              &device,
+        queue:               graphics_queue,
+        target:              target,
+        producer_completion: completion,
+        out:                 pixels,
     )!;
     if (pixel_is_clear(pixels, RT_SIZE / 4, RT_SIZE * 3 / 8)
         || pixel_is_clear(pixels, RT_SIZE * 3 / 4, RT_SIZE * 5 / 8)) {
@@ -301,6 +376,5 @@ fn void? run(sample_args::Options options) {
             height: RT_SIZE,
         )!;
     }
-    gpu::end_frame(&frame_token)!;
 }
 

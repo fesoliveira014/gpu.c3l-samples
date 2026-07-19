@@ -16,7 +16,7 @@
     "hello_triangle_sdl": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
-      "sources": [ "hello_triangle_sdl/main.c3", "hello_triangle_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+      "sources": [ "hello_triangle_sdl/main.c3", "hello_triangle_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
     },
     // Headless: no SDL. Proves the root-pointer compute ABI end to end.
     "root_pointer_compute": {
@@ -42,7 +42,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "textured_cube/main.c3", "textured_cube/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -51,7 +51,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "texture_filtering/main.c3", "texture_filtering/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -71,7 +71,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "particle_sim/main.c3", "particle_sim/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -80,7 +80,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "frustum_culling/main.c3", "frustum_culling/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -89,7 +89,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "shadow_mapping/main.c3", "shadow_mapping/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -98,7 +98,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "deferred_shading/main.c3", "deferred_shading/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -107,7 +107,7 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "pbr_materials/main.c3", "pbr_materials/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
@@ -116,13 +116,17 @@
       "dependencies": [ "sdl3" ],
       "sources": [
         "present_mode_explorer/main.c3", "present_mode_explorer/shader_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/sample_args.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/screenshot.c3", "shared/png.c3"
       ]
     },
     "shared_selftest": {
       "type": "executable",
       "sources": [ "shared/selftest.c3", "shared/sample_args.c3", "shared/sample_camera.c3", "shared/png.c3" ]
+    },
+    "frame_upload_selftest": {
+      "type": "executable",
+      "sources": [ "shared/frame_upload_selftest.c3", "shared/frame_upload.c3" ]
     },
     "multithreaded_recording": {
       "type": "executable",
@@ -139,7 +143,7 @@
     "gpu_driven_draw_sdl": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
-      "sources": [ "gpu_driven_draw_sdl/main.c3", "gpu_driven_draw_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+      "sources": [ "gpu_driven_draw_sdl/main.c3", "gpu_driven_draw_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
     }
   }
 }

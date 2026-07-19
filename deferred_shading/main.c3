@@ -4,6 +4,7 @@ import gpu;
 import sample_args;
 import sample_camera;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 import std::math;
@@ -15,6 +16,8 @@ const char[*] RESOLVE_FRAG_SPIRV = $embed("shaders/resolve.frag.spv");
 
 const uint CUBE_VERTEX_COUNT = 36;
 const uint INSTANCE_COUNT = 9;
+const usz UPLOAD_BYTES_PER_SLOT =
+    LIGHT_COUNT * 32 + GeometryRoot::size + ResolveRoot::size;
 
 struct CubeFace {
     float[<3>] normal;
@@ -199,6 +202,16 @@ fn void? run(sample_args::Options options) {
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
 
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "deferred_root_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
+
     uint width;
     uint height;
     sample_window::pixel_size(&window, &width, &height);
@@ -358,24 +371,33 @@ fn void? run(sample_args::Options options) {
             sample_camera::perspective(1.0f, (float)width / (float)height, 0.1f, 100.0f),
             camera.view());
 
-        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&frame_token)!;
             continue;
         }
 
-        // Lights live in the frame arena: frame N-1 may still be reading its
-        // copy on the GPU while this one is written.
-        gpu::GpuSpan lights_span = gpu::alloc_frame_span(&frame_token, LIGHT_COUNT * 32, 16)!;
+        sample_frame_upload::FrameUploadBatch upload_batch =
+            sample_frame_upload::begin_frame_upload(&upload_ring)!;
+        defer catch {
+            if (upload_batch.ring != null) {
+                (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+            }
+        };
+        gpu::GpuSpan lights_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      LIGHT_COUNT * 32,
+            alignment: 16,
+        )!;
         write_lights((float*)gpu::get_span_mapping(&device, lights_span)!.ptr, (float)frame / 60.0f);
         gpu::GpuAddress lights_address = gpu::get_span_address(&device, lights_span)!;
 
-        gpu::GpuSpan geom_span = gpu::alloc_frame_span(&frame_token, GeometryRoot::size, 16)!;
+        gpu::GpuSpan geom_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      GeometryRoot::size,
+            alignment: 16,
+        )!;
         GeometryRoot* geom_root = (GeometryRoot*)gpu::get_span_mapping(&device, geom_span)!.ptr;
         write_matrix(&geom_root.view_proj_c0, view_proj);
         geom_root.vertex_gpu    = vertex_address;
@@ -383,7 +405,11 @@ fn void? run(sample_args::Options options) {
         gpu::GpuAddress geometry_root_address = gpu::get_span_address(&device, geom_span)!;
 
         float[<3>] cam_pos = camera.position();
-        gpu::GpuSpan resolve_span = gpu::alloc_frame_span(&frame_token, ResolveRoot::size, 16)!;
+        gpu::GpuSpan resolve_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      ResolveRoot::size,
+            alignment: 16,
+        )!;
         ResolveRoot* resolve_root = (ResolveRoot*)gpu::get_span_mapping(&device, resolve_span)!.ptr;
         resolve_root.camera_pos      = { cam_pos[0], cam_pos[1], cam_pos[2], 1.0f };
         resolve_root.lights_gpu      = lights_address;
@@ -393,10 +419,12 @@ fn void? run(sample_args::Options options) {
         resolve_root.gbuffer_sampler = gbuffer_sampler;
         resolve_root.light_count     = LIGHT_COUNT;
         gpu::GpuAddress resolve_root_address = gpu::get_span_address(&device, resolve_span)!;
+        sample_frame_upload::flush_frame_upload(&upload_batch)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
 
         gpu::TextureHandle[3] color_targets = { gbuffer.albedo, gbuffer.normal, gbuffer.position };
         foreach (target : color_targets) {
@@ -507,18 +535,20 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-
-        gpu::ExecutableCommandList[1] lists = { cmd_executable };
+        gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:      &device,
+                device:              &device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       width,
                 height:      height,
@@ -534,8 +564,6 @@ fn void? run(sample_args::Options options) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-
-        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

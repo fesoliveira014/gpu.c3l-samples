@@ -4,6 +4,7 @@ import gpu;
 import sample_args;
 import sample_camera;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 import std::math;
@@ -18,6 +19,7 @@ const float CUBE_HALF = 0.35f;
 const uint CUBE_VERTEX_COUNT = 36;
 const usz  ARGS_BYTES = INSTANCE_COUNT * 16;
 const long STATS_SAMPLE_INTERVAL = 10;
+const usz UPLOAD_BYTES_PER_SLOT = CullRoot::size + SceneDrawRoot::size;
 
 struct CubeFace {
     float[<3>] normal;
@@ -141,6 +143,16 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "frustum_root_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
     uint width;
     uint height;
@@ -306,16 +318,20 @@ fn void? run(sample_args::Options options) {
         width = swapchain_info.width;
         height = swapchain_info.height;
 
-        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&frame_token)!;
             continue;
         }
+
+        sample_frame_upload::FrameUploadBatch upload_batch =
+            sample_frame_upload::begin_frame_upload(&upload_ring)!;
+        defer catch {
+            if (upload_batch.ring != null) {
+                (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+            }
+        };
 
         bool sample_stats = frame % STATS_SAMPLE_INTERVAL == 0;
 
@@ -324,7 +340,11 @@ fn void? run(sample_args::Options options) {
             sample_camera::perspective(0.9f, (float)width / (float)height, 0.1f, 100.0f),
             camera.view());
 
-        gpu::GpuSpan cull_span = gpu::alloc_frame_span(&frame_token, CullRoot::size, 16)!;
+        gpu::GpuSpan cull_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      CullRoot::size,
+            alignment: 16,
+        )!;
         CullRoot* cull_root = (CullRoot*)gpu::get_span_mapping(&device, cull_span)!.ptr;
         extract_planes(&cull_root.plane0, view_proj);
         cull_root.instances_gpu = instances_address;
@@ -333,7 +353,11 @@ fn void? run(sample_args::Options options) {
         cull_root.count         = INSTANCE_COUNT;
         gpu::GpuAddress cull_root_address = gpu::get_span_address(&device, cull_span)!;
 
-        gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, SceneDrawRoot::size, 16)!;
+        gpu::GpuSpan draw_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      SceneDrawRoot::size,
+            alignment: 16,
+        )!;
         SceneDrawRoot* draw_root = (SceneDrawRoot*)gpu::get_span_mapping(&device, draw_span)!.ptr;
         for (uint c = 0; c < 4; c++) {
             gpu::Vec4f* cols = &draw_root.view_proj_c0;
@@ -342,10 +366,12 @@ fn void? run(sample_args::Options options) {
         draw_root.instances_gpu = instances_address;
         draw_root.vertex_gpu    = vertex_address;
         gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_span)!;
+        sample_frame_upload::flush_frame_upload(&upload_batch)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
 
         if (depth_fresh) {
             gpu::TextureBarrier depth_init = {
@@ -363,8 +389,8 @@ fn void? run(sample_args::Options options) {
 
         if (sample_stats) {
             // The cull shader increments the visible counter every frame, so a
-            // host reset would race with the previous frame's still-in-flight
-            // dispatch (frames_in_flight=2). Zero it on the GPU instead: the
+            // host reset would race with the previous submission. Zero it on
+            // the GPU instead: the
             // first barrier orders the fill after all prior compute writes, the
             // second makes the zero visible to this frame's dispatch.
             gpu::BufferBarrier stats_before_clear = {
@@ -441,14 +467,14 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-
-        gpu::ExecutableCommandList[1] lists = { cmd_executable };
+        gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (sample_stats) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
@@ -461,7 +487,9 @@ fn void? run(sample_args::Options options) {
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:      &device,
+                device:              &device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       width,
                 height:      height,
@@ -477,8 +505,6 @@ fn void? run(sample_args::Options options) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-
-        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

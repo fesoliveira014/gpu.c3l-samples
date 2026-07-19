@@ -9,7 +9,7 @@ It demonstrates:
 - Albedo `RGBA8_UNORM`, normal `RGBA16_FLOAT`, and position `RGBA16_FLOAT`
   color targets plus a `D32_FLOAT` depth target.
 - Descriptor-heap reads in a fullscreen resolve pass.
-- Frame-arena light data addressed through the resolve root.
+- Caller-owned upload-ring light data addressed through the resolve root.
 - Explicit color-attachment-to-shader-read transitions and resize recovery.
 
 ```sh

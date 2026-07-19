@@ -36,7 +36,7 @@ fn gpu::Vec4f rect_for(uint chunk, uint draw) {
     return { x0, y0, x0 + tile_w, y0 + band_h };
 }
 
-<* Roots are precomputed in persistent memory so recording measures cmd_draw. *>
+<* Roots are precomputed in a CPU_WRITE allocation so recording measures cmd_draw. *>
 fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::PipelineHandle pipeline, gpu::GpuAddress roots_base, uint chunk) {
     gpu::ColorTargetDesc[1] colors = {{
         .texture  = target,
@@ -97,6 +97,74 @@ fn int record_worker(void* arg) {
 
 fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
 
+fn void? read_color_target(
+    gpu::Device* device,
+    gpu::Queue queue,
+    gpu::TextureHandle target,
+    gpu::CompletionPoint producer_completion,
+    char[] out,
+) {
+    defer (void)gpu::wait_completion(producer_completion, ulong::max);
+
+    gpu::AllocationDesc readback_desc = {
+        .size         = out.len,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .graphics },
+        .debug_name   = "color_readback",
+    };
+    gpu::GpuAllocation readback_allocation = gpu::allocate_memory(device, &readback_desc)!;
+    defer (void)gpu::free_allocation(device, &readback_allocation);
+    gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback_allocation)!;
+
+    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    defer (void)gpu::discard_commands(&commands);
+    gpu::TextureBarrier to_source = {
+        .texture       = target,
+        .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
+        .after_stage   = gpu::Stage.TRANSFER,
+        .before_hazard = gpu::Hazard.COLOR_WRITE,
+        .after_hazard  = gpu::Hazard.TRANSFER_READ,
+        .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
+    };
+    gpu::cmd_texture_barrier(&commands, &to_source)!;
+    gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::BufferBarrier to_host = {
+        .span          = readback_span,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.HOST,
+        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
+        .after_hazard  = gpu::Hazard.HOST_READ,
+    };
+    gpu::cmd_buffer_barrier(&commands, &to_host)!;
+    gpu::TextureBarrier restore = {
+        .texture       = target,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
+        .before_hazard = gpu::Hazard.TRANSFER_READ,
+        .after_hazard  = gpu::Hazard.COLOR_WRITE,
+        .old_layout    = gpu::TextureLayout.TRANSFER_SRC,
+        .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+    };
+    gpu::cmd_texture_barrier(&commands, &restore)!;
+
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
+    gpu::CompletionPoint[1] waits = { producer_completion };
+    gpu::SubmitDesc submit = {
+        .command_lists    = lists[..],
+        .completion_waits = waits[..],
+    };
+    gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
+    defer (void)gpu::wait_completion(completion, ulong::max);
+    gpu::wait_completion(completion, ulong::max)!;
+    gpu::invalidate_mapped_span(device, readback_span)!;
+    char[] mapping = gpu::get_span_mapping(device, readback_span)!;
+    mem::copy(out.ptr, mapping.ptr, out.len);
+}
+
 fn int main(String[] args) {
     if (catch err = run()) {
         io::printfn("multithreaded_recording: FAIL (%s)", err);
@@ -118,10 +186,10 @@ fn NanoDuration? run_once(
     char[] out,
     bool* target_seen,
 ) {
-    gpu::FrameToken frame = gpu::begin_frame(device)!;
     gpu::Queue queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
     gpu::CommandList preamble = gpu::begin_commands(queue)!;
+    defer (void)gpu::discard_commands(&preamble);
     // Readback round-trips the layout back to COLOR_ATTACHMENT, so only the
     // first run needs a transition out of UNDEFINED.
     if (!*target_seen) {
@@ -145,28 +213,50 @@ fn NanoDuration? run_once(
     gpu::RenderPassDesc clear_pass = { .colors = clear_colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::cmd_begin_render_pass(&preamble, &clear_pass)!;
     gpu::cmd_end_render_pass(&preamble)!;
-    gpu::ExecutableCommandList preamble_executable = gpu::end_commands(&preamble)!;
-    gpu::ExecutableCommandList[1] preamble_lists = { preamble_executable };
+    gpu::ExecutableCommandList[1] preamble_lists = {
+        gpu::end_commands(&preamble)!,
+    };
+    defer (void)gpu::discard_executable_commands(&preamble_lists[0]);
     gpu::SubmitDesc preamble_submit = { .command_lists = preamble_lists[..] };
-    gpu::submit(queue, &preamble_submit)!;
+    gpu::CompletionPoint preamble_completion = gpu::submit(queue, &preamble_submit)!;
+    defer (void)gpu::wait_completion(preamble_completion, ulong::max);
     *target_seen = true;
 
     gpu::ExecutableCommandList[CHUNKS] all_lists;
+    uint list_count;
+    defer {
+        for (uint i = 0; i < list_count; i++) {
+            (void)gpu::discard_executable_commands(&all_lists[i]);
+        }
+    }
 
     Clock clk = clock::now();
     NanoDuration record_time;
     if (workers == 0) {
         for (uint chunk = 0; chunk < CHUNKS; chunk++) {
             gpu::CommandList list = gpu::begin_commands(queue)!;
+            defer (void)gpu::discard_commands(&list);
             record_chunk(&list, target, pipeline, roots_base, chunk)!;
-            gpu::ExecutableCommandList list_executable = gpu::end_commands(&list)!;
-            all_lists[chunk] = list_executable;
+            all_lists[chunk] = gpu::end_commands(&list)!;
+            list_count++;
         }
         record_time = clk.mark();
     } else {
         WorkerArgs[] wargs = mem::new_array(WorkerArgs, MAX_WORKERS);
         defer mem::free(wargs.ptr);
         Thread[MAX_WORKERS] threads;
+        uint threads_created;
+        uint threads_joined;
+        defer {
+            for (uint w = threads_joined; w < threads_created; w++) {
+                (void)threads[w].join();
+            }
+            for (uint w = 0; w < threads_created; w++) {
+                for (uint i = 0; i < wargs[w].list_count; i++) {
+                    (void)gpu::discard_executable_commands(&wargs[w].lists[i]);
+                }
+            }
+        }
         for (uint w = 0; w < workers; w++) {
             wargs[w] = {
                 .queue       = queue,
@@ -177,42 +267,37 @@ fn NanoDuration? run_once(
                 .stride      = workers,
             };
             threads[w].create(&record_worker, &wargs[w])!;
+            threads_created++;
         }
-        for (uint w = 0; w < workers; w++) threads[w].join()!;
+        for (uint w = 0; w < workers; w++) {
+            threads[w].join()!;
+            threads_joined++;
+        }
         record_time = clk.mark();
         bool failed = false;
         for (uint w = 0; w < workers; w++) failed = failed || wargs[w].failed;
-        if (failed) {
-            for (uint w = 0; w < workers; w++) {
-                for (uint i = 0; i < wargs[w].list_count; i++) {
-                    (void)gpu::discard_executable_commands(&wargs[w].lists[i]);
-                }
-            }
-            return gpu::INVALID_ARGUMENT~;
-        }
+        if (failed) return gpu::INVALID_ARGUMENT~;
         // Chunk order in the submit does not affect pixels (disjoint bands),
         // but keep it deterministic anyway: chunk index = w + i*workers.
         for (uint w = 0; w < workers; w++) {
             for (uint i = 0; i < wargs[w].list_count; i++) {
                 all_lists[w + i * workers] = wargs[w].lists[i];
+                wargs[w].lists[i] = {};
+                list_count++;
             }
         }
     }
 
     gpu::SubmitDesc submit = { .command_lists = all_lists[..] };
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
-    gpu::wait_completion(completion, ulong::max)!;
 
-    gpu::readback_texture_data(
-        device:      device,
-        src:         target,
-        mip:         0,
-        out_data:    out,
-        from_stage:  gpu::Stage.COLOR_ATTACHMENT,
-        from_hazard: gpu::Hazard.COLOR_WRITE,
-        from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
+    read_color_target(
+        device:              device,
+        queue:               queue,
+        target:              target,
+        producer_completion: completion,
+        out:                 out,
     )!;
-    gpu::end_frame(&frame)!;
     return record_time;
 }
 
@@ -227,7 +312,6 @@ fn RunResult? run_on_device(bool validation) {
     gpu::DeviceDesc device_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = validation,
-        .frames_in_flight  = 2,
         .application_name  = "multithreaded_recording",
     };
     gpu::Device device = gpu::create_device_from_desc(&device_desc)!;

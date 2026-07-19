@@ -52,6 +52,7 @@ jobs:
           export VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
           mkdir -p out
           c3c run shared_selftest
+          c3c run frame_upload_selftest
           c3c run root_pointer_compute
           c3c run bindless_texture_compute
           c3c run memory_report

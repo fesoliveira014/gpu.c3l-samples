@@ -41,7 +41,6 @@ fn void? run(sample_args::Options options) {
     gpu::DeviceDesc device_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
-        .frames_in_flight  = 2,
         .application_name  = "image_processing",
     };
     gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
@@ -88,37 +87,48 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle hist_pipe = gpu::create_compute_pipeline(&device, &hist_pd)!;
     defer (void)gpu::destroy_pipeline(&device, hist_pipe);
 
-    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
+    gpu::AllocationDesc roots_desc = {
+        .size         = GenerateRoot::size + 2 * BlurRoot::size + HistogramRoot::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .compute },
+        .debug_name   = "image_processing_roots",
+    };
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
+    defer (void)gpu::free_allocation(&device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
 
-    gpu::GpuSpan gen_span = gpu::alloc_frame_span(&frame_token, GenerateRoot::size, 16)!;
+    gpu::GpuSpan gen_span = roots_span.checked_subspan(0, GenerateRoot::size)!;
     GenerateRoot* gen_root = (GenerateRoot*)gpu::get_span_mapping(&device, gen_span)!.ptr;
     gen_root.target = index_a;
     gen_root.size   = IMAGE_SIZE;
     gen_root.seed   = 3.7f;
 
-    gpu::GpuSpan blur_h_span = gpu::alloc_frame_span(&frame_token, BlurRoot::size, 16)!;
+    gpu::GpuSpan blur_h_span = roots_span.checked_subspan(GenerateRoot::size, BlurRoot::size)!;
     BlurRoot* blur_h = (BlurRoot*)gpu::get_span_mapping(&device, blur_h_span)!.ptr;
     blur_h.src        = index_a;
     blur_h.dst        = index_b;
     blur_h.size       = IMAGE_SIZE;
     blur_h.horizontal = 1;
 
-    gpu::GpuSpan blur_v_span = gpu::alloc_frame_span(&frame_token, BlurRoot::size, 16)!;
+    gpu::GpuSpan blur_v_span = roots_span.checked_subspan(GenerateRoot::size + BlurRoot::size, BlurRoot::size)!;
     BlurRoot* blur_v = (BlurRoot*)gpu::get_span_mapping(&device, blur_v_span)!.ptr;
     blur_v.src        = index_b;
     blur_v.dst        = index_a;
     blur_v.size       = IMAGE_SIZE;
     blur_v.horizontal = 0;
 
-    gpu::GpuSpan hist_span = gpu::alloc_frame_span(&frame_token, HistogramRoot::size, 16)!;
+    gpu::GpuSpan hist_span = roots_span.checked_subspan(GenerateRoot::size + 2 * BlurRoot::size, HistogramRoot::size)!;
     HistogramRoot* hist_root = (HistogramRoot*)gpu::get_span_mapping(&device, hist_span)!.ptr;
     hist_root.bins_gpu = gpu::get_span_address(&device, bins_span)!;
     hist_root.src      = index_a;
     hist_root.size     = IMAGE_SIZE;
+    gpu::flush_mapped_span(&device, roots_span)!;
 
     gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
 
     gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
 
     gpu::cmd_fill_buffer(&cmd, bins_span, 0)!;
     gpu::BufferBarrier bins_cleared = {
@@ -127,7 +137,6 @@ fn void? run(sample_args::Options options) {
         .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.SHADER_READ_WRITE,
     };
     gpu::cmd_buffer_barrier(&cmd, &bins_cleared)!;
-
 
     gpu::TextureHandle[2] images = { image_a, image_b };
     foreach (image : images) {
@@ -199,10 +208,11 @@ fn void? run(sample_args::Options options) {
     };
     gpu::cmd_buffer_barrier(&cmd, &bins_read)!;
 
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
     gpu::invalidate_mapped_span(&device, bins_span)!;
 
@@ -210,19 +220,19 @@ fn void? run(sample_args::Options options) {
 
     if (options.wants_screenshot()) {
         sample_capture::capture_texture_png(
-            device:      &device,
-            src:         image_a,
-            width:       IMAGE_SIZE,
-            height:      IMAGE_SIZE,
-            format:      gpu::Format.RGBA8_UNORM,
-            from_stage:  gpu::Stage.COMPUTE_SHADER,
-            from_hazard: gpu::Hazard.SHADER_READ,
-            from_layout: gpu::TextureLayout.GENERAL,
-            path:        options.screenshot_path,
+            device:              &device,
+            producer_completion: completion,
+            queue_kind:          gpu::QueueKind.COMPUTE,
+            src:                 image_a,
+            width:               IMAGE_SIZE,
+            height:              IMAGE_SIZE,
+            format:              gpu::Format.RGBA8_UNORM,
+            from_stage:          gpu::Stage.COMPUTE_SHADER,
+            from_hazard:         gpu::Hazard.SHADER_READ,
+            from_layout:         gpu::TextureLayout.GENERAL,
+            path:                options.screenshot_path,
         )!;
     }
-
-    gpu::end_frame(&frame_token)!;
 }
 
 <* ASCII chart plus the self-check: every pixel lands in exactly one bin. *>

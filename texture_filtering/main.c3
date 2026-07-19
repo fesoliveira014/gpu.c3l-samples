@@ -4,6 +4,7 @@ import gpu;
 import sample_args;
 import sample_camera;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 
@@ -13,6 +14,7 @@ const char[*] PLANE_FRAG_SPIRV = $embed("shaders/plane.frag.spv");
 const uint TEX_SIZE = 256;
 const uint MIP_LEVELS = 9;
 const uint CHECKER_CELLS = 8;
+const usz UPLOAD_BYTES_PER_SLOT = 112;
 
 const uint PLANE_VERTEX_COUNT = 6;
 const usz  PLANE_VERTEX_BYTES = PLANE_VERTEX_COUNT * 32;
@@ -115,6 +117,16 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_device(&device);
     gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
 
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "texture_filtering_frame_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
+
     uint width;
     uint height;
     sample_window::pixel_size(&window, &width, &height);
@@ -157,22 +169,79 @@ fn void? run(sample_args::Options options) {
     gpu::TextureHandle checker = gpu::create_texture(&device, &tex_desc)!;
     defer (void)gpu::destroy_texture(&device, checker);
 
-    for (uint level = 0; level < MIP_LEVELS; level++) {
-        uint level_size = TEX_SIZE >> level;
-        if (level_size == 0) level_size = 1;
-        char[] pixels = mem::new_array(char, (sz)((usz)level_size * level_size * 4));
-        defer free(pixels.ptr);
-        write_mip_pixels(pixels, level_size, level);
-        bool last = level == MIP_LEVELS - 1;
-        gpu::upload_texture_data(
-            device:      &device,
-            dst:         checker,
-            mip:         level,
-            data:        pixels,
-            next_stage:  last ? gpu::Stage.FRAGMENT_SHADER : gpu::Stage.TRANSFER,
-            next_hazard: last ? gpu::Hazard.SHADER_READ : gpu::Hazard.TRANSFER_WRITE,
-            next_layout: last ? gpu::TextureLayout.SHADER_READ : gpu::TextureLayout.TRANSFER_DST,
+    {
+        usz mip_upload_bytes = 0;
+        for (uint level = 0; level < MIP_LEVELS; level++) {
+            uint level_size = TEX_SIZE >> level;
+            if (level_size == 0) level_size = 1;
+            mip_upload_bytes += (usz)level_size * level_size * 4;
+        }
+
+        gpu::AllocationDesc mip_upload_desc = {
+            .size         = mip_upload_bytes,
+            .alignment    = 16,
+            .memory_class = gpu::MemoryClass.CPU_WRITE,
+            .access       = { .graphics },
+            .debug_name   = "texture_filtering_mip_upload",
+        };
+        gpu::GpuAllocation mip_upload = gpu::allocate_memory(&device, &mip_upload_desc)!;
+        defer (void)gpu::free_allocation(&device, &mip_upload);
+        gpu::GpuSpan mip_upload_span = gpu::get_allocation_span(&device, mip_upload)!;
+
+        usz byte_offset = 0;
+        for (uint level = 0; level < MIP_LEVELS; level++) {
+            uint level_size = TEX_SIZE >> level;
+            if (level_size == 0) level_size = 1;
+            usz level_bytes = (usz)level_size * level_size * 4;
+            gpu::GpuSpan level_span =
+                mip_upload_span.checked_subspan(byte_offset, level_bytes)!;
+            write_mip_pixels(
+                gpu::get_span_mapping(&device, level_span)!,
+                level_size,
+                level,
+            );
+            byte_offset += level_bytes;
+        }
+        gpu::flush_mapped_span(&device, mip_upload_span)!;
+
+        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+        gpu::CommandList upload_commands = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&upload_commands);
+        gpu::TextureBarrier to_transfer = gpu::texture_transition(
+            texture: checker,
+            before:  gpu::TextureUse.UNDEFINED,
+            after:   gpu::TextureUse.TRANSFER_DESTINATION,
         )!;
+        gpu::cmd_texture_barrier(&upload_commands, &to_transfer)!;
+
+        byte_offset = 0;
+        for (uint level = 0; level < MIP_LEVELS; level++) {
+            uint level_size = TEX_SIZE >> level;
+            if (level_size == 0) level_size = 1;
+            usz level_bytes = (usz)level_size * level_size * 4;
+            gpu::BufferTextureCopyDesc copy = {
+                .src     = mip_upload_span.checked_subspan(byte_offset, level_bytes)!,
+                .texture = checker,
+                .mip     = level,
+            };
+            gpu::cmd_copy_buffer_to_texture(&upload_commands, &copy)!;
+            byte_offset += level_bytes;
+        }
+
+        gpu::TextureBarrier to_sample = gpu::texture_transition(
+            texture: checker,
+            before:  gpu::TextureUse.TRANSFER_DESTINATION,
+            after:   gpu::TextureUse.SAMPLED_FRAGMENT,
+        )!;
+        gpu::cmd_texture_barrier(&upload_commands, &to_sample)!;
+        gpu::ExecutableCommandList[1] upload_lists = {
+            gpu::end_commands(&upload_commands)!,
+        };
+        defer (void)gpu::discard_executable_commands(&upload_lists[0]);
+        gpu::SubmitDesc upload_submit = { .command_lists = upload_lists[..] };
+        gpu::CompletionPoint upload_completion =
+            gpu::submit(graphics_queue, &upload_submit)!;
+        gpu::wait_completion(upload_completion)!;
     }
     gpu::TextureIndex tex_index = gpu::create_texture_descriptor(&device, checker, null)!;
     defer (void)gpu::destroy_texture_descriptor(&device, tex_index);
@@ -256,20 +325,25 @@ fn void? run(sample_args::Options options) {
             pipeline_valid = true;
         }
 
-        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&frame_token)!;
             continue;
         }
+
+        sample_frame_upload::FrameUploadBatch upload_batch =
+            sample_frame_upload::begin_frame_upload(&upload_ring)!;
+        defer catch {
+            if (upload_batch.ring != null) {
+                (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+            }
+        };
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
 
         gpu::TextureUse swapchain_before;
         switch (acquired.prior_layout) {
@@ -296,7 +370,11 @@ fn void? run(sample_args::Options options) {
             ),
             sample_camera::look_at({ 0.0f, 2.0f, 12.0f }, { 0.0f, 0.0f, -40.0f }, { 0, 1, 0 }));
 
-        gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, FilterRoot::size, 16)!;
+        gpu::GpuSpan root_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      FilterRoot::size,
+            alignment: 16,
+        )!;
         FilterRoot* root = (FilterRoot*)gpu::get_span_mapping(&device, root_span)!.ptr;
         write_matrix(&root.view_proj_c0, view_proj);
         root.vertex_gpu    = vertex_address;
@@ -341,18 +419,22 @@ fn void? run(sample_args::Options options) {
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-        gpu::ExecutableCommandList[1] lists = { cmd_executable };
+        sample_frame_upload::flush_frame_upload(&upload_batch)!;
+        gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:      &device,
-                src:         acquired.texture,
+                device:              &device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
+                src:                 acquired.texture,
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,
                 format:      swapchain_info.format,
@@ -367,8 +449,6 @@ fn void? run(sample_args::Options options) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-
-        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

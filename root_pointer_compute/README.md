@@ -7,7 +7,7 @@ or binding numbers.
 ## Flow
 
 1. Allocate a `CPU_WRITE` input and `CPU_READ` output.
-2. Put their span addresses and element count in a frame-arena root.
+2. Put their span addresses and element count in a caller-owned `CPU_WRITE` root.
 3. Dispatch once and order the output against host reads.
 4. Invalidate the output mapping and verify all 256 values.
 

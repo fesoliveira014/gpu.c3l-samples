@@ -3,6 +3,7 @@ module present_mode_explorer;
 import gpu;
 import sample_args;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 import std::time;
@@ -67,6 +68,7 @@ fn int main(String[] args) {
    stats. Captures a screenshot on frame `capture_at` when non-negative. *>
 fn ModeStats? run_mode_window(
     gpu::Device* device,
+    sample_frame_upload::FrameUploadRing* upload_ring,
     gpu::SwapchainHandle swapchain,
     sample_window::SampleWindow* window,
     TestcardPipeline* pipeline,
@@ -83,6 +85,11 @@ fn ModeStats? run_mode_window(
     Clock frame_clk = clock::now();
     long frame = 0;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) {
+            (void)gpu::wait_completion(last_graphics, ulong::max);
+        }
+    }
 
     while (frame < frames) {
         sample_window::WindowEvents events = sample_window::pump_events(window);
@@ -107,9 +114,6 @@ fn ModeStats? run_mode_window(
         *width = swapchain_info.width;
         *height = swapchain_info.height;
 
-        gpu::FrameToken frame_token = gpu::begin_frame(device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         Clock acquire_clk = clock::now();
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(device, swapchain);
         if (catch err = acquired) {
@@ -117,21 +121,33 @@ fn ModeStats? run_mode_window(
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
                 swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
             }
-            gpu::end_frame(&frame_token)!;
             (void)frame_clk.mark();
             continue;
         }
         double acquire_ms = ms(acquire_clk.mark());
 
-        gpu::GpuSpan root_span = gpu::alloc_frame_span(&frame_token, ExplorerRoot::size, 16)!;
+        sample_frame_upload::FrameUploadBatch upload =
+            sample_frame_upload::begin_frame_upload(upload_ring)!;
+        defer catch {
+            if (upload.ring != null) {
+                (void)sample_frame_upload::cancel_frame_upload(&upload);
+            }
+        };
+        gpu::GpuSpan root_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload,
+            size:      ExplorerRoot::size,
+            alignment: 16,
+        )!;
         ExplorerRoot* root = (ExplorerRoot*)gpu::get_span_mapping(device, root_span)!.ptr;
         float bar = (float)(frame % 100) / 100.0f;
         root.params = { (float)frame * 0.04f, bar, (float)*width, (float)*height };
         gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
+        sample_frame_upload::flush_frame_upload(&upload)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
             before:  swapchain_texture_use(acquired.prior_layout)!,
@@ -163,18 +179,20 @@ fn ModeStats? run_mode_window(
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-
-        gpu::ExecutableCommandList[1] lists = { cmd_executable };
+        gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_frame_upload::retire_frame_upload(&upload, last_graphics)!;
 
         if (frame == capture_at) {
             sample_capture::capture_texture_png(
-                device:      device,
+                device:              device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       *width,
                 height:      *height,
@@ -189,12 +207,9 @@ fn ModeStats? run_mode_window(
         if (catch err = gpu::present(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
-            gpu::end_frame(&frame_token)!;
             (void)frame_clk.mark();
             continue;
         }
-
-        gpu::end_frame(&frame_token)!;
 
         double frame_ms = ms(frame_clk.mark());
         if (frame >= WARMUP_FRAMES) {
@@ -207,7 +222,6 @@ fn ModeStats? run_mode_window(
         frame++;
     }
 
-    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
     if (stats.frames > 0) {
         stats.mean_ms = total_ms / stats.frames;
         stats.acquire_ms = total_acquire_ms / stats.frames;
@@ -232,6 +246,16 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: ExplorerRoot::size,
+            access:        upload_access,
+            debug_name:    "present_mode_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
     uint width;
     uint height;
@@ -267,11 +291,15 @@ fn void? run(sample_args::Options options) {
         .debug_name       = "explorer_probe",
     };
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &probe_desc)!;
+    defer {
+        if (swapchain.is_valid()) {
+            (void)gpu::destroy_swapchain(&device, swapchain);
+        }
+    }
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     gpu::PresentModeSupport support = gpu::get_present_mode_support(&device, swapchain)!;
     if (!support.fifo) {
         io::printn("present_mode_explorer: driver does not report FIFO — spec violation");
-        gpu::destroy_swapchain(&device, swapchain)!;
         return gpu::UNSUPPORTED_FEATURE~;
     }
 
@@ -292,6 +320,7 @@ fn void? run(sample_args::Options options) {
         // The probe swapchain is already FIFO; recreate for the others.
         if (i > 0) {
             gpu::destroy_swapchain(&device, swapchain)!;
+            swapchain = gpu::SWAPCHAIN_HANDLE_INVALID;
             gpu::SwapchainDesc mode_desc = probe_desc;
             mode_desc.present_mode = mode;
             mode_desc.debug_name   = "explorer_mode";
@@ -300,6 +329,7 @@ fn void? run(sample_args::Options options) {
         }
         ModeStats stats = run_mode_window(
             device:          &device,
+            upload_ring:     &upload_ring,
             swapchain:       swapchain,
             window:          &window,
             pipeline:        &pipeline,
@@ -314,5 +344,4 @@ fn void? run(sample_args::Options options) {
             mode_name(mode), stats.mean_ms, stats.min_ms, stats.max_ms, stats.acquire_ms,
             stats.mean_ms > 0.0 ? 1000.0 / stats.mean_ms : 0.0);
     }
-    gpu::destroy_swapchain(&device, swapchain)!;
 }

@@ -8,7 +8,7 @@ It exercises:
 - Explicit descriptor and texture capacity at device creation.
 - Root-addressed index data and bindless sampling across the full heap.
 - Twenty-four churn frames that replace 256 textures and descriptors each.
-- Timeline-gated descriptor retirement under frames in flight.
+- Completion-gated descriptor retirement while descriptors churn.
 
 Timings are advisory; any payload mismatch or capacity error fails the run.
 

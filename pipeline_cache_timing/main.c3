@@ -143,23 +143,35 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::GpuSpan output_span = gpu::get_allocation_span(device, output)!;
     float* output_data = (float*)gpu::get_span_mapping(device, output_span)!.ptr;
 
-    gpu::FrameToken frame_token = gpu::begin_frame(device)!;
-    gpu::GpuSpan quad_span = gpu::alloc_frame_span(&frame_token, QuadRoot::size, 16)!;
+    gpu::AllocationDesc roots_desc = {
+        .size         = QuadRoot::size + ScaleRoot::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .graphics },
+        .debug_name   = "cache_smoke_roots",
+    };
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(device, &roots_desc)!;
+    defer (void)gpu::free_allocation(device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(device, roots_allocation)!;
+
+    gpu::GpuSpan quad_span = roots_span.checked_subspan(0, QuadRoot::size)!;
     QuadRoot* quad_root = (QuadRoot*)gpu::get_span_mapping(device, quad_span)!.ptr;
     quad_root.rect  = { -1.0f, -1.0f, 1.0f, 1.0f };
     quad_root.color = { 0.0f, 1.0f, 0.0f, 1.0f };
     gpu::GpuAddress quad_address = gpu::get_span_address(device, quad_span)!;
 
-    gpu::GpuSpan scale_span = gpu::alloc_frame_span(&frame_token, ScaleRoot::size, 16)!;
+    gpu::GpuSpan scale_span = roots_span.checked_subspan(QuadRoot::size, ScaleRoot::size)!;
     ScaleRoot* scale_root = (ScaleRoot*)gpu::get_span_mapping(device, scale_span)!.ptr;
     scale_root.input_gpu  = gpu::get_span_address(device, input_span)!;
     scale_root.output_gpu = gpu::get_span_address(device, output_span)!;
     scale_root.count      = SCALE_COUNT;
     gpu::GpuAddress scale_address = gpu::get_span_address(device, scale_span)!;
+    gpu::flush_mapped_span(device, roots_span)!;
 
     gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
 
     gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
     gpu::TextureBarrier to_attach = {
         .texture       = target,
         .before_stage  = gpu::Stage.HOST,
@@ -199,22 +211,19 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
-    gpu::wait_completion(completion, ulong::max)!;
 
     char[] pixels = mem::new_array(char, (usz)SMOKE_SIZE * SMOKE_SIZE * 4);
     defer mem::free(pixels.ptr);
-    gpu::readback_texture_data(
-        device:      device,
-        src:         target,
-        mip:         0,
-        out_data:    pixels,
-        from_stage:  gpu::Stage.COLOR_ATTACHMENT,
-        from_hazard: gpu::Hazard.COLOR_WRITE,
-        from_layout: gpu::TextureLayout.COLOR_ATTACHMENT,
+    read_color_target(
+        device:              device,
+        queue:               graphics_queue,
+        target:              target,
+        producer_completion: completion,
+        out:                 pixels,
     )!;
     // Full-target green quad: center pixel must be pure green.
     usz center = ((usz)SMOKE_SIZE / 2 * SMOKE_SIZE + SMOKE_SIZE / 2) * 4;
@@ -230,14 +239,12 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
             return gpu::INVALID_ARGUMENT~;
         }
     }
-    gpu::end_frame(&frame_token)!;
 }
 
 fn gpu::Device? make_device(char[] blob) {
     gpu::DeviceDesc desc = {
         .backend             = gpu::BackendKind.VULKAN,
         .enable_validation   = true,
-        .frames_in_flight    = 2,
         .pipeline_cache_data = blob,
         .application_name    = "pipeline_cache_timing",
     };
@@ -249,6 +256,74 @@ fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
 fn void print_tier(String name, TierResult r) {
     io::printfn("  %s  total %8.2f ms   per-variant %6.2f..%.2f ms",
         name, ms(r.total), ms(r.min), ms(r.max));
+}
+
+fn void? read_color_target(
+    gpu::Device* device,
+    gpu::Queue queue,
+    gpu::TextureHandle target,
+    gpu::CompletionPoint producer_completion,
+    char[] out,
+) {
+    defer (void)gpu::wait_completion(producer_completion, ulong::max);
+
+    gpu::AllocationDesc readback_desc = {
+        .size         = out.len,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = { .graphics },
+        .debug_name   = "color_readback",
+    };
+    gpu::GpuAllocation readback_allocation = gpu::allocate_memory(device, &readback_desc)!;
+    defer (void)gpu::free_allocation(device, &readback_allocation);
+    gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback_allocation)!;
+
+    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    defer (void)gpu::discard_commands(&commands);
+    gpu::TextureBarrier to_source = {
+        .texture       = target,
+        .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
+        .after_stage   = gpu::Stage.TRANSFER,
+        .before_hazard = gpu::Hazard.COLOR_WRITE,
+        .after_hazard  = gpu::Hazard.TRANSFER_READ,
+        .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
+    };
+    gpu::cmd_texture_barrier(&commands, &to_source)!;
+    gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::BufferBarrier to_host = {
+        .span          = readback_span,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.HOST,
+        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
+        .after_hazard  = gpu::Hazard.HOST_READ,
+    };
+    gpu::cmd_buffer_barrier(&commands, &to_host)!;
+    gpu::TextureBarrier restore = {
+        .texture       = target,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
+        .before_hazard = gpu::Hazard.TRANSFER_READ,
+        .after_hazard  = gpu::Hazard.COLOR_WRITE,
+        .old_layout    = gpu::TextureLayout.TRANSFER_SRC,
+        .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+    };
+    gpu::cmd_texture_barrier(&commands, &restore)!;
+
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
+    gpu::CompletionPoint[1] waits = { producer_completion };
+    gpu::SubmitDesc submit = {
+        .command_lists    = lists[..],
+        .completion_waits = waits[..],
+    };
+    gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
+    defer (void)gpu::wait_completion(completion, ulong::max);
+    gpu::wait_completion(completion, ulong::max)!;
+    gpu::invalidate_mapped_span(device, readback_span)!;
+    char[] mapping = gpu::get_span_mapping(device, readback_span)!;
+    mem::copy(out.ptr, mapping.ptr, out.len);
 }
 
 fn int main(String[] args) {
