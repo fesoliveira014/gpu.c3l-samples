@@ -86,7 +86,8 @@ fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu:
         .anisotropy_enable = aniso,
         .max_anisotropy    = aniso ? 16.0f : 0.0f,
     };
-    return gpu::create_sampler(device, &desc);
+    gpu::Sampler sampler = gpu::intern_sampler(device, &desc)!;
+    return gpu::publish_sampler(device, sampler);
 }
 
 fn int main(String[] args) {
@@ -252,21 +253,18 @@ fn void? run(sample_args::Options options) {
         mip_filter: gpu::Filter.NEAREST,
         max_lod:    0.0f,
     )!;
-    defer (void)gpu::destroy_sampler(&device, nearest_smp);
     gpu::SamplerIndex bilinear_smp = make_sampler(
         device:     &device,
         filter:     gpu::Filter.LINEAR,
         mip_filter: gpu::Filter.NEAREST,
         max_lod:    0.0f,
     )!;
-    defer (void)gpu::destroy_sampler(&device, bilinear_smp);
     gpu::SamplerIndex trilinear_smp = make_sampler(
         device:     &device,
         filter:     gpu::Filter.LINEAR,
-        mip_filter: gpu::Filter.NEAREST,
+        mip_filter: gpu::Filter.LINEAR,
         max_lod:    (float)MIP_LEVELS,
     )!;
-    defer (void)gpu::destroy_sampler(&device, trilinear_smp);
     gpu::SamplerIndex aniso_smp = make_sampler(
         device:     &device,
         filter:     gpu::Filter.LINEAR,
@@ -274,7 +272,6 @@ fn void? run(sample_args::Options options) {
         max_lod:    (float)MIP_LEVELS,
         aniso:      caps.max_sampler_anisotropy > 0,
     )!;
-    defer (void)gpu::destroy_sampler(&device, aniso_smp);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = PLANE_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle vert = gpu::create_shader(&device, &vert_sd)!;

@@ -48,8 +48,8 @@ fn void? run() {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex smp_index = gpu::create_sampler(&device, &sampler_desc)!;
-    defer (void)gpu::destroy_sampler(&device, smp_index);
+    gpu::Sampler sampler = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex smp_index = gpu::publish_sampler(&device, sampler)!;
 
     gpu::AllocationDesc out_desc = {
         .size         = TEX_SIZE * TEX_SIZE * 16,
