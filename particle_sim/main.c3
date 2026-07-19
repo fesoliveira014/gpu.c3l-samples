@@ -4,6 +4,7 @@ import gpu;
 import sample_args;
 import sample_camera;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 
@@ -13,6 +14,7 @@ const char[*] FRAG_SPIRV = $embed("shaders/particle.frag.spv");
 
 const usz  PARTICLE_BYTES = PARTICLE_COUNT * 32;
 const float FRAME_DT = 1.0f / 60.0f;
+const usz UPLOAD_BYTES_PER_SLOT = SimRoot::size + ParticleDrawRoot::size;
 
 fn uint pcg_hash(uint x) {
     uint state = x * 747796405u + 2891336453u;
@@ -74,6 +76,16 @@ fn void? run(sample_args::Options options) {
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
 
+    gpu::QueueRoles upload_access = { .graphics, .compute };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "particle_root_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
+
     uint width;
     uint height;
     sample_window::pixel_size(&window, &width, &height);
@@ -97,17 +109,35 @@ fn void? run(sample_args::Options options) {
     gpu::GpuSpan span_b = gpu::get_allocation_span(&device, allocation_b)!;
     gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
     {
-        float[] seed_data = mem::new_array(float, PARTICLE_BYTES / float::size);
-        defer mem::free(seed_data.ptr);
-        seed_particles(seed_data.ptr);
+        gpu::QueueRoles seed_access = { .compute };
+        gpu::AllocationDesc seed_desc = {
+            .size         = PARTICLE_BYTES,
+            .alignment    = 16,
+            .memory_class = gpu::MemoryClass.CPU_WRITE,
+            .access       = seed_access,
+            .debug_name   = "particle_seed_upload",
+        };
+        gpu::GpuAllocation seed_upload = gpu::allocate_memory(&device, &seed_desc)!;
+        defer (void)gpu::free_allocation(&device, &seed_upload);
+        gpu::GpuSpan seed_span = gpu::get_allocation_span(&device, seed_upload)!;
+        seed_particles((float*)gpu::get_span_mapping(&device, seed_span)!.ptr);
+        gpu::flush_mapped_span(&device, seed_span)!;
 
         gpu::CommandList upload_cmd = gpu::begin_commands(compute_queue)!;
         defer (void)gpu::discard_commands(&upload_cmd);
-        gpu::cmd_upload_buffer(
-            &upload_cmd,
-            span_a,
-            ((char*)seed_data.ptr)[:PARTICLE_BYTES],
-        )!;
+        gpu::BufferBarrier seed_visible = {
+            .span          = seed_span,
+            .before_stage  = gpu::Stage.HOST,
+            .after_stage   = gpu::Stage.TRANSFER,
+            .before_hazard = gpu::Hazard.HOST_WRITE,
+            .after_hazard  = gpu::Hazard.TRANSFER_READ,
+        };
+        gpu::cmd_buffer_barrier(&upload_cmd, &seed_visible)!;
+        gpu::BufferCopyDesc seed_copy = {
+            .src = seed_span,
+            .dst = span_a,
+        };
+        gpu::cmd_copy_buffer(&upload_cmd, &seed_copy)!;
         gpu::BufferBarrier seed_ready = {
             .span          = span_a,
             .before_stage  = gpu::Stage.TRANSFER,
@@ -194,23 +224,34 @@ fn void? run(sample_args::Options options) {
             draw_pipeline_valid = true;
         }
 
-        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&frame_token)!;
             continue;
         }
+
+        sample_frame_upload::FrameUploadBatch upload_batch =
+            sample_frame_upload::begin_frame_upload(&upload_ring)!;
+        gpu::CompletionPoint batch_completion;
+        defer catch {
+            if (upload_batch.ring != null) {
+                if (batch_completion.is_valid()) {
+                    (void)gpu::wait_completion(batch_completion, ulong::max);
+                }
+                (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+            }
+        };
 
         bool even = frame % 2 == 0;
         gpu::GpuAddress read_address = even ? span_a_address : span_b_address;
         gpu::GpuAddress write_address = even ? span_b_address : span_a_address;
 
-        // The draw submission waits on this compute completion across queues.
-        gpu::GpuSpan sim_span = gpu::alloc_frame_span(&frame_token, SimRoot::size, 16)!;
+        gpu::GpuSpan sim_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      SimRoot::size,
+            alignment: 16,
+        )!;
         SimRoot* sim_root = (SimRoot*)gpu::get_span_mapping(&device, sim_span)!.ptr;
         sim_root.read_gpu  = read_address;
         sim_root.write_gpu = write_address;
@@ -219,19 +260,11 @@ fn void? run(sample_args::Options options) {
         sim_root.time      = (float)frame * FRAME_DT;
         gpu::GpuAddress sim_root_address = gpu::get_span_address(&device, sim_span)!;
 
-        gpu::CommandList sim_cmd = gpu::begin_commands(compute_queue)!;
-        gpu::cmd_dispatch(
-            commands: &sim_cmd,
-            pipeline: sim_pipe,
-            root:     sim_root_address,
-            groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
+        gpu::GpuSpan draw_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      ParticleDrawRoot::size,
+            alignment: 16,
         )!;
-        gpu::ExecutableCommandList sim_cmd_executable = gpu::end_commands(&sim_cmd)!;
-        gpu::ExecutableCommandList[1] sim_lists = { sim_cmd_executable };
-        gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..] };
-        last_compute = gpu::submit(compute_queue, &sim_submit)!;
-
-        gpu::GpuSpan draw_span = gpu::alloc_frame_span(&frame_token, ParticleDrawRoot::size, 16)!;
         ParticleDrawRoot* draw_root = (ParticleDrawRoot*)gpu::get_span_mapping(&device, draw_span)!.ptr;
         sample_camera::Mat4 view_proj = sample_camera::mul(
             sample_camera::perspective(
@@ -249,10 +282,26 @@ fn void? run(sample_args::Options options) {
         draw_root.aspect        = (float)swapchain_info.width / (float)swapchain_info.height;
         draw_root.quad_size     = 0.0045f;
         gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_span)!;
+        sample_frame_upload::flush_frame_upload(&upload_batch)!;
 
+        gpu::CommandList sim_cmd = gpu::begin_commands(compute_queue)!;
+        defer (void)gpu::discard_commands(&sim_cmd);
+        gpu::cmd_dispatch(
+            commands: &sim_cmd,
+            pipeline: sim_pipe,
+            root:     sim_root_address,
+            groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
+        )!;
+        gpu::ExecutableCommandList[1] sim_lists = { gpu::end_commands(&sim_cmd)! };
+        defer (void)gpu::discard_executable_commands(&sim_lists[0]);
+        gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..] };
+        last_compute = gpu::submit(compute_queue, &sim_submit)!;
+        batch_completion = last_compute;
+
+        // The draw submission waits on this compute completion across queues.
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
         gpu::TextureUse swapchain_before;
         switch (acquired.prior_layout) {
             case gpu::TextureLayout.UNDEFINED:
@@ -301,9 +350,8 @@ fn void? run(sample_args::Options options) {
             .new_layout    = gpu::TextureLayout.PRESENT,
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-
-        gpu::ExecutableCommandList[1] draw_lists = { cmd_executable };
+        gpu::ExecutableCommandList[1] draw_lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&draw_lists[0]);
         gpu::CompletionPoint[1] draw_waits = { last_compute };
         gpu::SubmitDesc draw_submit = {
             .command_lists    = draw_lists[..],
@@ -311,10 +359,14 @@ fn void? run(sample_args::Options options) {
             .readiness        = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &draw_submit)!;
+        batch_completion = last_graphics;
+        sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:      &device,
+                device:              &device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,
@@ -330,8 +382,6 @@ fn void? run(sample_args::Options options) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-
-        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

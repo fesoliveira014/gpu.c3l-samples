@@ -8,8 +8,7 @@ import std::core::mem;
 const char[*] VERIFY_COMP_SPIRV = $embed("shaders/verify.comp.spv");
 
 const uint TEXTURE_COUNT = 8192;
-// Same-frame retires are timeline-gated and only drain on a later frame, so
-// a churn frame consumes CHURN_SLICE fresh slots before any recycling.
+// Spare slots keep churn away from exact-capacity allocation behavior.
 const uint CAPACITY_SLACK = CHURN_SLICE + 64;
 // A command list tracks at most 16 distinct pending texture layouts.
 const uint UPLOAD_BATCH = 16;
@@ -112,7 +111,7 @@ fn void? upload_slice(
 }
 
 fn void? dispatch_verify(
-    gpu::FrameToken* frame,
+    gpu::GpuSpan root_span,
     gpu::Device* device,
     Fleet* fleet,
     gpu::PipelineHandle pipeline,
@@ -126,17 +125,18 @@ fn void? dispatch_verify(
     for (uint i = 0; i < TEXTURE_COUNT; i++) index_data[i] = (uint)fleet.indices[i];
     gpu::flush_mapped_span(device, index_span)!;
 
-    gpu::GpuSpan root_span = gpu::alloc_frame_span(frame, StressRoot::size, 16)!;
     StressRoot* root = (StressRoot*)gpu::get_span_mapping(device, root_span)!.ptr;
     root.indices_gpu  = index_address;
     root.output_gpu   = out_address;
     root.heap_sampler = sampler;
     root.count        = TEXTURE_COUNT;
+    gpu::flush_mapped_span(device, root_span)!;
     gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
 
     gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
 
     gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
     gpu::cmd_dispatch(
         commands: &cmd,
         pipeline: pipeline,
@@ -149,10 +149,11 @@ fn void? dispatch_verify(
         .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
     };
     gpu::cmd_buffer_barrier(&cmd, &host_read)!;
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion)!;
 }
 
@@ -177,7 +178,6 @@ fn void? run() {
     gpu::DeviceDesc device_desc = {
         .backend                     = gpu::BackendKind.VULKAN,
         .enable_validation           = true,
-        .frames_in_flight            = 2,
         .texture_descriptor_capacity = TEXTURE_COUNT + CAPACITY_SLACK,
         .texture_capacity            = TEXTURE_COUNT + CAPACITY_SLACK,
         .application_name            = "bindless_stress",
@@ -241,6 +241,17 @@ fn void? run() {
     gpu::GpuSpan out_span = gpu::get_allocation_span(&device, out_allocation)!;
     gpu::GpuAddress out_address = gpu::get_span_address(&device, out_span)!;
 
+    gpu::AllocationDesc root_desc = {
+        .size         = StressRoot::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .compute },
+        .debug_name   = "stress_root",
+    };
+    gpu::GpuAllocation root_allocation = gpu::allocate_memory(&device, &root_desc)!;
+    defer (void)gpu::free_allocation(&device, &root_allocation);
+    gpu::GpuSpan root_span = gpu::get_allocation_span(&device, root_allocation)!;
+
     gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = VERIFY_COMP_SPIRV[..], .entry_point = "main" };
     gpu::ShaderHandle shader = gpu::create_shader(&device, &comp_sd)!;
     defer (void)gpu::destroy_shader(&device, shader);
@@ -256,7 +267,6 @@ fn void? run() {
     }
     NanoDuration create_time = clk.mark();
 
-    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
     for (uint first = 0; first < TEXTURE_COUNT; first += UPLOAD_BATCH) {
         upload_slice(
             device:       &device,
@@ -269,7 +279,7 @@ fn void? run() {
     NanoDuration upload_time = clk.mark();
 
     dispatch_verify(
-        frame:         &frame_token,
+        root_span:     root_span,
         device:        &device,
         fleet:         &fleet,
         pipeline:      pipeline,
@@ -282,12 +292,10 @@ fn void? run() {
     NanoDuration fill_verify_time = clk.mark();
     gpu::invalidate_mapped_span(&device, out_span)!;
     check_results(&device, &fleet, out_span)!;
-    gpu::end_frame(&frame_token)!;
 
     uint cursor = 0;
     clk = clock::now();
     for (uint frame = 0; frame < CHURN_FRAMES; frame++) {
-        frame_token = gpu::begin_frame(&device)!;
         for (uint i = 0; i < CHURN_SLICE; i++) {
             uint slot = (cursor + i) % TEXTURE_COUNT;
             gpu::destroy_texture_descriptor(&device, fleet.indices[slot])!;
@@ -307,7 +315,7 @@ fn void? run() {
         }
 
         dispatch_verify(
-            frame:         &frame_token,
+            root_span:     root_span,
             device:        &device,
             fleet:         &fleet,
             pipeline:      pipeline,
@@ -319,7 +327,6 @@ fn void? run() {
         )!;
         gpu::invalidate_mapped_span(&device, out_span)!;
         check_results(&device, &fleet, out_span)!;
-        gpu::end_frame(&frame_token)!;
         cursor = (cursor + CHURN_SLICE) % TEXTURE_COUNT;
     }
     NanoDuration churn_time = clk.mark();

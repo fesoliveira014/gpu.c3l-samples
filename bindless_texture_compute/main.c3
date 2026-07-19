@@ -21,7 +21,6 @@ fn void? run() {
     gpu::DeviceDesc device_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
-        .frames_in_flight  = 2,
         .application_name  = "bindless_texture_compute",
     };
     gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
@@ -81,25 +80,36 @@ fn void? run() {
     gpu::PipelineHandle sample_pipe = gpu::create_compute_pipeline(&device, &sample_pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, sample_pipe);
 
-    gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
+    gpu::AllocationDesc roots_desc = {
+        .size         = WriteRoot::size + SampleRoot::size,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_WRITE,
+        .access       = { .compute },
+        .debug_name   = "bindless_roots",
+    };
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
+    defer (void)gpu::free_allocation(&device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
 
-    gpu::GpuSpan write_root_span = gpu::alloc_frame_span(&frame_token, WriteRoot::size, 16)!;
+    gpu::GpuSpan write_root_span = roots_span.checked_subspan(0, WriteRoot::size)!;
     WriteRoot* write_root = (WriteRoot*)gpu::get_span_mapping(&device, write_root_span)!.ptr;
     write_root.texture_index = tex_index;
     write_root.width         = TEX_SIZE;
     write_root.height        = TEX_SIZE;
 
-    gpu::GpuSpan sample_root_span = gpu::alloc_frame_span(&frame_token, SampleRoot::size, 16)!;
+    gpu::GpuSpan sample_root_span = roots_span.checked_subspan(WriteRoot::size, SampleRoot::size)!;
     SampleRoot* sample_root = (SampleRoot*)gpu::get_span_mapping(&device, sample_root_span)!.ptr;
     sample_root.output_gpu    = gpu::get_span_address(&device, output_span)!;
     sample_root.texture_index = tex_index;
     sample_root.sampler_index = smp_index;
     sample_root.width         = TEX_SIZE;
     sample_root.height        = TEX_SIZE;
+    gpu::flush_mapped_span(&device, roots_span)!;
 
     gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
 
     gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier to_general = {
         .texture       = texture,
@@ -145,10 +155,11 @@ fn void? run() {
     };
     gpu::cmd_buffer_barrier(&cmd, &out_bar)!;
 
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
     gpu::invalidate_mapped_span(&device, output_span)!;
 
@@ -165,8 +176,6 @@ fn void? run() {
             }
         }
     }
-
-    gpu::end_frame(&frame_token)!;
 }
 
 fn uint quantize_unorm8(float value) {

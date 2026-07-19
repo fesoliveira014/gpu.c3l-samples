@@ -112,8 +112,6 @@ fn ZString debug_resource_name(gpu::DebugResourceKind kind) {
         case gpu::DebugResourceKind.COMMAND_LIST: return "command_list";
         case gpu::DebugResourceKind.TEXTURE_DESCRIPTOR: return "texture_descriptor";
         case gpu::DebugResourceKind.SAMPLER: return "sampler";
-        case gpu::DebugResourceKind.FRAME: return "frame";
-        case gpu::DebugResourceKind.PERSISTENT_SPAN: return "persistent_span";
         case gpu::DebugResourceKind.ALLOCATION: return "allocation";
     }
 }
@@ -237,7 +235,6 @@ fn void? run(bool detailed) {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
         .enable_debug_names = true,
-        .frames_in_flight  = 2,
         .application_name  = "memory_report",
         .debug_callback    = &capture_debug_message,
         .debug_user_data   = &debug_messages,
@@ -325,9 +322,6 @@ fn void? run(bool detailed) {
         io::printfn("heap %d: usage %d / budget %d bytes (blocks %d)",
             i, stats.heaps[i].usage, stats.heaps[i].budget, stats.heaps[i].block_bytes);
     }
-
-    gpu::PersistentArenaStats arena = gpu::get_persistent_stats(&device)!;
-    io::printfn("persistent arena: %d / %d bytes in %d spans", arena.used_bytes, arena.capacity_bytes, arena.allocation_count);
 
     String report = gpu::build_memory_report(&device, detailed)!;
     defer free(report);

@@ -4,6 +4,7 @@ import gpu;
 import sample_args;
 import sample_camera;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 import std::math;
@@ -16,6 +17,7 @@ const char[*] SCENE_FRAG_SPIRV  = $embed("shaders/scene.frag.spv");
 const uint CUBE_VERTEX_COUNT = 36;
 const uint INSTANCE_COUNT = 9;
 const float LIGHT_EXTENT = 14.0f;
+const usz UPLOAD_BYTES_PER_SLOT = ShadowPassRoot::size + ScenePassRoot::size;
 
 struct CubeFace {
     float[<3>] normal;
@@ -137,6 +139,16 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "shadow_root_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
     uint width;
     uint height;
@@ -320,16 +332,20 @@ fn void? run(sample_args::Options options) {
             sample_camera::perspective(1.0f, (float)width / (float)height, 0.1f, 100.0f),
             camera.view());
 
-        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&frame_token)!;
             continue;
         }
+
+        sample_frame_upload::FrameUploadBatch upload_batch =
+            sample_frame_upload::begin_frame_upload(&upload_ring)!;
+        defer catch {
+            if (upload_batch.ring != null) {
+                (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+            }
+        };
 
         // Orbiting directional light: position circles the scene, always
         // looking at the origin; orthographic projection = directional.
@@ -340,14 +356,22 @@ fn void? run(sample_args::Options options) {
             sample_camera::ortho(LIGHT_EXTENT, 1.0f, 30.0f),
             sample_camera::look_at(light_pos, { 0, 0, 0 }, { 0, 1, 0 }));
 
-        gpu::GpuSpan shadow_span = gpu::alloc_frame_span(&frame_token, ShadowPassRoot::size, 16)!;
+        gpu::GpuSpan shadow_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      ShadowPassRoot::size,
+            alignment: 16,
+        )!;
         ShadowPassRoot* shadow_root = (ShadowPassRoot*)gpu::get_span_mapping(&device, shadow_span)!.ptr;
         write_matrix(&shadow_root.light_vp_c0, light_vp);
         shadow_root.vertex_gpu    = vertex_address;
         shadow_root.instances_gpu = instances_address;
         gpu::GpuAddress shadow_root_address = gpu::get_span_address(&device, shadow_span)!;
 
-        gpu::GpuSpan scene_span = gpu::alloc_frame_span(&frame_token, ScenePassRoot::size, 16)!;
+        gpu::GpuSpan scene_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      ScenePassRoot::size,
+            alignment: 16,
+        )!;
         ScenePassRoot* scene_root = (ScenePassRoot*)gpu::get_span_mapping(&device, scene_span)!.ptr;
         write_matrix(&scene_root.view_proj_c0, view_proj);
         write_matrix(&scene_root.light_vp_c0, light_vp);
@@ -357,10 +381,12 @@ fn void? run(sample_args::Options options) {
         scene_root.shadow_map     = shadow_index;
         scene_root.shadow_sampler = shadow_sampler;
         gpu::GpuAddress scene_root_address = gpu::get_span_address(&device, scene_span)!;
+        sample_frame_upload::flush_frame_upload(&upload_batch)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
 
         // Shadow map: back to writable (from sampled after the first frame).
         gpu::TextureBarrier shadow_to_write = {
@@ -455,18 +481,20 @@ fn void? run(sample_args::Options options) {
             after:   gpu::TextureUse.PRESENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-
-        gpu::ExecutableCommandList[1] lists = { cmd_executable };
+        gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:      &device,
+                device:              &device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       width,
                 height:      height,
@@ -482,8 +510,6 @@ fn void? run(sample_args::Options options) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
-
-        gpu::end_frame(&frame_token)!;
 
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;

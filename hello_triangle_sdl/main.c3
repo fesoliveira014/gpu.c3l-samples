@@ -3,6 +3,7 @@ module hello_triangle_sdl;
 import gpu;
 import sample_args;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 
@@ -10,6 +11,7 @@ const char[*] TRIANGLE_VERT_SPIRV = $embed("../offscreen_triangle/shaders/offscr
 const char[*] TRIANGLE_FRAG_SPIRV = $embed("../offscreen_triangle/shaders/offscreen.frag.spv");
 
 const uint TEX_SIZE = 16;
+const usz UPLOAD_BYTES_PER_SLOT = 64;
 
 struct FrameWork {
     gpu::Device*                 device;
@@ -21,6 +23,7 @@ struct FrameWork {
     gpu::TextureIndex            tex_index;
     gpu::SamplerIndex            smp_index;
     gpu::GpuSpan                 staging_span;
+    sample_frame_upload::FrameUploadRing* upload_ring;
     sample_args::Options*        options;
     bool*                        checker_uploaded;
     gpu::CompletionPoint*         last_graphics;
@@ -37,13 +40,21 @@ fn int main(String[] args) {
     return 0;
 }
 
-fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
+fn void? render_frame(FrameWork* ctx) {
     gpu::AcquiredImage? acquired = gpu::acquire_next_image(ctx.device, ctx.swapchain);
     if (catch err = acquired) {
         if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
         if (err == gpu::SWAPCHAIN_OUT_OF_DATE) *ctx.swapchain_info = sample_window::recover_swapchain(ctx.device, ctx.swapchain, ctx.window)!;
         return;
     }
+
+    sample_frame_upload::FrameUploadBatch upload_batch =
+        sample_frame_upload::begin_frame_upload(ctx.upload_ring)!;
+    defer catch {
+        if (upload_batch.ring != null) {
+            (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+        }
+    };
 
     if (ctx.frame == 0) {
         // Swapchain-owned images must reject destroy_texture.
@@ -54,6 +65,7 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     gpu::Queue graphics_queue = gpu::get_queue(ctx.device, gpu::QueueKind.GRAPHICS)!;
 
     gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    defer (void)gpu::discard_commands(&cmd);
 
     if (!*ctx.checker_uploaded) {
         gpu::TextureBarrier to_dst = gpu::texture_transition(
@@ -90,7 +102,11 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
     float pulse = (float)(ctx.frame % 120) / 120.0f * 0.15f;
-    gpu::GpuSpan verts_span = gpu::alloc_frame_span(frame, 3 * 16, 16)!;
+    gpu::GpuSpan verts_span = sample_frame_upload::alloc_frame_upload(
+        batch:     &upload_batch,
+        size:      3 * 16,
+        alignment: 16,
+    )!;
     float* verts = (float*)gpu::get_span_mapping(ctx.device, verts_span)!.ptr;
     float[12] vertex_data = {
         -0.8f, -0.8f, 0.0f, 0.0f,
@@ -99,7 +115,11 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     };
     for (uint i = 0; i < 12; i++) verts[i] = vertex_data[i];
 
-    gpu::GpuSpan frag_span = gpu::alloc_frame_span(frame, FragRoot::size, 16)!;
+    gpu::GpuSpan frag_span = sample_frame_upload::alloc_frame_upload(
+        batch:     &upload_batch,
+        size:      FragRoot::size,
+        alignment: 16,
+    )!;
     FragRoot* frag_root = (FragRoot*)gpu::get_span_mapping(ctx.device, frag_span)!.ptr;
     frag_root.texture_index = ctx.tex_index;
     frag_root.sampler_index = ctx.smp_index;
@@ -133,18 +153,22 @@ fn void? run_frame(gpu::FrameToken* frame, FrameWork* ctx) {
     )!;
     gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
-    gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-    gpu::ExecutableCommandList[1] lists = { cmd_executable };
+    sample_frame_upload::flush_frame_upload(&upload_batch)!;
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = {
         .command_lists = lists[..],
         .readiness     = acquired.readiness,
     };
     *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
+    sample_frame_upload::retire_frame_upload(&upload_batch, *ctx.last_graphics)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
         sample_capture::capture_texture_png(
-            device:      ctx.device,
-            src:         acquired.texture,
+            device:              ctx.device,
+            producer_completion: *ctx.last_graphics,
+            queue_kind:          gpu::QueueKind.GRAPHICS,
+            src:                 acquired.texture,
             width:       ctx.swapchain_info.width,
             height:      ctx.swapchain_info.height,
             format:      ctx.swapchain_info.format,
@@ -180,6 +204,16 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "hello_triangle_frame_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
     uint width;
     uint height;
@@ -273,7 +307,6 @@ fn void? run(sample_args::Options options) {
     defer {
         if (last_graphics.is_valid()) (void)gpu::wait_completion(last_graphics, ulong::max);
     }
-    gpu::FrameToken retry_frame;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -303,16 +336,13 @@ fn void? run(sample_args::Options options) {
             .tex_index        = tex_index,
             .smp_index        = smp_index,
             .staging_span     = staging_span,
+            .upload_ring      = &upload_ring,
             .options          = &options,
             .checker_uploaded = &checker_uploaded,
             .last_graphics    = &last_graphics,
             .frame            = frame,
         };
-        fault frame_fault = @catch(gpu::@with_frame(&retry_frame, &device, run_frame, &work));
-        if (frame_fault) {
-            if (retry_frame.is_valid()) gpu::end_frame(&retry_frame)!;
-            return frame_fault~;
-        }
+        if (catch err = render_frame(&work)) return err~;
         if (!work.rendered) continue;
 
         frame++;

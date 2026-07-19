@@ -3,6 +3,7 @@ module gpu_driven_draw_sdl;
 import gpu;
 import sample_args;
 import sample_capture;
+import sample_frame_upload;
 import sample_window;
 import std::io;
 
@@ -12,6 +13,17 @@ const char[*] FRAG_SPIRV  = $embed("shaders/gpu_driven.frag.spv");
 
 const uint GRID = 16;
 const uint INSTANCES = GRID * GRID;
+const usz INSTANCE_UPLOAD_BYTES = INSTANCES * Instance::size;
+const usz CORNER_UPLOAD_BYTES = 4 * 8;
+const usz INDEX_UPLOAD_BYTES = 6 * uint::size;
+const usz ARGS_UPLOAD_OFFSET =
+    ((INSTANCE_UPLOAD_BYTES + CORNER_UPLOAD_BYTES + INDEX_UPLOAD_BYTES + 15) / 16) * 16;
+const usz ARGS_UPLOAD_BYTES = INSTANCES * gpu::DrawIndexedIndirectCommand::size;
+const usz COUNT_UPLOAD_OFFSET = ((ARGS_UPLOAD_OFFSET + ARGS_UPLOAD_BYTES + 3) / 4) * 4;
+const usz BUILD_ROOT_UPLOAD_OFFSET = ((COUNT_UPLOAD_OFFSET + uint::size + 15) / 16) * 16;
+const usz DRAW_ROOT_UPLOAD_OFFSET = ((BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size + 15) / 16) * 16;
+const usz UPLOAD_BYTES_PER_SLOT = DRAW_ROOT_UPLOAD_OFFSET + DrawRoot::size;
+$assert UPLOAD_BYTES_PER_SLOT == 13456;
 
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
@@ -39,6 +51,17 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+
+    gpu::QueueRoles upload_access = { .graphics };
+    sample_frame_upload::FrameUploadRing upload_ring =
+        sample_frame_upload::create_frame_upload_ring(
+            device:        &device,
+            slot_capacity: UPLOAD_BYTES_PER_SLOT,
+            access:        upload_access,
+            debug_name:    "gpu_driven_frame_upload",
+        )!;
+    defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
+
     gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
     bool use_count = caps.draw_indirect_count;
     io::printfn("gpu_driven_draw_sdl: indirect-count path %s", use_count ? "on" : "off");
@@ -92,6 +115,11 @@ fn void? run(sample_args::Options options) {
     long frame = 0;
     bool running = true;
     gpu::CompletionPoint last_graphics;
+    defer {
+        if (last_graphics.is_valid()) {
+            (void)gpu::wait_completion(last_graphics, ulong::max);
+        }
+    }
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -111,20 +139,28 @@ fn void? run(sample_args::Options options) {
             pipeline_valid = true;
         }
 
-        gpu::FrameToken frame_token = gpu::begin_frame(&device)!;
-        defer catch (void)gpu::end_frame(&frame_token);
-
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
-            gpu::end_frame(&frame_token)!;
             continue;
         }
 
+        sample_frame_upload::FrameUploadBatch upload_batch =
+            sample_frame_upload::begin_frame_upload(&upload_ring)!;
+        defer catch {
+            if (upload_batch.ring != null) {
+                (void)sample_frame_upload::cancel_frame_upload(&upload_batch);
+            }
+        };
+
         float time = (float)frame / 60.0f;
 
-        gpu::GpuSpan instances_span = gpu::alloc_frame_span(&frame_token, INSTANCES * Instance::size, 16)!;
+        gpu::GpuSpan instances_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      INSTANCES * Instance::size,
+            alignment: 16,
+        )!;
         Instance* instances = (Instance*)gpu::get_span_mapping(&device, instances_span)!.ptr;
         for (uint y = 0; y < GRID; y++) {
             for (uint x = 0; x < GRID; x++) {
@@ -140,23 +176,43 @@ fn void? run(sample_args::Options options) {
         }
         gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
-        gpu::GpuSpan corners_span = gpu::alloc_frame_span(&frame_token, 4 * 8, 16)!;
+        gpu::GpuSpan corners_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      4 * 8,
+            alignment: 16,
+        )!;
         float* corners = (float*)gpu::get_span_mapping(&device, corners_span)!.ptr;
         float[8] corner_data = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
         for (uint i = 0; i < 8; i++) corners[i] = corner_data[i];
         gpu::GpuAddress corners_address = gpu::get_span_address(&device, corners_span)!;
 
-        gpu::GpuSpan index_span = gpu::alloc_frame_span(&frame_token, 6 * 4, 4)!;
+        gpu::GpuSpan index_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      6 * 4,
+            alignment: 4,
+        )!;
         uint* indices = (uint*)gpu::get_span_mapping(&device, index_span)!.ptr;
         uint[6] index_data = { 0, 1, 2, 2, 1, 3 };
         for (uint i = 0; i < 6; i++) indices[i] = index_data[i];
 
-        gpu::GpuSpan args_span = gpu::alloc_frame_span(&frame_token, INSTANCES * gpu::DrawIndexedIndirectCommand::size, 16)!;
+        gpu::GpuSpan args_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      INSTANCES * gpu::DrawIndexedIndirectCommand::size,
+            alignment: 16,
+        )!;
         gpu::GpuAddress args_address = gpu::get_span_address(&device, args_span)!;
-        gpu::GpuSpan count_span = gpu::alloc_frame_span(&frame_token, 4, 4)!;
+        gpu::GpuSpan count_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      4,
+            alignment: 4,
+        )!;
         gpu::GpuAddress count_address = gpu::get_span_address(&device, count_span)!;
 
-        gpu::GpuSpan build_root_span = gpu::alloc_frame_span(&frame_token, BuildRoot::size, 16)!;
+        gpu::GpuSpan build_root_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      BuildRoot::size,
+            alignment: 16,
+        )!;
         BuildRoot* build_root = (BuildRoot*)gpu::get_span_mapping(&device, build_root_span)!.ptr;
         build_root.instances_gpu  = instances_address;
         build_root.args_gpu       = args_address;
@@ -165,7 +221,11 @@ fn void? run(sample_args::Options options) {
         build_root.time           = time;
         gpu::GpuAddress build_root_address = gpu::get_span_address(&device, build_root_span)!;
 
-        gpu::GpuSpan draw_root_span = gpu::alloc_frame_span(&frame_token, DrawRoot::size, 16)!;
+        gpu::GpuSpan draw_root_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      DrawRoot::size,
+            alignment: 16,
+        )!;
         DrawRoot* draw_root = (DrawRoot*)gpu::get_span_mapping(&device, draw_root_span)!.ptr;
         draw_root.corners_gpu   = corners_address;
         draw_root.instances_gpu = instances_address;
@@ -174,6 +234,7 @@ fn void? run(sample_args::Options options) {
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        defer (void)gpu::discard_commands(&cmd);
 
         gpu::cmd_dispatch(
             commands: &cmd,
@@ -253,18 +314,22 @@ fn void? run(sample_args::Options options) {
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
-        gpu::ExecutableCommandList cmd_executable = gpu::end_commands(&cmd)!;
-        gpu::ExecutableCommandList[1] lists = { cmd_executable };
+        sample_frame_upload::flush_frame_upload(&upload_batch)!;
+        gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:      &device,
-                src:         acquired.texture,
+                device:              &device,
+                producer_completion: last_graphics,
+                queue_kind:          gpu::QueueKind.GRAPHICS,
+                src:                 acquired.texture,
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,
                 format:      swapchain_info.format,
@@ -280,11 +345,8 @@ fn void? run(sample_args::Options options) {
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
-        gpu::end_frame(&frame_token)!;
-
         frame++;
         if (options.frames > 0 && frame >= options.frames) running = false;
     }
 
-    if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
 }

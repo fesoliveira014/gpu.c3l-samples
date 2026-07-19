@@ -9,6 +9,8 @@ import sample_png;
    transfer_src usage — swapchain images carry it when the surface allows. *>
 fn void? capture_texture_png(
     gpu::Device* device,
+    gpu::CompletionPoint producer_completion,
+    gpu::QueueKind queue_kind,
     gpu::TextureHandle src,
     uint width,
     uint height,
@@ -18,18 +20,82 @@ fn void? capture_texture_png(
     gpu::TextureLayout from_layout,
     String path,
 ) {
-    usz byte_count = (usz)width * height * 4;
+    if (width == 0 || height == 0 || !producer_completion.is_valid()) {
+        return gpu::INVALID_ARGUMENT~;
+    }
+    usz pixel_count = (usz)width * (usz)height;
+    if (pixel_count > usz::max / 4) return gpu::INVALID_ARGUMENT~;
+    usz byte_count = pixel_count * 4;
+
+    gpu::QueueRoles access;
+    switch (queue_kind) {
+        case gpu::QueueKind.GRAPHICS: access.graphics = true;
+        case gpu::QueueKind.COMPUTE:  access.compute = true;
+        case gpu::QueueKind.TRANSFER: access.transfer = true;
+        default: return gpu::INVALID_ARGUMENT~;
+    }
+    gpu::AllocationDesc readback_desc = {
+        .size         = byte_count,
+        .alignment    = 16,
+        .memory_class = gpu::MemoryClass.CPU_READ,
+        .access       = access,
+        .debug_name   = "sample_capture_readback",
+    };
+    gpu::GpuAllocation readback = gpu::allocate_memory(device, &readback_desc)!;
+    defer (void)gpu::free_allocation(device, &readback);
+    gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback)!;
+
+    gpu::Queue queue = gpu::get_queue(device, queue_kind)!;
+    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    defer (void)gpu::discard_commands(&commands);
+    gpu::TextureBarrier to_transfer = {
+        .texture       = src,
+        .before_stage  = from_stage,
+        .after_stage   = gpu::Stage.TRANSFER,
+        .before_hazard = from_hazard,
+        .after_hazard  = gpu::Hazard.TRANSFER_READ,
+        .old_layout    = from_layout,
+        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
+    };
+    gpu::cmd_texture_barrier(&commands, &to_transfer)!;
+    gpu::TextureBufferCopyDesc copy = {
+        .texture = src,
+        .dst     = readback_span,
+    };
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::BufferBarrier host_read = {
+        .span          = readback_span,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = gpu::Stage.HOST,
+        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
+        .after_hazard  = gpu::Hazard.HOST_READ,
+    };
+    gpu::cmd_buffer_barrier(&commands, &host_read)!;
+    gpu::TextureBarrier restore = {
+        .texture       = src,
+        .before_stage  = gpu::Stage.TRANSFER,
+        .after_stage   = from_stage,
+        .before_hazard = gpu::Hazard.TRANSFER_READ,
+        .after_hazard  = from_hazard,
+        .old_layout    = gpu::TextureLayout.TRANSFER_SRC,
+        .new_layout    = from_layout,
+    };
+    gpu::cmd_texture_barrier(&commands, &restore)!;
+    gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
+    gpu::CompletionPoint[1] waits = { producer_completion };
+    gpu::SubmitDesc submit = {
+        .command_lists    = lists[..],
+        .completion_waits = waits[..],
+    };
+    gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
+    gpu::wait_completion(completion)!;
+    gpu::invalidate_mapped_span(device, readback_span)!;
+
+    char[] mapping = gpu::get_span_mapping(device, readback_span)!;
     char[] pixels = mem::new_array(char, (sz)byte_count);
     defer free(pixels.ptr);
-    gpu::readback_texture_data(
-        device:      device,
-        src:         src,
-        mip:         0,
-        out_data:    pixels,
-        from_stage:  from_stage,
-        from_hazard: from_hazard,
-        from_layout: from_layout,
-    )!;
+    pixels[..] = mapping[..];
     if (format == gpu::Format.BGRA8_UNORM || format == gpu::Format.BGRA8_SRGB) {
         for (usz i = 0; i < byte_count; i += 4) {
             char b = pixels[i];
