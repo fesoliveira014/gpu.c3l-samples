@@ -6,7 +6,7 @@ A depth-tested rotating cube using root data and the descriptor heap.
 
 It demonstrates:
 
-- A frame-arena `SceneRoot` for matrices, descriptor indices, and geometry.
+- A caller-owned upload-ring `SceneRoot` for matrices, descriptor indices, and geometry.
 - Vertex data in a `CPU_WRITE` allocation addressed through its `GpuSpan`.
 - Bindless texture and sampler indices shared by both shader stages.
 - A resize-aware `D32_FLOAT` depth attachment with `LESS` testing.

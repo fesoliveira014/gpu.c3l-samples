@@ -6,7 +6,8 @@ Compares four sampler configurations on a receding textured plane.
 
 It demonstrates:
 
-- A CPU-generated, per-level-tinted mip chain uploaded one level at a time.
+- A CPU-generated, per-level-tinted mip chain packed into one explicit CPU-write allocation and uploaded in one command list.
+- A sample-owned two-slot upload ring for per-draw root data.
 - Bindless sampler selection through four `SamplerIndex` values.
 - Nearest, bilinear, trilinear, and anisotropic filtering.
 - Capability-gated anisotropy with a trilinear fallback.
