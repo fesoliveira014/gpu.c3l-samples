@@ -179,7 +179,7 @@ fn void? run() {
     gpu::DeviceDesc device_desc = {
         .backend                     = gpu::BackendKind.VULKAN,
         .enable_validation           = true,
-        .texture_descriptor_capacity = TEXTURE_COUNT + CAPACITY_SLACK,
+        .texture_heap_capacity       = TEXTURE_COUNT + CAPACITY_SLACK,
         .texture_capacity            = TEXTURE_COUNT + CAPACITY_SLACK,
         .application_name            = "bindless_stress",
     };

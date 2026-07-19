@@ -5,7 +5,7 @@ Every sampled payload is verified after initial fill and after each recycle batc
 
 It exercises:
 
-- Explicit descriptor and texture capacity at device creation.
+- Explicit texture-heap and texture-object capacities at device creation.
 - Root-addressed index data and bindless sampling across the full heap.
 - Twenty-four churn frames that replace 256 textures and descriptors each.
 - Completion-gated descriptor retirement while descriptors churn.
