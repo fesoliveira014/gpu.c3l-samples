@@ -1,6 +1,7 @@
 module root_pointer_compute;
 
 import gpu;
+import sample_device;
 import std::io;
 
 const char[*] ROOT_POINTER_SPIRV = $embed("shaders/root_pointer.comp.spv");
@@ -68,12 +69,14 @@ fn void? dispatch_compute(
 }
 
 fn void? run() {
-    gpu::DeviceDesc device_desc = {
+    gpu::RuntimeDesc runtime_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
         .application_name  = "root_pointer_compute",
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+    gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer gpu::destroy_device(&device)!!;
 
     gpu::AllocationDesc input_desc = {

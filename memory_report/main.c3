@@ -1,6 +1,7 @@
 module memory_report;
 
 import gpu;
+import sample_device;
 import std::atomic;
 import std::io;
 
@@ -231,15 +232,17 @@ fn void? run(bool detailed) {
     // Registered first so LIFO prints after device teardown stops callbacks.
     defer print_debug_messages(&debug_messages);
 
-    gpu::DeviceDesc device_desc = {
-        .backend           = gpu::BackendKind.VULKAN,
-        .enable_validation = true,
+    gpu::RuntimeDesc runtime_desc = {
+        .backend            = gpu::BackendKind.VULKAN,
+        .enable_validation  = true,
         .enable_debug_names = true,
-        .application_name  = "memory_report",
-        .debug_callback    = &capture_debug_message,
-        .debug_user_data   = &debug_messages,
+        .application_name   = "memory_report",
+        .debug_callback     = &capture_debug_message,
+        .debug_user_data    = &debug_messages,
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+    gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::AllocationDesc rejected_desc = {

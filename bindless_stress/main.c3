@@ -1,6 +1,7 @@
 module bindless_stress;
 
 import gpu;
+import sample_device;
 import std::io;
 import std::time;
 import std::core::mem;
@@ -165,14 +166,16 @@ fn void? check_results(gpu::Device* device, Fleet* fleet, gpu::GpuSpan out_span)
 }
 
 fn void? run() {
-    gpu::DeviceDesc device_desc = {
+    gpu::RuntimeDesc runtime_desc = {
         .backend                     = gpu::BackendKind.VULKAN,
         .enable_validation           = true,
         .texture_heap_capacity       = TEXTURE_COUNT + CAPACITY_SLACK,
         .texture_capacity            = TEXTURE_COUNT + CAPACITY_SLACK,
         .application_name            = "bindless_stress",
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+    gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
 
     Fleet fleet = {

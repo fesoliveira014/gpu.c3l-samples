@@ -1,6 +1,7 @@
 module offscreen_triangle;
 
 import gpu;
+import sample_device;
 import sample_args;
 import sample_png;
 import std::io;
@@ -119,12 +120,14 @@ fn int main(String[] args) {
 }
 
 fn void? run(sample_args::Options options) {
-    gpu::DeviceDesc device_desc = {
+    gpu::RuntimeDesc runtime_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
         .application_name  = "offscreen_triangle",
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+    gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::TextureDesc rt_desc = {

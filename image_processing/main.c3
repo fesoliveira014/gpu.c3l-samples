@@ -1,6 +1,7 @@
 module image_processing;
 
 import gpu;
+import sample_device;
 import sample_args;
 import sample_capture;
 import std::io;
@@ -38,12 +39,14 @@ fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_ta
 }
 
 fn void? run(sample_args::Options options) {
-    gpu::DeviceDesc device_desc = {
+    gpu::RuntimeDesc runtime_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = true,
         .application_name  = "image_processing",
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+    gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::TextureHandle image_a = create_storage_image(&device, true, "plasma_a")!;

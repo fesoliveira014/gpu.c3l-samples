@@ -21,19 +21,19 @@
     // Headless: no SDL. Proves the root-pointer compute ABI end to end.
     "root_pointer_compute": {
       "type": "executable",
-      "sources": [ "root_pointer_compute/main.c3", "root_pointer_compute/shader_abi.c3" ]
+      "sources": [ "root_pointer_compute/main.c3", "root_pointer_compute/shader_abi.c3", "shared/sample_device.c3" ]
     },
     // Headless rasterization: textured triangles in dynamic viewport/scissor
     // regions, with readback verification and optional PNG capture.
     "offscreen_triangle": {
       "type": "executable",
-      "sources": [ "offscreen_triangle/main.c3", "offscreen_triangle/shader_abi.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+      "sources": [ "offscreen_triangle/main.c3", "offscreen_triangle/shader_abi.c3", "shared/sample_device.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
     },
     // Headless: writes a pattern into a storage image by TextureIndex, then
     // samples it back by the same index. Proves the bindless descriptor heap.
     "bindless_texture_compute": {
       "type": "executable",
-      "sources": [ "bindless_texture_compute/main.c3", "bindless_texture_compute/shader_abi.c3" ]
+      "sources": [ "bindless_texture_compute/main.c3", "bindless_texture_compute/shader_abi.c3", "shared/sample_device.c3" ]
     },
     // Windowed: compute culls a quad grid and writes indirect draw args
     // (+ count where supported); one multi-draw renders via gl_DrawID.
@@ -57,13 +57,13 @@
     },
     "bindless_stress": {
       "type": "executable",
-      "sources": [ "bindless_stress/main.c3", "bindless_stress/shader_abi.c3" ]
+      "sources": [ "bindless_stress/main.c3", "bindless_stress/shader_abi.c3", "shared/sample_device.c3" ]
     },
     "image_processing": {
       "type": "executable",
       "sources": [
         "image_processing/main.c3", "image_processing/shader_abi.c3",
-        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
+        "shared/sample_device.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
     "particle_sim": {
@@ -130,15 +130,15 @@
     },
     "multithreaded_recording": {
       "type": "executable",
-      "sources": [ "multithreaded_recording/main.c3", "multithreaded_recording/shader_abi.c3" ]
+      "sources": [ "multithreaded_recording/main.c3", "multithreaded_recording/shader_abi.c3", "shared/sample_device.c3" ]
     },
     "pipeline_cache_timing": {
       "type": "executable",
-      "sources": [ "pipeline_cache_timing/main.c3", "pipeline_cache_timing/shader_abi.c3" ]
+      "sources": [ "pipeline_cache_timing/main.c3", "pipeline_cache_timing/shader_abi.c3", "shared/sample_device.c3" ]
     },
     "memory_report": {
       "type": "executable",
-      "sources": [ "memory_report/main.c3" ]
+      "sources": [ "memory_report/main.c3", "shared/sample_device.c3" ]
     },
     "gpu_driven_draw_sdl": {
       "type": "executable",
