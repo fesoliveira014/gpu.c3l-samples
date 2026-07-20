@@ -130,12 +130,11 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::cmd_fill_buffer(&cmd, bins_span, 0)!;
-    gpu::BufferBarrier bins_cleared = {
-        .span = bins_span,
-        .before_stage = gpu::Stage.TRANSFER, .after_stage = gpu::Stage.COMPUTE_SHADER,
-        .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.SHADER_READ_WRITE,
+    gpu::Barrier bins_cleared = {
+        .before = { .transfer = true },
+        .after = { .compute = true },
     };
-    gpu::cmd_buffer_barrier(&cmd, &bins_cleared)!;
+    gpu::cmd_barrier(&cmd, &bins_cleared)!;
 
     gpu::TextureHandle[2] images = { image_a, image_b };
     foreach (image : images) {
@@ -199,12 +198,11 @@ fn void? run(sample_args::Options options) {
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;
 
-    gpu::BufferBarrier bins_read = {
-        .span = bins_span,
-        .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
+    gpu::Barrier bins_read = {
+        .before = { .compute = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&cmd, &bins_read)!;
+    gpu::cmd_barrier(&cmd, &bins_read)!;
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);

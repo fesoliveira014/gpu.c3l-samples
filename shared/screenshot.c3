@@ -63,14 +63,11 @@ fn void? capture_texture_png(
         .dst     = readback_span,
     };
     gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
-    gpu::BufferBarrier host_read = {
-        .span          = readback_span,
-        .before_stage  = gpu::Stage.TRANSFER,
-        .after_stage   = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-        .after_hazard  = gpu::Hazard.HOST_READ,
+    gpu::Barrier host_read = {
+        .before = { .transfer = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&commands, &host_read)!;
+    gpu::cmd_barrier(&commands, &host_read)!;
     gpu::TextureBarrier restore = {
         .texture       = src,
         .before_stage  = gpu::Stage.TRANSFER,

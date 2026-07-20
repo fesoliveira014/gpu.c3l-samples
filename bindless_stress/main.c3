@@ -118,7 +118,6 @@ fn void? dispatch_verify(
     gpu::PipelineHandle pipeline,
     gpu::GpuSpan index_span,
     gpu::GpuAddress index_address,
-    gpu::GpuSpan out_span,
     gpu::GpuAddress out_address,
     gpu::SamplerIndex sampler,
 ) {
@@ -144,12 +143,11 @@ fn void? dispatch_verify(
         root:     root_address,
         groups:   { (TEXTURE_COUNT + VERIFY_WORKGROUP - 1) / VERIFY_WORKGROUP, 1, 1 },
     )!;
-    gpu::BufferBarrier host_read = {
-        .span = out_span,
-        .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
+    gpu::Barrier host_read = {
+        .before = { .compute = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&cmd, &host_read)!;
+    gpu::cmd_barrier(&cmd, &host_read)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
@@ -288,7 +286,6 @@ fn void? run() {
         pipeline:      pipeline,
         index_span:    index_span,
         index_address: index_address,
-        out_span:      out_span,
         out_address:   out_address,
         sampler:       sampler,
     )!;
@@ -325,7 +322,6 @@ fn void? run() {
             pipeline:      pipeline,
             index_span:    index_span,
             index_address: index_address,
-            out_span:      out_span,
             out_address:   out_address,
             sampler:       sampler,
         )!;

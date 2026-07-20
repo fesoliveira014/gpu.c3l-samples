@@ -245,13 +245,12 @@ fn void? run(sample_args::Options options) {
             groups:   { (INSTANCES + BUILD_WORKGROUP - 1) / BUILD_WORKGROUP, 1, 1 },
         )!;
 
-        gpu::GlobalBarrier indirect_ready = {
-            .before_stage  = gpu::Stage.COMPUTE_SHADER,
-            .after_stage   = gpu::Stage.INDIRECT_COMMAND,
-            .before_hazard = gpu::Hazard.SHADER_WRITE,
-            .after_hazard  = gpu::Hazard.INDIRECT_READ,
+        gpu::Barrier indirect_ready = {
+            .before = { .compute = true },
+            .after = { .compute = true },
+            .hazards = { .draw_arguments = true },
         };
-        gpu::cmd_global_barrier(&cmd, &indirect_ready)!;
+        gpu::cmd_barrier(&cmd, &indirect_ready)!;
 
         gpu::TextureUse swapchain_before;
         switch (acquired.prior_layout) {
