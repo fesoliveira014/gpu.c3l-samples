@@ -44,8 +44,8 @@ fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::Pi
         .store_op = gpu::StoreOp.STORE,
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
-    gpu::cmd_begin_render_pass(list, &pass)!;
     gpu::cmd_bind_pipeline(list, pipeline)!;
+    gpu::cmd_begin_render_pass(list, &pass)!;
     gpu::DepthState depth_state = {};
     gpu::cmd_set_depth_state(list, &depth_state)!;
     for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
