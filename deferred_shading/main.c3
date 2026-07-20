@@ -111,10 +111,10 @@ fn void write_matrix(gpu::Vec4f* columns, sample_camera::Mat4 m) {
     }
 }
 
-fn gpu::TextureUse? swapchain_texture_use(gpu::TextureLayout layout) {
-    switch (layout) {
-        case gpu::TextureLayout.UNDEFINED: return gpu::TextureUse.UNDEFINED;
-        case gpu::TextureLayout.PRESENT:   return gpu::TextureUse.PRESENT;
+fn gpu::TextureUse? swapchain_texture_use(gpu::TextureUse use) {
+    switch (use) {
+        case gpu::TextureUse.UNDEFINED: return gpu::TextureUse.UNDEFINED;
+        case gpu::TextureUse.PRESENT:   return gpu::TextureUse.PRESENT;
         default:                           return gpu::INVALID_RESOURCE_STATE~;
     }
 }
@@ -432,24 +432,16 @@ fn void? run(sample_args::Options options) {
         foreach (target : color_targets) {
             gpu::TextureBarrier to_attach = {
                 .texture       = target,
-                .before_stage  = gbuffer.fresh ? gpu::Stage.HOST : gpu::Stage.FRAGMENT_SHADER,
-                .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
-                .before_hazard = gbuffer.fresh ? gpu::Hazard.HOST_WRITE : gpu::Hazard.SHADER_READ,
-                .after_hazard  = gpu::Hazard.COLOR_WRITE,
-                .old_layout    = gbuffer.fresh ? gpu::TextureLayout.UNDEFINED : gpu::TextureLayout.SHADER_READ,
-                .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .before        = gbuffer.fresh ? gpu::TextureUse.UNDEFINED : gpu::TextureUse.SAMPLED_FRAGMENT,
+                .after         = gpu::TextureUse.COLOR_ATTACHMENT,
             };
             gpu::cmd_texture_barrier(&cmd, &to_attach)!;
         }
         if (gbuffer.fresh) {
             gpu::TextureBarrier depth_init = {
                 .texture       = gbuffer.depth,
-                .before_stage  = gpu::Stage.HOST,
-                .after_stage   = gpu::Stage.DEPTH_STENCIL,
-                .before_hazard = gpu::Hazard.HOST_WRITE,
-                .after_hazard  = gpu::Hazard.DEPTH_WRITE,
-                .old_layout    = gpu::TextureLayout.UNDEFINED,
-                .new_layout    = gpu::TextureLayout.DEPTH_STENCIL,
+                .before        = gpu::TextureUse.UNDEFINED,
+                .after         = gpu::TextureUse.DEPTH_ATTACHMENT,
             };
             gpu::cmd_texture_barrier(&cmd, &depth_init)!;
             gbuffer.fresh = false;
@@ -502,19 +494,15 @@ fn void? run(sample_args::Options options) {
         foreach (target : color_targets) {
             gpu::TextureBarrier to_read = {
                 .texture       = target,
-                .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-                .after_stage   = gpu::Stage.FRAGMENT_SHADER,
-                .before_hazard = gpu::Hazard.COLOR_WRITE,
-                .after_hazard  = gpu::Hazard.SHADER_READ,
-                .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-                .new_layout    = gpu::TextureLayout.SHADER_READ,
+                .before        = gpu::TextureUse.COLOR_ATTACHMENT,
+                .after         = gpu::TextureUse.SAMPLED_FRAGMENT,
             };
             gpu::cmd_texture_barrier(&cmd, &to_read)!;
         }
 
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
-            before:  swapchain_texture_use(acquired.prior_layout)!,
+            before:  swapchain_texture_use(acquired.prior_use)!,
             after:   gpu::TextureUse.COLOR_ATTACHMENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
@@ -563,9 +551,7 @@ fn void? run(sample_args::Options options) {
                 width:       width,
                 height:      height,
                 format:      swapchain_info.format,
-                from_stage:  gpu::Stage.PRESENT,
-                from_hazard: gpu::Hazard.PRESENT_READ,
-                from_layout: gpu::TextureLayout.PRESENT,
+                from_use:    gpu::TextureUse.PRESENT,
                 path:        options.screenshot_path,
             )!;
         }

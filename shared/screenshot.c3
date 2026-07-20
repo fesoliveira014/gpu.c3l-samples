@@ -5,7 +5,7 @@ import sample_png;
 
 <* Read back a color target and write it as a PNG. Works on offscreen targets
    and acquired swapchain images (capture point for swapchain: post-submit,
-   pre-present, with the PRESENT stage/hazard/layout triple). The source needs
+   pre-present, with the PRESENT semantic use). The source needs
    transfer_src usage — swapchain images carry it when the surface allows. *>
 fn void? capture_texture_png(
     gpu::Device* device,
@@ -15,9 +15,7 @@ fn void? capture_texture_png(
     uint width,
     uint height,
     gpu::Format format,
-    gpu::Stage from_stage,
-    gpu::Hazard from_hazard,
-    gpu::TextureLayout from_layout,
+    gpu::TextureUse from_use,
     String path,
 ) {
     if (width == 0 || height == 0 || !producer_completion.is_valid()) {
@@ -50,12 +48,8 @@ fn void? capture_texture_png(
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_transfer = {
         .texture       = src,
-        .before_stage  = from_stage,
-        .after_stage   = gpu::Stage.TRANSFER,
-        .before_hazard = from_hazard,
-        .after_hazard  = gpu::Hazard.TRANSFER_READ,
-        .old_layout    = from_layout,
-        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
+        .before        = from_use,
+        .after         = gpu::TextureUse.TRANSFER_SOURCE,
     };
     gpu::cmd_texture_barrier(&commands, &to_transfer)!;
     gpu::TextureBufferCopyDesc copy = {
@@ -70,12 +64,8 @@ fn void? capture_texture_png(
     gpu::cmd_barrier(&commands, &host_read)!;
     gpu::TextureBarrier restore = {
         .texture       = src,
-        .before_stage  = gpu::Stage.TRANSFER,
-        .after_stage   = from_stage,
-        .before_hazard = gpu::Hazard.TRANSFER_READ,
-        .after_hazard  = from_hazard,
-        .old_layout    = gpu::TextureLayout.TRANSFER_SRC,
-        .new_layout    = from_layout,
+        .before        = gpu::TextureUse.TRANSFER_SOURCE,
+        .after         = from_use,
     };
     gpu::cmd_texture_barrier(&commands, &restore)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };

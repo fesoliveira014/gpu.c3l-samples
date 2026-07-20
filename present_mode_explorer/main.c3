@@ -47,10 +47,10 @@ fn bool mode_supported(gpu::PresentModeSupport support, gpu::PresentMode mode) {
     }
 }
 
-fn gpu::TextureUse? swapchain_texture_use(gpu::TextureLayout layout) {
-    switch (layout) {
-        case gpu::TextureLayout.UNDEFINED: return gpu::TextureUse.UNDEFINED;
-        case gpu::TextureLayout.PRESENT:   return gpu::TextureUse.PRESENT;
+fn gpu::TextureUse? swapchain_texture_use(gpu::TextureUse use) {
+    switch (use) {
+        case gpu::TextureUse.UNDEFINED: return gpu::TextureUse.UNDEFINED;
+        case gpu::TextureUse.PRESENT:   return gpu::TextureUse.PRESENT;
         default:                           return gpu::INVALID_RESOURCE_STATE~;
     }
 }
@@ -150,7 +150,7 @@ fn ModeStats? run_mode_window(
         defer (void)gpu::discard_commands(&cmd);
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
-            before:  swapchain_texture_use(acquired.prior_layout)!,
+            before:  swapchain_texture_use(acquired.prior_use)!,
             after:   gpu::TextureUse.COLOR_ATTACHMENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
@@ -199,9 +199,7 @@ fn ModeStats? run_mode_window(
                 width:       *width,
                 height:      *height,
                 format:      swapchain_info.format,
-                from_stage:  gpu::Stage.PRESENT,
-                from_hazard: gpu::Hazard.PRESENT_READ,
-                from_layout: gpu::TextureLayout.PRESENT,
+                from_use:    gpu::TextureUse.PRESENT,
                 path:        screenshot_path,
             )!;
         }

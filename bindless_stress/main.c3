@@ -10,7 +10,6 @@ const char[*] VERIFY_COMP_SPIRV = $embed("shaders/verify.comp.spv");
 const uint TEXTURE_COUNT = 8192;
 // Spare slots keep churn away from exact-capacity allocation behavior.
 const uint CAPACITY_SLACK = CHURN_SLICE + 64;
-// A command list tracks at most 16 distinct pending texture layouts.
 const uint UPLOAD_BATCH = 16;
 const uint CHURN_FRAMES = 24;
 const uint CHURN_SLICE = 256;
@@ -82,12 +81,8 @@ fn void? upload_slice(
         gpu::TextureHandle tex = fleet.textures[first + i];
         gpu::TextureBarrier to_dst = {
             .texture       = tex,
-            .before_stage  = gpu::Stage.HOST,
-            .after_stage   = gpu::Stage.TRANSFER,
-            .before_hazard = gpu::Hazard.HOST_WRITE,
-            .after_hazard  = gpu::Hazard.TRANSFER_WRITE,
-            .old_layout    = gpu::TextureLayout.UNDEFINED,
-            .new_layout    = gpu::TextureLayout.TRANSFER_DST,
+            .before        = gpu::TextureUse.UNDEFINED,
+            .after         = gpu::TextureUse.TRANSFER_DESTINATION,
         };
         gpu::cmd_texture_barrier(&cmd, &to_dst)!;
         gpu::GpuSpan slice = upload_span.checked_subspan((usz)i * 4, 4)!;
@@ -95,12 +90,8 @@ fn void? upload_slice(
         gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
         gpu::TextureBarrier to_read = {
             .texture       = tex,
-            .before_stage  = gpu::Stage.TRANSFER,
-            .after_stage   = gpu::Stage.COMPUTE_SHADER,
-            .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-            .after_hazard  = gpu::Hazard.SHADER_READ,
-            .old_layout    = gpu::TextureLayout.TRANSFER_DST,
-            .new_layout    = gpu::TextureLayout.SHADER_READ,
+            .before        = gpu::TextureUse.TRANSFER_DESTINATION,
+            .after         = gpu::TextureUse.SAMPLED_COMPUTE,
         };
         gpu::cmd_texture_barrier(&cmd, &to_read)!;
     }
