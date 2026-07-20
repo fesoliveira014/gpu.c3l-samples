@@ -204,7 +204,7 @@ fn ModeStats? run_mode_window(
             )!;
         }
 
-        if (catch err = gpu::present(device, &acquired, last_graphics)) {
+        if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
             (void)frame_clk.mark();
@@ -291,7 +291,7 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &probe_desc)!;
     defer {
         if (swapchain.is_valid()) {
-            (void)gpu::destroy_swapchain(&device, swapchain);
+            (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
         }
     }
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
@@ -317,7 +317,7 @@ fn void? run(sample_args::Options options) {
         }
         // The probe swapchain is already FIFO; recreate for the others.
         if (i > 0) {
-            gpu::destroy_swapchain(&device, swapchain)!;
+            sample_window::destroy_swapchain_when_ready(&device, swapchain)!;
             swapchain = gpu::SWAPCHAIN_HANDLE_INVALID;
             gpu::SwapchainDesc mode_desc = probe_desc;
             mode_desc.present_mode = mode;
