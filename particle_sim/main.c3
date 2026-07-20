@@ -125,27 +125,21 @@ fn void? run(sample_args::Options options) {
 
         gpu::CommandList upload_cmd = gpu::begin_commands(compute_queue)!;
         defer (void)gpu::discard_commands(&upload_cmd);
-        gpu::BufferBarrier seed_visible = {
-            .span          = seed_span,
-            .before_stage  = gpu::Stage.HOST,
-            .after_stage   = gpu::Stage.TRANSFER,
-            .before_hazard = gpu::Hazard.HOST_WRITE,
-            .after_hazard  = gpu::Hazard.TRANSFER_READ,
+        gpu::Barrier seed_visible = {
+            .before = { .host = true },
+            .after = { .transfer = true },
         };
-        gpu::cmd_buffer_barrier(&upload_cmd, &seed_visible)!;
+        gpu::cmd_barrier(&upload_cmd, &seed_visible)!;
         gpu::BufferCopyDesc seed_copy = {
             .src = seed_span,
             .dst = span_a,
         };
         gpu::cmd_copy_buffer(&upload_cmd, &seed_copy)!;
-        gpu::BufferBarrier seed_ready = {
-            .span          = span_a,
-            .before_stage  = gpu::Stage.TRANSFER,
-            .after_stage   = gpu::Stage.COMPUTE_SHADER,
-            .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-            .after_hazard  = gpu::Hazard.SHADER_READ,
+        gpu::Barrier seed_ready = {
+            .before = { .transfer = true },
+            .after = { .compute = true },
         };
-        gpu::cmd_buffer_barrier(&upload_cmd, &seed_ready)!;
+        gpu::cmd_barrier(&upload_cmd, &seed_ready)!;
         gpu::ExecutableCommandList[1] upload_lists = { gpu::end_commands(&upload_cmd)! };
         defer (void)gpu::discard_executable_commands(&upload_lists[0]);
         gpu::SubmitDesc upload_submit = { .command_lists = upload_lists[..] };

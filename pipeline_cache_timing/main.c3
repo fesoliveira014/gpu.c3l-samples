@@ -200,12 +200,11 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         root:     scale_address,
         groups:   { (SCALE_COUNT + CACHE_COMPUTE_WORKGROUP - 1) / CACHE_COMPUTE_WORKGROUP, 1, 1 },
     )!;
-    gpu::BufferBarrier host_read = {
-        .span = output_span,
-        .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
+    gpu::Barrier host_read = {
+        .before = { .compute = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&cmd, &host_read)!;
+    gpu::cmd_barrier(&cmd, &host_read)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
@@ -287,14 +286,11 @@ fn void? read_color_target(
     gpu::cmd_texture_barrier(&commands, &to_source)!;
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
     gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
-    gpu::BufferBarrier to_host = {
-        .span          = readback_span,
-        .before_stage  = gpu::Stage.TRANSFER,
-        .after_stage   = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-        .after_hazard  = gpu::Hazard.HOST_READ,
+    gpu::Barrier to_host = {
+        .before = { .transfer = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&commands, &to_host)!;
+    gpu::cmd_barrier(&commands, &to_host)!;
     gpu::TextureBarrier restore = {
         .texture       = target,
         .before_stage  = gpu::Stage.TRANSFER,

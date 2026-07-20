@@ -48,12 +48,11 @@ fn void? dispatch_compute(
         root:     gpu::get_span_address(device, root_span)!,
         groups:   { (COUNT + ROOT_POINTER_WORKGROUP - 1) / ROOT_POINTER_WORKGROUP, 1, 1 },
     )!;
-    gpu::BufferBarrier bar = {
-        .span = output,
-        .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
+    gpu::Barrier bar = {
+        .before = { .compute = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&cmd, &bar)!;
+    gpu::cmd_barrier(&cmd, &bar)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };

@@ -133,14 +133,11 @@ fn void? read_color_target(
     gpu::cmd_texture_barrier(&commands, &to_source)!;
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
     gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
-    gpu::BufferBarrier to_host = {
-        .span          = readback_span,
-        .before_stage  = gpu::Stage.TRANSFER,
-        .after_stage   = gpu::Stage.HOST,
-        .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-        .after_hazard  = gpu::Hazard.HOST_READ,
+    gpu::Barrier to_host = {
+        .before = { .transfer = true },
+        .after = { .host = true },
     };
-    gpu::cmd_buffer_barrier(&commands, &to_host)!;
+    gpu::cmd_barrier(&commands, &to_host)!;
     gpu::TextureBarrier restore = {
         .texture       = target,
         .before_stage  = gpu::Stage.TRANSFER,

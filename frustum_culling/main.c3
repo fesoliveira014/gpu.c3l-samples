@@ -389,19 +389,17 @@ fn void? run(sample_args::Options options) {
             // the GPU instead: the
             // first barrier orders the fill after all prior compute writes, the
             // second makes the zero visible to this frame's dispatch.
-            gpu::BufferBarrier stats_before_clear = {
-                .span = stats_span,
-                .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.TRANSFER,
-                .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.TRANSFER_WRITE,
+            gpu::Barrier stats_before_clear = {
+                .before = { .compute = true },
+                .after = { .transfer = true },
             };
-            gpu::cmd_buffer_barrier(&cmd, &stats_before_clear)!;
+            gpu::cmd_barrier(&cmd, &stats_before_clear)!;
             gpu::cmd_fill_buffer(&cmd, stats_span, 0)!;
-            gpu::BufferBarrier stats_after_clear = {
-                .span = stats_span,
-                .before_stage = gpu::Stage.TRANSFER, .after_stage = gpu::Stage.COMPUTE_SHADER,
-                .before_hazard = gpu::Hazard.TRANSFER_WRITE, .after_hazard = gpu::Hazard.SHADER_WRITE,
+            gpu::Barrier stats_after_clear = {
+                .before = { .transfer = true },
+                .after = { .compute = true },
             };
-            gpu::cmd_buffer_barrier(&cmd, &stats_after_clear)!;
+            gpu::cmd_barrier(&cmd, &stats_after_clear)!;
         }
 
         gpu::cmd_bind_pipeline(&cmd, cull_pipe)!;
@@ -411,19 +409,18 @@ fn void? run(sample_args::Options options) {
             groups:   { (INSTANCE_COUNT + CULL_TILE - 1) / CULL_TILE, 1, 1 },
         )!;
 
-        gpu::BufferBarrier args_ready = {
-            .span = args_span,
-            .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.INDIRECT_COMMAND,
-            .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.INDIRECT_READ,
+        gpu::Barrier args_ready = {
+            .before = { .compute = true },
+            .after = { .compute = true },
+            .hazards = { .draw_arguments = true },
         };
-        gpu::cmd_buffer_barrier(&cmd, &args_ready)!;
+        gpu::cmd_barrier(&cmd, &args_ready)!;
         if (sample_stats) {
-            gpu::BufferBarrier stats_ready = {
-                .span = stats_span,
-                .before_stage = gpu::Stage.COMPUTE_SHADER, .after_stage = gpu::Stage.HOST,
-                .before_hazard = gpu::Hazard.SHADER_WRITE, .after_hazard = gpu::Hazard.HOST_READ,
+            gpu::Barrier stats_ready = {
+                .before = { .compute = true },
+                .after = { .host = true },
             };
-            gpu::cmd_buffer_barrier(&cmd, &stats_ready)!;
+            gpu::cmd_barrier(&cmd, &stats_ready)!;
         }
 
         gpu::TextureBarrier to_attach = gpu::texture_transition(
