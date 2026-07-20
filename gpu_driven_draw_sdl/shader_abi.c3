@@ -4,6 +4,9 @@ module gpu_driven_draw_sdl;
 import gpu;
 
 const uint BUILD_WORKGROUP = 64;
+const uint INSTANCE_STRIDE = 32;
+const uint DRAW_ROOT_STRIDE = 16;
+const uint FRAGMENT_ROOT_STRIDE = 16;
 
 struct Instance {
     Vec2f pos;
@@ -20,20 +23,28 @@ $assert $reflect(Instance.color).offset == 16;
 struct BuildRoot {
     GpuAddress instances_gpu;
     GpuAddress args_gpu;
+    GpuAddress generated_records_gpu;
+    GpuAddress generated_draw_roots_gpu;
+    GpuAddress generated_fragment_roots_gpu;
     GpuAddress count_gpu;
+    GpuAddress corners_gpu;
     uint       instance_count;
     float      time;
+    uint       use_generated;
     uint       _pad0;
-    uint       _pad1;
 }
-$assert BuildRoot::size == 40;
+$assert BuildRoot::size == 72;
 $assert $reflect(BuildRoot.instances_gpu).offset == 0;
 $assert $reflect(BuildRoot.args_gpu).offset == 8;
-$assert $reflect(BuildRoot.count_gpu).offset == 16;
-$assert $reflect(BuildRoot.instance_count).offset == 24;
-$assert $reflect(BuildRoot.time).offset == 28;
-$assert $reflect(BuildRoot._pad0).offset == 32;
-$assert $reflect(BuildRoot._pad1).offset == 36;
+$assert $reflect(BuildRoot.generated_records_gpu).offset == 16;
+$assert $reflect(BuildRoot.generated_draw_roots_gpu).offset == 24;
+$assert $reflect(BuildRoot.generated_fragment_roots_gpu).offset == 32;
+$assert $reflect(BuildRoot.count_gpu).offset == 40;
+$assert $reflect(BuildRoot.corners_gpu).offset == 48;
+$assert $reflect(BuildRoot.instance_count).offset == 56;
+$assert $reflect(BuildRoot.time).offset == 60;
+$assert $reflect(BuildRoot.use_generated).offset == 64;
+$assert $reflect(BuildRoot._pad0).offset == 68;
 
 struct DrawRoot {
     GpuAddress corners_gpu;
@@ -42,3 +53,9 @@ struct DrawRoot {
 $assert DrawRoot::size == 16;
 $assert $reflect(DrawRoot.corners_gpu).offset == 0;
 $assert $reflect(DrawRoot.instances_gpu).offset == 8;
+
+struct FragmentRoot {
+    Vec4f tint;
+}
+$assert FragmentRoot::size == 16;
+$assert $reflect(FragmentRoot.tint).offset == 0;
