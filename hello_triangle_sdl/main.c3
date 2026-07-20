@@ -86,10 +86,10 @@ fn void? render_frame(FrameWork* ctx) {
     }
 
     gpu::TextureUse swapchain_before;
-    switch (acquired.prior_layout) {
-        case gpu::TextureLayout.UNDEFINED:
+    switch (acquired.prior_use) {
+        case gpu::TextureUse.UNDEFINED:
             swapchain_before = gpu::TextureUse.UNDEFINED;
-        case gpu::TextureLayout.PRESENT:
+        case gpu::TextureUse.PRESENT:
             swapchain_before = gpu::TextureUse.PRESENT;
         default:
             return gpu::INVALID_RESOURCE_STATE~;
@@ -174,9 +174,7 @@ fn void? render_frame(FrameWork* ctx) {
             width:       ctx.swapchain_info.width,
             height:      ctx.swapchain_info.height,
             format:      ctx.swapchain_info.format,
-            from_stage:  gpu::Stage.PRESENT,
-            from_hazard: gpu::Hazard.PRESENT_READ,
-            from_layout: gpu::TextureLayout.PRESENT,
+            from_use:    gpu::TextureUse.PRESENT,
             path:        ctx.options.screenshot_path,
         )!;
     }

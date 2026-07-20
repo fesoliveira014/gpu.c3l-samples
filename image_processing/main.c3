@@ -140,12 +140,8 @@ fn void? run(sample_args::Options options) {
     foreach (image : images) {
         gpu::TextureBarrier to_general = {
             .texture       = image,
-            .before_stage  = gpu::Stage.HOST,
-            .after_stage   = gpu::Stage.COMPUTE_SHADER,
-            .before_hazard = gpu::Hazard.HOST_WRITE,
-            .after_hazard  = gpu::Hazard.SHADER_WRITE,
-            .old_layout    = gpu::TextureLayout.UNDEFINED,
-            .new_layout    = gpu::TextureLayout.GENERAL,
+            .before        = gpu::TextureUse.UNDEFINED,
+            .after         = gpu::TextureUse.STORAGE_COMPUTE,
         };
         gpu::cmd_texture_barrier(&cmd, &to_general)!;
     }
@@ -163,12 +159,8 @@ fn void? run(sample_args::Options options) {
     // Storage write -> storage read between every chain stage.
     gpu::TextureBarrier a_written = {
         .texture       = image_a,
-        .before_stage  = gpu::Stage.COMPUTE_SHADER,
-        .after_stage   = gpu::Stage.COMPUTE_SHADER,
-        .before_hazard = gpu::Hazard.SHADER_WRITE,
-        .after_hazard  = gpu::Hazard.SHADER_READ,
-        .old_layout    = gpu::TextureLayout.GENERAL,
-        .new_layout    = gpu::TextureLayout.GENERAL,
+        .before        = gpu::TextureUse.STORAGE_COMPUTE,
+        .after         = gpu::TextureUse.STORAGE_COMPUTE,
     };
     gpu::cmd_texture_barrier(&cmd, &a_written)!;
 
@@ -223,9 +215,7 @@ fn void? run(sample_args::Options options) {
             width:               IMAGE_SIZE,
             height:              IMAGE_SIZE,
             format:              gpu::Format.RGBA8_UNORM,
-            from_stage:          gpu::Stage.COMPUTE_SHADER,
-            from_hazard:         gpu::Hazard.SHADER_READ,
-            from_layout:         gpu::TextureLayout.GENERAL,
+            from_use:            gpu::TextureUse.STORAGE_COMPUTE,
             path:                options.screenshot_path,
         )!;
     }

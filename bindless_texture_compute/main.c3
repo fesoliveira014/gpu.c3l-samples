@@ -112,12 +112,8 @@ fn void? run() {
 
     gpu::TextureBarrier to_general = {
         .texture       = texture,
-        .before_stage  = gpu::Stage.HOST,
-        .after_stage   = gpu::Stage.COMPUTE_SHADER,
-        .before_hazard = gpu::Hazard.HOST_WRITE,
-        .after_hazard  = gpu::Hazard.SHADER_WRITE,
-        .old_layout    = gpu::TextureLayout.UNDEFINED,
-        .new_layout    = gpu::TextureLayout.GENERAL,
+        .before        = gpu::TextureUse.UNDEFINED,
+        .after         = gpu::TextureUse.STORAGE_COMPUTE,
     };
     gpu::cmd_texture_barrier(&cmd, &to_general)!;
 
@@ -131,12 +127,8 @@ fn void? run() {
 
     gpu::TextureBarrier write_to_sample = {
         .texture       = texture,
-        .before_stage  = gpu::Stage.COMPUTE_SHADER,
-        .after_stage   = gpu::Stage.COMPUTE_SHADER,
-        .before_hazard = gpu::Hazard.SHADER_WRITE,
-        .after_hazard  = gpu::Hazard.SHADER_READ,
-        .old_layout    = gpu::TextureLayout.GENERAL,
-        .new_layout    = gpu::TextureLayout.GENERAL,
+        .before        = gpu::TextureUse.STORAGE_COMPUTE,
+        .after         = gpu::TextureUse.SAMPLED_COMPUTE,
     };
     gpu::cmd_texture_barrier(&cmd, &write_to_sample)!;
 

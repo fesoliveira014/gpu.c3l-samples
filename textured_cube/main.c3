@@ -310,24 +310,16 @@ fn void? run(sample_args::Options options) {
         if (!checker_uploaded) {
             gpu::TextureBarrier to_dst = {
                 .texture       = checker,
-                .before_stage  = gpu::Stage.HOST,
-                .after_stage   = gpu::Stage.TRANSFER,
-                .before_hazard = gpu::Hazard.HOST_WRITE,
-                .after_hazard  = gpu::Hazard.TRANSFER_WRITE,
-                .old_layout    = gpu::TextureLayout.UNDEFINED,
-                .new_layout    = gpu::TextureLayout.TRANSFER_DST,
+                .before        = gpu::TextureUse.UNDEFINED,
+                .after         = gpu::TextureUse.TRANSFER_DESTINATION,
             };
             gpu::cmd_texture_barrier(&cmd, &to_dst)!;
             gpu::BufferTextureCopyDesc upload = { .src = staging_span, .texture = checker };
             gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
             gpu::TextureBarrier to_read = {
                 .texture       = checker,
-                .before_stage  = gpu::Stage.TRANSFER,
-                .after_stage   = gpu::Stage.FRAGMENT_SHADER,
-                .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-                .after_hazard  = gpu::Hazard.SHADER_READ,
-                .old_layout    = gpu::TextureLayout.TRANSFER_DST,
-                .new_layout    = gpu::TextureLayout.SHADER_READ,
+                .before        = gpu::TextureUse.TRANSFER_DESTINATION,
+                .after         = gpu::TextureUse.SAMPLED_FRAGMENT,
             };
             gpu::cmd_texture_barrier(&cmd, &to_read)!;
             checker_uploaded = true;
@@ -336,22 +328,18 @@ fn void? run(sample_args::Options options) {
         if (depth_fresh) {
             gpu::TextureBarrier depth_init = {
                 .texture       = depth,
-                .before_stage  = gpu::Stage.HOST,
-                .after_stage   = gpu::Stage.DEPTH_STENCIL,
-                .before_hazard = gpu::Hazard.HOST_WRITE,
-                .after_hazard  = gpu::Hazard.DEPTH_WRITE,
-                .old_layout    = gpu::TextureLayout.UNDEFINED,
-                .new_layout    = gpu::TextureLayout.DEPTH_STENCIL,
+                .before        = gpu::TextureUse.UNDEFINED,
+                .after         = gpu::TextureUse.DEPTH_ATTACHMENT,
             };
             gpu::cmd_texture_barrier(&cmd, &depth_init)!;
             depth_fresh = false;
         }
 
         gpu::TextureUse swapchain_before;
-        switch (acquired.prior_layout) {
-            case gpu::TextureLayout.UNDEFINED:
+        switch (acquired.prior_use) {
+            case gpu::TextureUse.UNDEFINED:
                 swapchain_before = gpu::TextureUse.UNDEFINED;
-            case gpu::TextureLayout.PRESENT:
+            case gpu::TextureUse.PRESENT:
                 swapchain_before = gpu::TextureUse.PRESENT;
             default:
                 return gpu::INVALID_RESOURCE_STATE~;
@@ -425,12 +413,8 @@ fn void? run(sample_args::Options options) {
 
         gpu::TextureBarrier to_present = {
             .texture       = acquired.texture,
-            .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-            .after_stage   = gpu::Stage.PRESENT,
-            .before_hazard = gpu::Hazard.COLOR_WRITE,
-            .after_hazard  = gpu::Hazard.PRESENT_READ,
-            .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-            .new_layout    = gpu::TextureLayout.PRESENT,
+            .before        = gpu::TextureUse.COLOR_ATTACHMENT,
+            .after         = gpu::TextureUse.PRESENT,
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
@@ -453,9 +437,7 @@ fn void? run(sample_args::Options options) {
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,
                 format:      swapchain_info.format,
-                from_stage:  gpu::Stage.PRESENT,
-                from_hazard: gpu::Hazard.PRESENT_READ,
-                from_layout: gpu::TextureLayout.PRESENT,
+                from_use:    gpu::TextureUse.PRESENT,
                 path:        options.screenshot_path,
             )!;
         }

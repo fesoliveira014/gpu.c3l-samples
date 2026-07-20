@@ -294,10 +294,10 @@ fn void? run(sample_args::Options options) {
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
         defer (void)gpu::discard_commands(&cmd);
         gpu::TextureUse swapchain_before;
-        switch (acquired.prior_layout) {
-            case gpu::TextureLayout.UNDEFINED:
+        switch (acquired.prior_use) {
+            case gpu::TextureUse.UNDEFINED:
                 swapchain_before = gpu::TextureUse.UNDEFINED;
-            case gpu::TextureLayout.PRESENT:
+            case gpu::TextureUse.PRESENT:
                 swapchain_before = gpu::TextureUse.PRESENT;
             default:
                 return gpu::INVALID_RESOURCE_STATE~;
@@ -335,12 +335,8 @@ fn void? run(sample_args::Options options) {
 
         gpu::TextureBarrier to_present = {
             .texture       = acquired.texture,
-            .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-            .after_stage   = gpu::Stage.PRESENT,
-            .before_hazard = gpu::Hazard.COLOR_WRITE,
-            .after_hazard  = gpu::Hazard.PRESENT_READ,
-            .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-            .new_layout    = gpu::TextureLayout.PRESENT,
+            .before        = gpu::TextureUse.COLOR_ATTACHMENT,
+            .after         = gpu::TextureUse.PRESENT,
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
         gpu::ExecutableCommandList[1] draw_lists = { gpu::end_commands(&cmd)! };
@@ -364,9 +360,7 @@ fn void? run(sample_args::Options options) {
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,
                 format:      swapchain_info.format,
-                from_stage:  gpu::Stage.PRESENT,
-                from_hazard: gpu::Hazard.PRESENT_READ,
-                from_layout: gpu::TextureLayout.PRESENT,
+                from_use:    gpu::TextureUse.PRESENT,
                 path:        options.screenshot_path,
             )!;
         }

@@ -167,12 +167,8 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     defer (void)gpu::discard_commands(&cmd);
     gpu::TextureBarrier to_attach = {
         .texture       = target,
-        .before_stage  = gpu::Stage.HOST,
-        .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
-        .before_hazard = gpu::Hazard.HOST_WRITE,
-        .after_hazard  = gpu::Hazard.COLOR_WRITE,
-        .old_layout    = gpu::TextureLayout.UNDEFINED,
-        .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+        .before        = gpu::TextureUse.UNDEFINED,
+        .after         = gpu::TextureUse.COLOR_ATTACHMENT,
     };
     gpu::cmd_texture_barrier(&cmd, &to_attach)!;
     gpu::ColorTargetDesc[1] colors = {{
@@ -276,12 +272,8 @@ fn void? read_color_target(
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_source = {
         .texture       = target,
-        .before_stage  = gpu::Stage.COLOR_ATTACHMENT,
-        .after_stage   = gpu::Stage.TRANSFER,
-        .before_hazard = gpu::Hazard.COLOR_WRITE,
-        .after_hazard  = gpu::Hazard.TRANSFER_READ,
-        .old_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
-        .new_layout    = gpu::TextureLayout.TRANSFER_SRC,
+        .before        = gpu::TextureUse.COLOR_ATTACHMENT,
+        .after         = gpu::TextureUse.TRANSFER_SOURCE,
     };
     gpu::cmd_texture_barrier(&commands, &to_source)!;
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
@@ -293,12 +285,8 @@ fn void? read_color_target(
     gpu::cmd_barrier(&commands, &to_host)!;
     gpu::TextureBarrier restore = {
         .texture       = target,
-        .before_stage  = gpu::Stage.TRANSFER,
-        .after_stage   = gpu::Stage.COLOR_ATTACHMENT,
-        .before_hazard = gpu::Hazard.TRANSFER_READ,
-        .after_hazard  = gpu::Hazard.COLOR_WRITE,
-        .old_layout    = gpu::TextureLayout.TRANSFER_SRC,
-        .new_layout    = gpu::TextureLayout.COLOR_ATTACHMENT,
+        .before        = gpu::TextureUse.TRANSFER_SOURCE,
+        .after         = gpu::TextureUse.COLOR_ATTACHMENT,
     };
     gpu::cmd_texture_barrier(&commands, &restore)!;
 

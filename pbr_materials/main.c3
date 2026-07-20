@@ -128,10 +128,10 @@ fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uin
     return gpu::create_texture(device, &desc);
 }
 
-fn gpu::TextureUse? swapchain_texture_use(gpu::TextureLayout layout) {
-    switch (layout) {
-        case gpu::TextureLayout.UNDEFINED: return gpu::TextureUse.UNDEFINED;
-        case gpu::TextureLayout.PRESENT:   return gpu::TextureUse.PRESENT;
+fn gpu::TextureUse? swapchain_texture_use(gpu::TextureUse use) {
+    switch (use) {
+        case gpu::TextureUse.UNDEFINED: return gpu::TextureUse.UNDEFINED;
+        case gpu::TextureUse.PRESENT:   return gpu::TextureUse.PRESENT;
         default:                           return gpu::INVALID_RESOURCE_STATE~;
     }
 }
@@ -410,12 +410,8 @@ fn void? run(sample_args::Options options) {
             for (uint i = 0; i < TEXTURE_COUNT; i++) {
                 gpu::TextureBarrier to_dst = {
                     .texture       = textures[i],
-                    .before_stage  = gpu::Stage.HOST,
-                    .after_stage   = gpu::Stage.TRANSFER,
-                    .before_hazard = gpu::Hazard.HOST_WRITE,
-                    .after_hazard  = gpu::Hazard.TRANSFER_WRITE,
-                    .old_layout    = gpu::TextureLayout.UNDEFINED,
-                    .new_layout    = gpu::TextureLayout.TRANSFER_DST,
+                    .before        = gpu::TextureUse.UNDEFINED,
+                    .after         = gpu::TextureUse.TRANSFER_DESTINATION,
                 };
                 gpu::cmd_texture_barrier(&cmd, &to_dst)!;
                 usz byte_offset = (usz)i * TEX_SIZE * TEX_SIZE * 4;
@@ -424,12 +420,8 @@ fn void? run(sample_args::Options options) {
                 gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
                 gpu::TextureBarrier to_read = {
                     .texture       = textures[i],
-                    .before_stage  = gpu::Stage.TRANSFER,
-                    .after_stage   = gpu::Stage.FRAGMENT_SHADER,
-                    .before_hazard = gpu::Hazard.TRANSFER_WRITE,
-                    .after_hazard  = gpu::Hazard.SHADER_READ,
-                    .old_layout    = gpu::TextureLayout.TRANSFER_DST,
-                    .new_layout    = gpu::TextureLayout.SHADER_READ,
+                    .before        = gpu::TextureUse.TRANSFER_DESTINATION,
+                    .after         = gpu::TextureUse.SAMPLED_FRAGMENT,
                 };
                 gpu::cmd_texture_barrier(&cmd, &to_read)!;
             }
@@ -439,12 +431,8 @@ fn void? run(sample_args::Options options) {
         if (depth_fresh) {
             gpu::TextureBarrier depth_init = {
                 .texture       = depth,
-                .before_stage  = gpu::Stage.HOST,
-                .after_stage   = gpu::Stage.DEPTH_STENCIL,
-                .before_hazard = gpu::Hazard.HOST_WRITE,
-                .after_hazard  = gpu::Hazard.DEPTH_WRITE,
-                .old_layout    = gpu::TextureLayout.UNDEFINED,
-                .new_layout    = gpu::TextureLayout.DEPTH_STENCIL,
+                .before        = gpu::TextureUse.UNDEFINED,
+                .after         = gpu::TextureUse.DEPTH_ATTACHMENT,
             };
             gpu::cmd_texture_barrier(&cmd, &depth_init)!;
             depth_fresh = false;
@@ -452,7 +440,7 @@ fn void? run(sample_args::Options options) {
 
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
-            before:  swapchain_texture_use(acquired.prior_layout)!,
+            before:  swapchain_texture_use(acquired.prior_use)!,
             after:   gpu::TextureUse.COLOR_ATTACHMENT,
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
@@ -512,9 +500,7 @@ fn void? run(sample_args::Options options) {
                 width:       width,
                 height:      height,
                 format:      swapchain_info.format,
-                from_stage:  gpu::Stage.PRESENT,
-                from_hazard: gpu::Hazard.PRESENT_READ,
-                from_layout: gpu::TextureLayout.PRESENT,
+                from_use:    gpu::TextureUse.PRESENT,
                 path:        options.screenshot_path,
             )!;
         }
