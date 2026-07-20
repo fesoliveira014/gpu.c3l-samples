@@ -163,7 +163,7 @@ fn void? run(sample_args::Options options) {
     };
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)gpu::destroy_swapchain(&device, swapchain);
+    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
 
     gpu::TextureHandle shadow_map = create_depth_texture(&device, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, true, "shadow_map")!;
     defer (void)gpu::destroy_texture(&device, shadow_map);
@@ -496,7 +496,7 @@ fn void? run(sample_args::Options options) {
             )!;
         }
 
-        if (catch err = gpu::present(&device, &acquired, last_graphics)) {
+        if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }

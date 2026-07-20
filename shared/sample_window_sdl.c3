@@ -118,8 +118,32 @@ fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHand
     uint width;
     uint height;
     pixel_size(sample, &width, &height);
-    gpu::resize_swapchain(device, swapchain, width, height)!;
+    while (catch err = gpu::resize_swapchain(device, swapchain, width, height)) {
+        if (err != gpu::RESOURCE_IN_USE) return err~;
+        sdl::delay(1);
+    }
     return gpu::get_swapchain_info(device, swapchain);
+}
+
+fn void? present_when_ready(
+    gpu::Device* device,
+    gpu::AcquiredImage* image,
+    gpu::CompletionPoint render_completion,
+) {
+    while (catch err = gpu::present(device, image, render_completion)) {
+        if (err != gpu::WAIT_TIMEOUT) return err~;
+        sdl::delay(1);
+    }
+}
+
+fn void? destroy_swapchain_when_ready(
+    gpu::Device* device,
+    gpu::SwapchainHandle swapchain,
+) {
+    while (catch err = gpu::destroy_swapchain(device, swapchain)) {
+        if (err != gpu::RESOURCE_IN_USE) return err~;
+        sdl::delay(1);
+    }
 }
 
 fn void throttle_dormant() {
