@@ -1,6 +1,7 @@
 module pipeline_cache_timing;
 
 import gpu;
+import sample_device;
 import std::io;
 import std::time;
 import std::core::mem;
@@ -231,16 +232,6 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     }
 }
 
-fn gpu::Device? make_device(char[] blob) {
-    gpu::DeviceDesc desc = {
-        .backend             = gpu::BackendKind.VULKAN,
-        .enable_validation   = true,
-        .pipeline_cache_data = blob,
-        .application_name    = "pipeline_cache_timing",
-    };
-    return gpu::create_device_from_desc(&desc);
-}
-
 fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
 
 fn void print_tier(String name, TierResult r) {
@@ -320,7 +311,15 @@ fn void? run() {
     gpu::PipelineHandle compute;
     Shaders shaders = prepare_shaders()!;
 
-    gpu::Device device_a = make_device({})!;
+    gpu::RuntimeDesc runtime_a_desc = {
+        .backend           = gpu::BackendKind.VULKAN,
+        .enable_validation = true,
+        .application_name  = "pipeline_cache_timing",
+    };
+    gpu::Runtime runtime_a = gpu::create_runtime(&runtime_a_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime_a);
+    gpu::Device device_a = sample_device::create_strict_device(&runtime_a)!;
+    defer (void)gpu::destroy_device(&device_a);
     TierResult cold = build_all(&device_a, &shaders, graphics_a[..], &compute)!;
     smoke(&device_a, graphics_a[0], compute)!;
 
@@ -334,9 +333,16 @@ fn void? run() {
     defer mem::free(blob.ptr);
     usz written = gpu::get_pipeline_cache_data(&device_a, blob)!;
     destroy_all(&device_a, graphics_a[..], compute);
-    gpu::destroy_device(&device_a)!;
 
-    gpu::Device device_b = make_device(blob[:written])!;
+    gpu::RuntimeDesc runtime_b_desc = {
+        .backend             = gpu::BackendKind.VULKAN,
+        .enable_validation   = true,
+        .pipeline_cache_data = blob[:written],
+        .application_name    = "pipeline_cache_timing",
+    };
+    gpu::Runtime runtime_b = gpu::create_runtime(&runtime_b_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime_b);
+    gpu::Device device_b = sample_device::create_strict_device(&runtime_b)!;
     defer (void)gpu::destroy_device(&device_b);
     TierResult warm = build_all(&device_b, &shaders, graphics_b[..], &compute)!;
     smoke(&device_b, graphics_b[0], compute)!;

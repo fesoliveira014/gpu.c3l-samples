@@ -1,6 +1,7 @@
 module multithreaded_recording;
 
 import gpu;
+import sample_device;
 import std::io;
 import std::thread;
 import std::time;
@@ -296,12 +297,14 @@ struct RunResult {
 <* Full serial + threaded pass on one device; faults unless the two
    readbacks are byte-identical. *>
 fn RunResult? run_on_device(bool validation) {
-    gpu::DeviceDesc device_desc = {
+    gpu::RuntimeDesc runtime_desc = {
         .backend           = gpu::BackendKind.VULKAN,
         .enable_validation = validation,
         .application_name  = "multithreaded_recording",
     };
-    gpu::Device device = gpu::create_device_from_desc(&device_desc)!;
+    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+    defer (void)gpu::destroy_runtime(&runtime);
+    gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::TextureDesc target_desc = {

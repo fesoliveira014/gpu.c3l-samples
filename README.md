@@ -22,9 +22,39 @@ in [`testing.md`](lib/gpu.c3l/docs/testing.md) under “Prerequisites on windows
 Run `python3 scripts/copy_runtime_deps.py` after building to place `SDL3.dll`
 beside the executables.
 
+## Strict device setup
+
+Samples create a runtime, enumerate adapters, test an immutable strict request,
+and create a device from a supported adapter:
+
+```c3
+gpu::RuntimeDesc runtime_desc = {
+    .backend          = gpu::BackendKind.VULKAN,
+    .application_name = "my_sample",
+};
+gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
+defer (void)gpu::destroy_runtime(&runtime);
+
+gpu::DeviceRequest request = gpu::strict_device_request();
+gpu::AdapterList adapters = gpu::enumerate_adapters(&runtime)!;
+gpu::Device device = {};
+for (uint i = 0; i < adapters.count; i++) {
+    gpu::Adapter adapter = adapters.get(i)!;
+    if (!gpu::supports_device_request(&adapter, &request)!.supported) continue;
+    device = gpu::create_device(&adapter, &request)!;
+    break;
+}
+if (!device.is_valid()) return gpu::UNSUPPORTED_FEATURE~;
+defer (void)gpu::destroy_device(&device);
+```
+
+The reusable adapter-selection form lives in `shared/sample_device.c3`.
+Allocations, upload reuse, readback, and completion policy remain sample-local.
+
 ## Build and run
 
 ```sh
+python3 scripts/check_strict_api.py
 python3 scripts/gen_abi.py --check
 python3 scripts/build_shaders.py
 c3c build root_pointer_compute
@@ -48,6 +78,7 @@ before commands that request screenshots.
 | Target | Type | Additional capability | Smoke args |
 |---|---|---|---|
 | `shared_selftest` | helper | none | — |
+| `frame_upload_selftest` | helper | none | — |
 | `root_pointer_compute` | headless | compute, GPU-addressed spans | — |
 | `bindless_texture_compute` | headless | sampled and storage images | — |
 | `offscreen_triangle` | headless | dynamic rendering, transfer readback | `--screenshot out/offscreen_triangle.png` |
