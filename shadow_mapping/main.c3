@@ -401,8 +401,8 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc shadow_pass = { .depth = &shadow_target, .width = SHADOW_MAP_SIZE, .height = SHADOW_MAP_SIZE };
-        gpu::cmd_begin_render_pass(&cmd, &shadow_pass)!;
         gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
+        gpu::cmd_begin_render_pass(&cmd, &shadow_pass)!;
         gpu::DepthState depth_state = {
             .test_enable  = true,
             .write_enable = true,
@@ -455,8 +455,8 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc scene_pass = { .colors = colors[..], .depth = &scene_depth_target, .width = width, .height = height };
-        gpu::cmd_begin_render_pass(&cmd, &scene_pass)!;
         gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
+        gpu::cmd_begin_render_pass(&cmd, &scene_pass)!;
         gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
             commands:       &cmd,

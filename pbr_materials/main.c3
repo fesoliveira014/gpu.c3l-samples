@@ -459,8 +459,8 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc pass = { .colors = colors[..], .depth = &depth_target, .width = width, .height = height };
-        gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+        gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::DepthState depth_state = {
             .test_enable  = true,
             .write_enable = true,

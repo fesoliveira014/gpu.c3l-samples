@@ -279,8 +279,8 @@ fn void? run(sample_args::Options options) {
             .width  = swapchain_info.width,
             .height = swapchain_info.height,
         };
-        gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+        gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::DepthState depth_state = {};
         gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         if (use_count) {

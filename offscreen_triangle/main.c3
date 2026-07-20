@@ -263,8 +263,8 @@ fn void? run(sample_args::Options options) {
         .clear = { .rgba = { (float)CLEAR_R / 255.0f, (float)CLEAR_G / 255.0f, (float)CLEAR_B / 255.0f, 1.0f } },
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = RT_SIZE, .height = RT_SIZE };
-    gpu::cmd_begin_render_pass(&cmd, &pass)!;
     gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+    gpu::cmd_begin_render_pass(&cmd, &pass)!;
     gpu::DepthState depth_state = {};
     gpu::cmd_set_depth_state(&cmd, &depth_state)!;
     gpu::Viewport[2] viewports = {

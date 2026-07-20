@@ -178,8 +178,8 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
         .clear    = { .rgba = { 0, 0, 0, 1 } },
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = SMOKE_SIZE, .height = SMOKE_SIZE };
-    gpu::cmd_begin_render_pass(&cmd, &pass)!;
     gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
+    gpu::cmd_begin_render_pass(&cmd, &pass)!;
     gpu::DepthState depth_state = {};
     gpu::cmd_set_depth_state(&cmd, &depth_state)!;
     gpu::cmd_draw(
