@@ -1,6 +1,9 @@
 abi gpu_driven;
 
 const uint BUILD_WORKGROUP = 64;
+const uint INSTANCE_STRIDE = 32;
+const uint DRAW_ROOT_STRIDE = 16;
+const uint FRAGMENT_ROOT_STRIDE = 16;
 
 struct Instance {
     vec2  pos;
@@ -12,14 +15,22 @@ struct Instance {
 root BuildRoot {
     GpuAddress instances_gpu;
     GpuAddress args_gpu;
+    GpuAddress generated_records_gpu;
+    GpuAddress generated_draw_roots_gpu;
+    GpuAddress generated_fragment_roots_gpu;
     GpuAddress count_gpu;
+    GpuAddress corners_gpu;
     uint       instance_count;
     float      time;
+    uint       use_generated;
     uint       _pad0;
-    uint       _pad1;
 }
 
-root DrawRoot {
+struct DrawRoot {
     GpuAddress corners_gpu;
     GpuAddress instances_gpu;
+}
+
+struct FragmentRoot {
+    vec4 tint;
 }

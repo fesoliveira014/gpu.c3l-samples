@@ -7,6 +7,9 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 const uint BUILD_WORKGROUP = 64u;
+const uint INSTANCE_STRIDE = 32u;
+const uint DRAW_ROOT_STRIDE = 16u;
+const uint FRAGMENT_ROOT_STRIDE = 16u;
 
 struct Instance {
     vec2 pos;
@@ -18,16 +21,24 @@ struct Instance {
 layout(buffer_reference, std430, buffer_reference_align = 8) buffer BuildRoot {
     uint64_t instances_gpu;
     uint64_t args_gpu;
+    uint64_t generated_records_gpu;
+    uint64_t generated_draw_roots_gpu;
+    uint64_t generated_fragment_roots_gpu;
     uint64_t count_gpu;
+    uint64_t corners_gpu;
     uint instance_count;
     float time;
+    uint use_generated;
     uint _pad0;
-    uint _pad1;
 };
 
-layout(buffer_reference, std430, buffer_reference_align = 8) buffer DrawRoot {
+struct DrawRoot {
     uint64_t corners_gpu;
     uint64_t instances_gpu;
+};
+
+struct FragmentRoot {
+    vec4 tint;
 };
 
 #endif

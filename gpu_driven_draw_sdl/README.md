@@ -3,10 +3,10 @@
 ![gpu_driven_draw_sdl](screenshots/gpu_driven_draw_sdl.png)
 
 Windowed GPU-driven rendering: a compute pass culls a 16×16 quad grid against
-an animated spotlight and writes `DrawIndexedIndirectCommand`s (plus a draw
-count where `DeviceCaps.draw_indirect_count` holds); one indirect multi-draw
-renders the visible quads, with per-draw position/color pulled through
-`gl_DrawID`.
+an animated spotlight. When `DeviceCaps.generated_work` is available, it
+compacts visible indexed draws and distinct vertex/fragment root records fully
+on the GPU before one generated draw call. Unsupported devices use the
+shared-root indirect path, with indirect count when available.
 
 Build and run from the repository root:
 
@@ -16,6 +16,5 @@ mkdir -p out
 c3c run gpu_driven_draw_sdl -- --frames 30 --screenshot out/gpu_driven_draw_sdl.png
 ```
 
-`--no-vsync` requests MAILBOX; indirect-count spans are used when supported.
-Startup also reports the semantic generated-root-record capability and its work
-limit. Rendering remains on the portable shared-root indirect path shown here.
+`--no-vsync` requests MAILBOX. Startup reports the selected generated or
+shared-root path and the generated-work limit.

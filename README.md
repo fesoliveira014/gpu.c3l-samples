@@ -59,7 +59,7 @@ before commands that request screenshots.
 | `hello_triangle_sdl` | windowed | baseline presentation | `--frames 30 --screenshot out/hello_triangle_sdl.png` |
 | `textured_cube` | windowed | depth attachment, sampled texture | `--frames 30 --screenshot out/textured_cube.png` |
 | `texture_filtering` | windowed | mip sampling; anisotropy optional | `--frames 30 --screenshot out/texture_filtering.png` |
-| `gpu_driven_draw_sdl` | windowed | indirect multi-draw; indirect-count span optional | `--frames 30 --screenshot out/gpu_driven_draw_sdl.png` |
+| `gpu_driven_draw_sdl` | windowed | GPU-compacted generated roots/draws; shared-root indirect fallback | `--frames 30 --screenshot out/gpu_driven_draw_sdl.png` |
 | `particle_sim` | windowed | compute; async compute queue optional | `--frames 30 --screenshot out/particle_sim.png` |
 | `frustum_culling` | windowed | indirect multi-draw | `--frames 30 --screenshot out/frustum_culling.png` |
 | `shadow_mapping` | windowed | depth compare sampling | `--frames 30 --screenshot out/shadow_mapping.png` |

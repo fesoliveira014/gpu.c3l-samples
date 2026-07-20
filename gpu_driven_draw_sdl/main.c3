@@ -13,17 +13,33 @@ const char[*] FRAG_SPIRV  = $embed("shaders/gpu_driven.frag.spv");
 
 const uint GRID = 16;
 const uint INSTANCES = GRID * GRID;
+$assert INSTANCE_STRIDE == Instance::size;
+$assert DRAW_ROOT_STRIDE == DrawRoot::size;
+$assert FRAGMENT_ROOT_STRIDE == FragmentRoot::size;
+
 const usz INSTANCE_UPLOAD_BYTES = INSTANCES * Instance::size;
 const usz CORNER_UPLOAD_BYTES = 4 * 8;
 const usz INDEX_UPLOAD_BYTES = 6 * uint::size;
 const usz ARGS_UPLOAD_OFFSET =
     ((INSTANCE_UPLOAD_BYTES + CORNER_UPLOAD_BYTES + INDEX_UPLOAD_BYTES + 15) / 16) * 16;
 const usz ARGS_UPLOAD_BYTES = INSTANCES * gpu::DrawIndexedIndirectCommand::size;
-const usz COUNT_UPLOAD_OFFSET = ((ARGS_UPLOAD_OFFSET + ARGS_UPLOAD_BYTES + 3) / 4) * 4;
-const usz BUILD_ROOT_UPLOAD_OFFSET = ((COUNT_UPLOAD_OFFSET + uint::size + 15) / 16) * 16;
-const usz DRAW_ROOT_UPLOAD_OFFSET = ((BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size + 15) / 16) * 16;
-const usz UPLOAD_BYTES_PER_SLOT = DRAW_ROOT_UPLOAD_OFFSET + DrawRoot::size;
-$assert UPLOAD_BYTES_PER_SLOT == 13456;
+const usz GENERATED_RECORDS_UPLOAD_OFFSET =
+    ((ARGS_UPLOAD_OFFSET + ARGS_UPLOAD_BYTES + 7) / 8) * 8;
+const usz GENERATED_RECORDS_UPLOAD_BYTES =
+    INSTANCES * gpu::GeneratedDrawIndexedRecord::size;
+const usz COUNT_UPLOAD_OFFSET =
+    ((GENERATED_RECORDS_UPLOAD_OFFSET + GENERATED_RECORDS_UPLOAD_BYTES + 3) / 4) * 4;
+const usz DRAW_ROOTS_UPLOAD_OFFSET =
+    ((COUNT_UPLOAD_OFFSET + uint::size + 15) / 16) * 16;
+$assert DRAW_ROOTS_UPLOAD_OFFSET % 16 == 0;
+const usz DRAW_ROOTS_UPLOAD_BYTES = INSTANCES * DrawRoot::size;
+const usz FRAGMENT_ROOTS_UPLOAD_OFFSET =
+    ((DRAW_ROOTS_UPLOAD_OFFSET + DRAW_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
+const usz FRAGMENT_ROOTS_UPLOAD_BYTES = INSTANCES * FragmentRoot::size;
+const usz BUILD_ROOT_UPLOAD_OFFSET =
+    ((FRAGMENT_ROOTS_UPLOAD_OFFSET + FRAGMENT_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
+const usz UPLOAD_BYTES_PER_SLOT = BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size;
+$assert UPLOAD_BYTES_PER_SLOT == 31896;
 
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
@@ -63,12 +79,17 @@ fn void? run(sample_args::Options options) {
     defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
     gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
-    bool use_count = caps.draw_indirect_count;
-    io::printfn("gpu_driven_draw_sdl: indirect-count path %s", use_count ? "on" : "off");
+    bool use_generated = caps.generated_work
+        && caps.max_generated_work_count >= INSTANCES;
+    bool use_count = !use_generated && caps.draw_indirect_count;
     io::printfn(
-        "gpu_driven_draw_sdl: generated-root records %s (max %d)",
-        caps.generated_work ? "available" : "unavailable",
+        "gpu_driven_draw_sdl: generated-work path %s (max %d)",
+        use_generated ? "on" : "off",
         caps.max_generated_work_count,
+    );
+    io::printfn(
+        "gpu_driven_draw_sdl: indirect-count fallback %s",
+        use_count ? "on" : "off",
     );
 
     uint width;
@@ -199,39 +220,88 @@ fn void? run(sample_args::Options options) {
 
         gpu::GpuSpan args_span = sample_frame_upload::alloc_frame_upload(
             batch:     &upload_batch,
-            size:      INSTANCES * gpu::DrawIndexedIndirectCommand::size,
+            size:      ARGS_UPLOAD_BYTES,
             alignment: 16,
         )!;
         gpu::GpuAddress args_address = gpu::get_span_address(&device, args_span)!;
+
+        gpu::GpuSpan generated_records_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      GENERATED_RECORDS_UPLOAD_BYTES,
+            alignment: 8,
+        )!;
+        gpu::GpuAddress generated_records_address = gpu::get_span_address(
+            &device,
+            generated_records_span,
+        )!;
+
         gpu::GpuSpan count_span = sample_frame_upload::alloc_frame_upload(
             batch:     &upload_batch,
-            size:      4,
+            size:      uint::size,
             alignment: 4,
         )!;
+        uint* draw_count = (uint*)gpu::get_span_mapping(&device, count_span)!.ptr;
+        *draw_count = use_generated ? 0 : INSTANCES;
         gpu::GpuAddress count_address = gpu::get_span_address(&device, count_span)!;
+
+        gpu::GpuSpan draw_roots_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      DRAW_ROOTS_UPLOAD_BYTES,
+            alignment: 16,
+        )!;
+        DrawRoot* draw_roots = (DrawRoot*)gpu::get_span_mapping(
+            &device,
+            draw_roots_span,
+        )!.ptr;
+        draw_roots[0] = {
+            .corners_gpu   = corners_address,
+            .instances_gpu = instances_address,
+        };
+        gpu::GpuAddress draw_roots_address = gpu::get_span_address(
+            &device,
+            draw_roots_span,
+        )!;
+
+        gpu::GpuSpan fragment_roots_span = sample_frame_upload::alloc_frame_upload(
+            batch:     &upload_batch,
+            size:      FRAGMENT_ROOTS_UPLOAD_BYTES,
+            alignment: 16,
+        )!;
+        FragmentRoot* fragment_roots = (FragmentRoot*)gpu::get_span_mapping(
+            &device,
+            fragment_roots_span,
+        )!.ptr;
+        fragment_roots[0].tint = { 1.0f, 1.0f, 1.0f, 1.0f };
+        gpu::GpuAddress fragment_roots_address = gpu::get_span_address(
+            &device,
+            fragment_roots_span,
+        )!;
 
         gpu::GpuSpan build_root_span = sample_frame_upload::alloc_frame_upload(
             batch:     &upload_batch,
             size:      BuildRoot::size,
             alignment: 16,
         )!;
-        BuildRoot* build_root = (BuildRoot*)gpu::get_span_mapping(&device, build_root_span)!.ptr;
-        build_root.instances_gpu  = instances_address;
-        build_root.args_gpu       = args_address;
-        build_root.count_gpu      = count_address;
-        build_root.instance_count = INSTANCES;
-        build_root.time           = time;
-        gpu::GpuAddress build_root_address = gpu::get_span_address(&device, build_root_span)!;
-
-        gpu::GpuSpan draw_root_span = sample_frame_upload::alloc_frame_upload(
-            batch:     &upload_batch,
-            size:      DrawRoot::size,
-            alignment: 16,
+        BuildRoot* build_root = (BuildRoot*)gpu::get_span_mapping(
+            &device,
+            build_root_span,
+        )!.ptr;
+        *build_root = {
+            .instances_gpu                = instances_address,
+            .args_gpu                     = args_address,
+            .generated_records_gpu        = generated_records_address,
+            .generated_draw_roots_gpu     = draw_roots_address,
+            .generated_fragment_roots_gpu = fragment_roots_address,
+            .count_gpu                    = count_address,
+            .corners_gpu                  = corners_address,
+            .instance_count               = INSTANCES,
+            .time                         = time,
+            .use_generated                = use_generated ? 1 : 0,
+        };
+        gpu::GpuAddress build_root_address = gpu::get_span_address(
+            &device,
+            build_root_span,
         )!;
-        DrawRoot* draw_root = (DrawRoot*)gpu::get_span_mapping(&device, draw_root_span)!.ptr;
-        draw_root.corners_gpu   = corners_address;
-        draw_root.instances_gpu = instances_address;
-        gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_root_span)!;
 
         gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
 
@@ -247,7 +317,10 @@ fn void? run(sample_args::Options options) {
 
         gpu::Barrier indirect_ready = {
             .before = { .compute = true },
-            .after = { .compute = true },
+            .after = {
+                .vertex_shader   = true,
+                .fragment_shader = true,
+            },
             .hazards = { .draw_arguments = true },
         };
         gpu::cmd_barrier(&cmd, &indirect_ready)!;
@@ -283,11 +356,19 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::DepthState depth_state = {};
         gpu::cmd_set_depth_state(&cmd, &depth_state)!;
-        if (use_count) {
+        if (use_generated) {
+            gpu::cmd_draw_indexed_generated(
+                commands:      &cmd,
+                records:       generated_records_span,
+                count_span:    count_span,
+                max_draw_count: INSTANCES,
+                index_span:    index_span,
+            )!;
+        } else if (use_count) {
             gpu::cmd_draw_indexed_indirect_count(
                 commands:       &cmd,
-                vertex_root:    draw_root_address,
-                fragment_root:  draw_root_address,
+                vertex_root:    draw_roots_address,
+                fragment_root:  fragment_roots_address,
                 args:           args_span,
                 count_span:     count_span,
                 max_draw_count: INSTANCES,
@@ -296,8 +377,8 @@ fn void? run(sample_args::Options options) {
         } else {
             gpu::cmd_draw_indexed_indirect(
                 commands:      &cmd,
-                vertex_root:   draw_root_address,
-                fragment_root: draw_root_address,
+                vertex_root:   draw_roots_address,
+                fragment_root: fragment_roots_address,
                 args:          args_span,
                 draw_count:    INSTANCES,
                 index_span:    index_span,
