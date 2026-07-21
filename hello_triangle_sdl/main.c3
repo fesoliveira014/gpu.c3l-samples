@@ -14,21 +14,21 @@ const uint TEX_SIZE = 16;
 const usz UPLOAD_BYTES_PER_SLOT = 64;
 
 struct FrameWork {
-    gpu::Device*                                      device;
-    sample_window::SampleWindow*                      window;
-    gpu::SwapchainHandle                              swapchain;
-    gpu::SwapchainInfo*                               swapchain_info;
-    gpu::PipelineHandle                               pipeline;
-    gpu::TextureHandle                                checker;
-    gpu::TextureIndex                                 tex_index;
-    gpu::SamplerIndex                                 smp_index;
-    gpu::GpuSpan                                      staging_span;
-    sample_frame_upload::FrameUploadRing*             upload_ring;
-    sample_args::Options*                             options;
-    bool*                                             checker_uploaded;
-    gpu::CompletionPoint*                             last_graphics;
-    long                                              frame;
-    bool                                              rendered;
+    gpu::Device*                 device;
+    sample_window::SampleWindow* window;
+    gpu::SwapchainHandle         swapchain;
+    gpu::SwapchainInfo*          swapchain_info;
+    gpu::PipelineHandle          pipeline;
+    gpu::TextureHandle           checker;
+    gpu::TextureIndex            tex_index;
+    gpu::SamplerIndex            smp_index;
+    gpu::GpuSpan                 staging_span;
+    sample_frame_upload::FrameUploadRing* upload_ring;
+    sample_args::Options*        options;
+    bool*                        checker_uploaded;
+    gpu::CompletionPoint*        last_graphics;
+    long                         frame;
+    bool                         rendered;
 }
 
 fn int main(String[] args) {
