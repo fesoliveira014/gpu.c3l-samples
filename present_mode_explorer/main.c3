@@ -185,7 +185,7 @@ fn ModeStats? run_mode_window(
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
         defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
-            .command_lists = lists[..],
+            .command_lists    = lists[..],
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
