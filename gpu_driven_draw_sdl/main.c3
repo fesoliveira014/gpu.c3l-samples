@@ -127,7 +127,7 @@ fn void? run(sample_args::Options options) {
 
     gpu::ShaderDesc build_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = BUILD_SPIRV[..], .entry_point = "main", .debug_name = "build_draws" };
     gpu::ShaderCode build_shader = gpu::prepare_shader_code(&build_sd)!;
-    gpu::ComputePipelineDesc build_desc = { .shader = build_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "build_draws" };
+    gpu::ComputePipelineDesc build_desc = { .shader = build_shader, .debug_name = "build_draws" };
     gpu::PipelineHandle build_pipeline = gpu::create_compute_pipeline(&device, &build_desc)!;
     defer (void)gpu::destroy_pipeline(&device, build_pipeline);
 
@@ -136,12 +136,14 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = FRAG_SPIRV[..], .entry_point = "main", .debug_name = "gpu_driven_frag" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::Format[1] color_formats = { swapchain_info.format };
+    gpu::ColorTargetState[1] color_targets = {{
+        .format     = swapchain_info.format,
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    }};
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = color_formats[..],
+        .colors          = color_targets[..],
         .debug_name      = "gpu_driven_draw",
     };
     gpu::PipelineHandle pipeline;
@@ -185,7 +187,7 @@ fn void? run(sample_args::Options options) {
             sample_window::throttle_dormant();
             continue;
         }
-        if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
+        if (!pipeline_valid || color_targets[0].format != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (scratch_reserved) {
                 gpu::release_generated_scratch(
@@ -197,7 +199,7 @@ fn void? run(sample_args::Options options) {
             }
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
-            color_formats[0] = swapchain_info.format;
+            color_targets[0].format = swapchain_info.format;
             pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
             pipeline_valid = true;
             if (use_generated) {

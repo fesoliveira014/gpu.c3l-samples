@@ -79,13 +79,13 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc hist_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = HISTOGRAM_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode hist_shader = gpu::prepare_shader_code(&hist_sd)!;
 
-    gpu::ComputePipelineDesc gen_pd = { .shader = gen_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "generate" };
+    gpu::ComputePipelineDesc gen_pd = { .shader = gen_shader, .debug_name = "generate" };
     gpu::PipelineHandle gen_pipe = gpu::create_compute_pipeline(&device, &gen_pd)!;
     defer (void)gpu::destroy_pipeline(&device, gen_pipe);
-    gpu::ComputePipelineDesc blur_pd = { .shader = blur_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "blur" };
+    gpu::ComputePipelineDesc blur_pd = { .shader = blur_shader, .debug_name = "blur" };
     gpu::PipelineHandle blur_pipe = gpu::create_compute_pipeline(&device, &blur_pd)!;
     defer (void)gpu::destroy_pipeline(&device, blur_pipe);
-    gpu::ComputePipelineDesc hist_pd = { .shader = hist_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "histogram" };
+    gpu::ComputePipelineDesc hist_pd = { .shader = hist_shader, .debug_name = "histogram" };
     gpu::PipelineHandle hist_pipe = gpu::create_compute_pipeline(&device, &hist_pd)!;
     defer (void)gpu::destroy_pipeline(&device, hist_pipe);
 

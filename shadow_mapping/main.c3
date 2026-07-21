@@ -265,20 +265,20 @@ fn void? run(sample_args::Options options) {
     gpu::GraphicsPipelineDesc shadow_pd = {
         .vertex_shader   = sh_vert,
         .fragment_shader = sh_frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .raster          = { .cull_mode = gpu::CullMode.FRONT, .depth_bias_slope = 1.0f },
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadow_pass",
     };
     gpu::PipelineHandle shadow_pipe = gpu::create_graphics_pipeline(&device, &shadow_pd)!;
     defer (void)gpu::destroy_pipeline(&device, shadow_pipe);
 
-    gpu::Format[1] color_formats = { swapchain_info.format };
+    gpu::ColorTargetState[1] color_targets = {{
+        .format     = swapchain_info.format,
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    }};
     gpu::GraphicsPipelineDesc scene_pd = {
         .vertex_shader   = sc_vert,
         .fragment_shader = sc_frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = color_formats[..],
+        .colors          = color_targets[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadowed_scene",
     };
@@ -314,7 +314,7 @@ fn void? run(sample_args::Options options) {
             continue;
         }
 
-        bool pipeline_changed = !scene_pipe_valid || color_formats[0] != swapchain_info.format;
+        bool pipeline_changed = !scene_pipe_valid || color_targets[0].format != swapchain_info.format;
         bool depth_changed = !scene_depth_valid
             || scene_depth_width != swapchain_info.width
             || scene_depth_height != swapchain_info.height;
@@ -324,7 +324,7 @@ fn void? run(sample_args::Options options) {
         if (pipeline_changed) {
             if (scene_pipe_valid) gpu::destroy_pipeline(&device, scene_pipe)!;
             scene_pipe_valid = false;
-            color_formats[0] = swapchain_info.format;
+            color_targets[0].format = swapchain_info.format;
             scene_pipe = gpu::create_graphics_pipeline(&device, &scene_pd)!;
             scene_pipe_valid = true;
         }
@@ -438,6 +438,13 @@ fn void? run(sample_args::Options options) {
         gpu::RenderPassDesc shadow_pass = { .depth = &shadow_target, .width = SHADOW_MAP_SIZE, .height = SHADOW_MAP_SIZE };
         gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
         gpu::cmd_begin_render_pass(&cmd, &shadow_pass)!;
+        gpu::DynamicRasterState shadow_raster = {
+            .cull_mode           = gpu::CullMode.FRONT,
+            .depth_bias_enable   = true,
+            .depth_bias_constant = 0.0f,
+            .depth_bias_slope    = 1.0f,
+        };
+        gpu::cmd_set_raster_state(&cmd, &shadow_raster)!;
         gpu::DepthState depth_state = {
             .test_enable  = true,
             .write_enable = true,
