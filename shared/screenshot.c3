@@ -70,7 +70,10 @@ fn void? capture_texture_png(
     gpu::cmd_texture_barrier(&commands, &restore)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
-    gpu::CompletionPoint[1] waits = { producer_completion };
+    gpu::CompletionWait[1] waits = {{
+        .point  = producer_completion,
+        .before = { .transfer },
+    }};
     gpu::SubmitDesc submit = {
         .command_lists    = lists[..],
         .completion_waits = waits[..],

@@ -505,7 +505,8 @@ fn void? run(sample_args::Options options) {
         defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists = lists[..],
-            .readiness     = acquired.readiness,
+            .readiness        = acquired.readiness,
+            .readiness_before = { .color_output },
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;

@@ -343,11 +343,15 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
         gpu::ExecutableCommandList[1] draw_lists = { gpu::end_commands(&cmd)! };
         defer (void)gpu::discard_executable_commands(&draw_lists[0]);
-        gpu::CompletionPoint[1] draw_waits = { last_compute };
+        gpu::CompletionWait[1] draw_waits = {{
+            .point  = last_compute,
+            .before = { .vertex_shader },
+        }};
         gpu::SubmitDesc draw_submit = {
             .command_lists    = draw_lists[..],
             .completion_waits = draw_waits[..],
             .readiness        = acquired.readiness,
+            .readiness_before = { .color_output },
         };
         last_graphics = gpu::submit(graphics_queue, &draw_submit)!;
         batch_completion = last_graphics;
