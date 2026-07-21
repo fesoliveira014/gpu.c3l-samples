@@ -170,8 +170,15 @@ fn void? run(sample_args::Options options) {
     gpu::TextureView shadow_view = gpu::create_texture_view(&device, shadow_map, null)!;
     defer (void)gpu::destroy_texture_view(&device, shadow_view);
     gpu::TextureIndex shadow_index = shadow_view.index;
+    gpu::AttachmentViewDesc shadow_attachment_desc = { .texture = shadow_map };
+    gpu::AttachmentViewHandle shadow_attachment = gpu::create_attachment_view(
+        &device,
+        &shadow_attachment_desc,
+    )!;
+    defer (void)gpu::destroy_attachment_view(&device, shadow_attachment);
 
     gpu::TextureHandle scene_depth;
+    gpu::AttachmentViewHandle scene_depth_view;
     uint scene_depth_width;
     uint scene_depth_height;
     bool scene_depth_valid = false;
@@ -183,12 +190,25 @@ fn void? run(sample_args::Options options) {
             sampled: false,
             name:    "scene_depth",
         )!;
+        {
+            defer catch (void)gpu::destroy_texture(&device, scene_depth);
+            gpu::AttachmentViewDesc scene_depth_view_desc = {
+                .texture = scene_depth,
+            };
+            scene_depth_view = gpu::create_attachment_view(
+                &device,
+                &scene_depth_view_desc,
+            )!;
+        }
         scene_depth_width = swapchain_info.width;
         scene_depth_height = swapchain_info.height;
         scene_depth_valid = true;
     }
     defer {
-        if (scene_depth_valid) (void)gpu::destroy_texture(&device, scene_depth);
+        if (scene_depth_valid) {
+            (void)gpu::destroy_attachment_view(&device, scene_depth_view);
+            (void)gpu::destroy_texture(&device, scene_depth);
+        }
     }
 
     gpu::SamplerDesc shadow_sampler_desc = {
@@ -309,7 +329,10 @@ fn void? run(sample_args::Options options) {
             scene_pipe_valid = true;
         }
         if (depth_changed) {
-            if (scene_depth_valid) gpu::destroy_texture(&device, scene_depth)!;
+            if (scene_depth_valid) {
+                gpu::destroy_attachment_view(&device, scene_depth_view)!;
+                gpu::destroy_texture(&device, scene_depth)!;
+            }
             scene_depth_valid = false;
             scene_depth = create_depth_texture(
                 device:  &device,
@@ -318,6 +341,16 @@ fn void? run(sample_args::Options options) {
                 sampled: false,
                 name:    "scene_depth",
             )!;
+            {
+                defer catch (void)gpu::destroy_texture(&device, scene_depth);
+                gpu::AttachmentViewDesc scene_depth_view_desc = {
+                    .texture = scene_depth,
+                };
+                scene_depth_view = gpu::create_attachment_view(
+                    &device,
+                    &scene_depth_view_desc,
+                )!;
+            }
             scene_depth_width = swapchain_info.width;
             scene_depth_height = swapchain_info.height;
             scene_depth_valid = true;
@@ -335,6 +368,8 @@ fn void? run(sample_args::Options options) {
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             continue;
         }
+
+        gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
@@ -395,7 +430,7 @@ fn void? run(sample_args::Options options) {
         shadow_map_initialized = true;
 
         gpu::DepthTargetDesc shadow_target = {
-            .texture  = shadow_map,
+            .view     = shadow_attachment,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .depth = 1.0f },
@@ -443,13 +478,13 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
         gpu::ColorTargetDesc[1] colors = {{
-            .texture  = acquired.texture,
+            .view     = color_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .rgba = { 0.53f, 0.66f, 0.85f, 1.0f } },
         }};
         gpu::DepthTargetDesc scene_depth_target = {
-            .texture  = scene_depth,
+            .view     = scene_depth_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .depth = 1.0f },

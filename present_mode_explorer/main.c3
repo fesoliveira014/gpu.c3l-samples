@@ -125,6 +125,7 @@ fn ModeStats? run_mode_window(
             continue;
         }
         double acquire_ms = ms(acquire_clk.mark());
+        gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
         sample_frame_upload::FrameUploadBatch upload =
             sample_frame_upload::begin_frame_upload(upload_ring)!;
@@ -156,7 +157,7 @@ fn ModeStats? run_mode_window(
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
         gpu::ColorTargetDesc[1] colors = {{
-            .texture  = acquired.texture,
+            .view     = color_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .rgba = { 0, 0, 0, 1 } },

@@ -114,6 +114,7 @@ fn ZString debug_resource_name(gpu::DebugResourceKind kind) {
         case gpu::DebugResourceKind.TEXTURE_DESCRIPTOR: return "texture_descriptor";
         case gpu::DebugResourceKind.SAMPLER: return "sampler";
         case gpu::DebugResourceKind.ALLOCATION: return "allocation";
+        case gpu::DebugResourceKind.ATTACHMENT_VIEW: return "attachment_view";
     }
 }
 

@@ -26,7 +26,7 @@ struct FrameWork {
     sample_frame_upload::FrameUploadRing* upload_ring;
     sample_args::Options*        options;
     bool*                        checker_uploaded;
-    gpu::CompletionPoint*         last_graphics;
+    gpu::CompletionPoint*        last_graphics;
     long                         frame;
     bool                         rendered;
 }
@@ -63,6 +63,7 @@ fn void? render_frame(FrameWork* ctx) {
     }
 
     gpu::Queue graphics_queue = gpu::get_queue(ctx.device, gpu::QueueKind.GRAPHICS)!;
+    gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
     gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
     defer (void)gpu::discard_commands(&cmd);
@@ -125,7 +126,7 @@ fn void? render_frame(FrameWork* ctx) {
     frag_root.sampler_index = ctx.smp_index;
 
     gpu::ColorTargetDesc[1] colors = {{
-        .texture = acquired.texture,
+        .view = color_view,
         .load_op = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
         .clear = { .rgba = { 0.05f + pulse, 0.05f, 0.12f, 1.0f } },

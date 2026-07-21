@@ -141,6 +141,12 @@ fn void? run(sample_args::Options options) {
     };
     gpu::TextureHandle target = gpu::create_texture(&device, &rt_desc)!;
     defer (void)gpu::destroy_texture(&device, target);
+    gpu::AttachmentViewDesc target_view_desc = { .texture = target };
+    gpu::AttachmentViewHandle target_view = gpu::create_attachment_view(
+        &device,
+        &target_view_desc,
+    )!;
+    defer (void)gpu::destroy_attachment_view(&device, target_view);
 
     gpu::TextureDesc tex_desc = {
         .dimension  = gpu::TextureDimension.TEX_2D,
@@ -260,7 +266,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
     gpu::ColorTargetDesc[1] colors = {{
-        .texture = target,
+        .view = target_view,
         .load_op = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
         .clear = { .rgba = { (float)CLEAR_R / 255.0f, (float)CLEAR_G / 255.0f, (float)CLEAR_B / 255.0f, 1.0f } },
@@ -357,4 +363,3 @@ fn void? run(sample_args::Options options) {
         )!;
     }
 }
-

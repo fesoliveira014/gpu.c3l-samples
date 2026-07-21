@@ -189,17 +189,26 @@ fn void? run(sample_args::Options options) {
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
 
     gpu::TextureHandle depth;
+    gpu::AttachmentViewHandle depth_view;
     uint depth_width;
     uint depth_height;
     bool depth_valid = false;
     if (!swapchain_info.dormant) {
         depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height)!;
+        {
+            defer catch (void)gpu::destroy_texture(&device, depth);
+            gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
+            depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+        }
         depth_width = swapchain_info.width;
         depth_height = swapchain_info.height;
         depth_valid = true;
     }
     defer {
-        if (depth_valid) (void)gpu::destroy_texture(&device, depth);
+        if (depth_valid) {
+            (void)gpu::destroy_attachment_view(&device, depth_view);
+            (void)gpu::destroy_texture(&device, depth);
+        }
     }
 
     gpu::AllocationDesc vertex_desc = {
@@ -357,9 +366,17 @@ fn void? run(sample_args::Options options) {
             pipeline_valid = true;
         }
         if (depth_changed) {
-            if (depth_valid) gpu::destroy_texture(&device, depth)!;
+            if (depth_valid) {
+                gpu::destroy_attachment_view(&device, depth_view)!;
+                gpu::destroy_texture(&device, depth)!;
+            }
             depth_valid = false;
             depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height)!;
+            {
+                defer catch (void)gpu::destroy_texture(&device, depth);
+                gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
+                depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+            }
             depth_width = swapchain_info.width;
             depth_height = swapchain_info.height;
             depth_valid = true;
@@ -377,6 +394,8 @@ fn void? run(sample_args::Options options) {
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             continue;
         }
+
+        gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
@@ -446,14 +465,14 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
         gpu::ColorTargetDesc[1] colors = {{
-            .texture  = acquired.texture,
+            .view     = color_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             // Pre-encoded: the clear bypasses the shader's gamma path.
             .clear    = { .rgba = { 0.16f, 0.17f, 0.20f, 1.0f } },
         }};
         gpu::DepthTargetDesc depth_target = {
-            .texture  = depth,
+            .view     = depth_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .depth = 1.0f },

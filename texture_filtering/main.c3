@@ -328,6 +328,8 @@ fn void? run(sample_args::Options options) {
             continue;
         }
 
+        gpu::AttachmentViewHandle color_view = acquired.attachment_view;
+
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
         defer catch {
@@ -383,7 +385,7 @@ fn void? run(sample_args::Options options) {
         gpu::GpuAddress root_address = gpu::get_span_address(&device, root_span)!;
 
         gpu::ColorTargetDesc[1] colors = {{
-            .texture  = acquired.texture,
+            .view     = color_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .rgba = { 0.35f, 0.55f, 0.85f, 1.0f } },
