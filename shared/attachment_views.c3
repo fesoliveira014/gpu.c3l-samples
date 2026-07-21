@@ -39,7 +39,7 @@ fn void? clear_attachment_views(
     foreach (i, view : cache.views) {
         if (view.is_valid()) {
             gpu::destroy_attachment_view(&cache.device, view)!;
-            cache.views[i] = gpu::ATTACHMENT_VIEW_INVALID;
+            cache.views[i] = gpu::ATTACHMENT_VIEW_HANDLE_INVALID;
             cache.textures[i] = gpu::TEXTURE_HANDLE_INVALID;
         }
     }

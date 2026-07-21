@@ -40,9 +40,21 @@ const usz FRAGMENT_ROOTS_UPLOAD_BYTES = INSTANCES * FragmentRoot::size;
 const usz BUILD_ROOT_UPLOAD_OFFSET =
     ((FRAGMENT_ROOTS_UPLOAD_OFFSET + FRAGMENT_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
 const usz UPLOAD_BYTES_PER_SLOT = BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size;
-const usz GENERATED_PREPROCESS_BYTES = 16 * 1024 * 1024;
 const uint GENERATED_PREPROCESS_BUFFER_COUNT = 2;
 $assert UPLOAD_BYTES_PER_SLOT == 31896;
+
+fn void? reserve_generated_draw_scratch(
+    gpu::Queue queue,
+    gpu::PipelineHandle pipeline,
+) {
+    gpu::GeneratedScratchDesc desc = {
+        .pipeline                = pipeline,
+        .kind                    = gpu::GeneratedWorkKind.DRAW_INDEXED,
+        .max_commands_per_list   = INSTANCES,
+        .preprocess_buffer_count = GENERATED_PREPROCESS_BUFFER_COUNT,
+    };
+    return gpu::reserve_generated_scratch(queue, &desc);
+}
 
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
@@ -89,18 +101,6 @@ fn void? run(sample_args::Options options) {
         &device,
         gpu::QueueKind.GRAPHICS,
     )!;
-    if (use_generated) {
-        gpu::reserve_generated_scratch(graphics_queue, {
-            .max_commands_per_list   = INSTANCES,
-            .max_preprocess_bytes    = GENERATED_PREPROCESS_BYTES,
-            .preprocess_buffer_count = GENERATED_PREPROCESS_BUFFER_COUNT,
-        })!;
-    }
-    defer {
-        if (use_generated) {
-            (void)gpu::reserve_generated_scratch(graphics_queue, {});
-        }
-    }
     io::printfn(
         "gpu_driven_draw_sdl: generated-work path %s (max %d)",
         use_generated ? "on" : "off",
@@ -162,6 +162,20 @@ fn void? run(sample_args::Options options) {
     defer {
         if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
     }
+    bool scratch_reserved;
+    if (use_generated && pipeline_valid) {
+        reserve_generated_draw_scratch(graphics_queue, pipeline)!;
+        scratch_reserved = true;
+    }
+    defer {
+        if (scratch_reserved) {
+            (void)gpu::release_generated_scratch(
+                graphics_queue,
+                pipeline,
+                gpu::GeneratedWorkKind.DRAW_INDEXED,
+            );
+        }
+    }
     long frame = 0;
     bool running = true;
     gpu::CompletionPoint last_graphics;
@@ -187,11 +201,23 @@ fn void? run(sample_args::Options options) {
         }
         if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
+            if (scratch_reserved) {
+                gpu::release_generated_scratch(
+                    graphics_queue,
+                    pipeline,
+                    gpu::GeneratedWorkKind.DRAW_INDEXED,
+                )!;
+                scratch_reserved = false;
+            }
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
             color_formats[0] = swapchain_info.format;
             pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
             pipeline_valid = true;
+            if (use_generated) {
+                reserve_generated_draw_scratch(graphics_queue, pipeline)!;
+                scratch_reserved = true;
+            }
         }
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
