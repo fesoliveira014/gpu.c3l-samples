@@ -38,9 +38,15 @@ fn gpu::Vec4f rect_for(uint chunk, uint draw) {
 }
 
 <* Roots are precomputed in a CPU_WRITE allocation so recording measures cmd_draw. *>
-fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::PipelineHandle pipeline, gpu::GpuAddress roots_base, uint chunk) {
+fn void? record_chunk(
+    gpu::CommandList* list,
+    gpu::AttachmentViewHandle target_view,
+    gpu::PipelineHandle pipeline,
+    gpu::GpuAddress roots_base,
+    uint chunk,
+) {
     gpu::ColorTargetDesc[1] colors = {{
-        .texture  = target,
+        .view     = target_view,
         .load_op  = gpu::LoadOp.LOAD,
         .store_op = gpu::StoreOp.STORE,
     }};
@@ -65,7 +71,7 @@ fn void? record_chunk(gpu::CommandList* list, gpu::TextureHandle target, gpu::Pi
 
 struct WorkerArgs {
     gpu::Queue                  queue;
-    gpu::TextureHandle          target;
+    gpu::AttachmentViewHandle  target_view;
     gpu::PipelineHandle         pipeline;
     gpu::GpuAddress             roots_base;
     uint                        first_chunk;
@@ -81,7 +87,13 @@ fn int record_worker(void* arg) {
         for (uint chunk = args.first_chunk; chunk < CHUNKS; chunk += args.stride) {
             gpu::CommandList? list = gpu::begin_commands(args.queue);
             if (catch list) { args.failed = true; return 1; }
-            if (catch record_chunk(&list, args.target, args.pipeline, args.roots_base, chunk)) {
+            if (catch record_chunk(
+                list:        &list,
+                target_view: args.target_view,
+                pipeline:    args.pipeline,
+                roots_base:  args.roots_base,
+                chunk:       chunk,
+            )) {
                 (void)gpu::discard_commands(&list);
                 args.failed = true;
                 return 1;
@@ -172,6 +184,7 @@ fn int main(String[] args) {
 fn NanoDuration? run_once(
     gpu::Device* device,
     gpu::TextureHandle target,
+    gpu::AttachmentViewHandle target_view,
     gpu::PipelineHandle pipeline,
     gpu::GpuAddress roots_base,
     uint workers,
@@ -193,7 +206,7 @@ fn NanoDuration? run_once(
         gpu::cmd_texture_barrier(&preamble, &to_attach)!;
     }
     gpu::ColorTargetDesc[1] clear_colors = {{
-        .texture  = target,
+        .view     = target_view,
         .load_op  = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
         .clear    = { .rgba = { 0, 0, 0, 1 } },
@@ -224,7 +237,13 @@ fn NanoDuration? run_once(
         for (uint chunk = 0; chunk < CHUNKS; chunk++) {
             gpu::CommandList list = gpu::begin_commands(queue)!;
             defer (void)gpu::discard_commands(&list);
-            record_chunk(&list, target, pipeline, roots_base, chunk)!;
+            record_chunk(
+                list:        &list,
+                target_view: target_view,
+                pipeline:    pipeline,
+                roots_base:  roots_base,
+                chunk:       chunk,
+            )!;
             all_lists[chunk] = gpu::end_commands(&list)!;
             list_count++;
         }
@@ -248,7 +267,7 @@ fn NanoDuration? run_once(
         for (uint w = 0; w < workers; w++) {
             wargs[w] = {
                 .queue       = queue,
-                .target      = target,
+                .target_view = target_view,
                 .pipeline    = pipeline,
                 .roots_base  = roots_base,
                 .first_chunk = w,
@@ -318,6 +337,12 @@ fn RunResult? run_on_device(bool validation) {
     };
     gpu::TextureHandle target = gpu::create_texture(&device, &target_desc)!;
     defer (void)gpu::destroy_texture(&device, target);
+    gpu::AttachmentViewDesc target_view_desc = { .texture = target };
+    gpu::AttachmentViewHandle target_view = gpu::create_attachment_view(
+        &device,
+        &target_view_desc,
+    )!;
+    defer (void)gpu::destroy_attachment_view(&device, target_view);
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = QUAD_VERT_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
@@ -367,6 +392,7 @@ fn RunResult? run_on_device(bool validation) {
     NanoDuration serial_time = run_once(
         device:      &device,
         target:      target,
+        target_view: target_view,
         pipeline:    pipeline,
         roots_base:  roots_address,
         workers:     0,
@@ -376,6 +402,7 @@ fn RunResult? run_on_device(bool validation) {
     NanoDuration threaded_time = run_once(
         device:      &device,
         target:      target,
+        target_view: target_view,
         pipeline:    pipeline,
         roots_base:  roots_address,
         workers:     workers,

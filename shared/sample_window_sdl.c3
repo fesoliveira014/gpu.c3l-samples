@@ -2,6 +2,7 @@ module sample_window;
 
 import sdl;
 import gpu;
+import sample_attachment_views;
 import gpu::surface::wayland;
 import gpu::surface::win32;
 import gpu::surface::x11;
@@ -114,7 +115,15 @@ fn void pixel_size(SampleWindow* sample, uint* width, uint* height) {
     *height = h < 0 ? 0 : (uint)h;
 }
 
-fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, SampleWindow* sample) {
+fn gpu::SwapchainInfo? recover_swapchain(
+    gpu::Device* device,
+    gpu::SwapchainHandle swapchain,
+    SampleWindow* sample,
+    sample_attachment_views::AttachmentViewCache* attachment_views = null,
+) {
+    if (attachment_views != null) {
+        sample_attachment_views::clear_attachment_views(attachment_views)!;
+    }
     uint width;
     uint height;
     pixel_size(sample, &width, &height);
@@ -122,7 +131,15 @@ fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHand
         if (err != gpu::RESOURCE_IN_USE) return err~;
         sdl::delay(1);
     }
-    return gpu::get_swapchain_info(device, swapchain);
+    gpu::SwapchainInfo info = gpu::get_swapchain_info(device, swapchain)!;
+    if (attachment_views != null
+        && attachment_views.views.len != info.image_count) {
+        sample_attachment_views::resize_attachment_view_cache(
+            attachment_views,
+            info.image_count,
+        )!;
+    }
+    return info;
 }
 
 fn void? present_when_ready(

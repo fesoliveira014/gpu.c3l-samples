@@ -1,6 +1,7 @@
 module gpu_driven_draw_sdl;
 
 import gpu;
+import sample_attachment_views;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -39,6 +40,8 @@ const usz FRAGMENT_ROOTS_UPLOAD_BYTES = INSTANCES * FragmentRoot::size;
 const usz BUILD_ROOT_UPLOAD_OFFSET =
     ((FRAGMENT_ROOTS_UPLOAD_OFFSET + FRAGMENT_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
 const usz UPLOAD_BYTES_PER_SLOT = BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size;
+const usz GENERATED_PREPROCESS_BYTES = 16 * 1024 * 1024;
+const uint GENERATED_PREPROCESS_BUFFER_COUNT = 2;
 $assert UPLOAD_BYTES_PER_SLOT == 31896;
 
 fn int main(String[] args) {
@@ -82,6 +85,22 @@ fn void? run(sample_args::Options options) {
     bool use_generated = caps.generated_work
         && caps.max_generated_work_count >= INSTANCES;
     bool use_count = !use_generated && caps.draw_indirect_count;
+    gpu::Queue graphics_queue = gpu::get_queue(
+        &device,
+        gpu::QueueKind.GRAPHICS,
+    )!;
+    if (use_generated) {
+        gpu::reserve_generated_scratch(graphics_queue, {
+            .max_commands_per_list   = INSTANCES,
+            .max_preprocess_bytes    = GENERATED_PREPROCESS_BYTES,
+            .preprocess_buffer_count = GENERATED_PREPROCESS_BUFFER_COUNT,
+        })!;
+    }
+    defer {
+        if (use_generated) {
+            (void)gpu::reserve_generated_scratch(graphics_queue, {});
+        }
+    }
     io::printfn(
         "gpu_driven_draw_sdl: generated-work path %s (max %d)",
         use_generated ? "on" : "off",
@@ -106,6 +125,14 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+    sample_attachment_views::AttachmentViewCache attachment_views =
+        sample_attachment_views::create_attachment_view_cache(
+            &device,
+            swapchain_info.image_count,
+        )!;
+    defer (void)sample_attachment_views::destroy_attachment_view_cache(
+        &attachment_views,
+    );
 
     gpu::ShaderDesc build_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = BUILD_SPIRV[..], .entry_point = "main", .debug_name = "build_draws" };
     gpu::ShaderCode build_shader = gpu::prepare_shader_code(&build_sd)!;
@@ -147,7 +174,12 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -165,9 +197,22 @@ fn void? run(sample_args::Options options) {
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
+                swapchain_info = sample_window::recover_swapchain(
+                    device:           &device,
+                    swapchain:        swapchain,
+                    sample:           &window,
+                    attachment_views: &attachment_views,
+                )!;
+            }
             continue;
         }
+
+        gpu::AttachmentViewHandle color_view =
+            sample_attachment_views::attachment_view_for(
+                &attachment_views,
+                acquired,
+            )!;
 
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
@@ -303,8 +348,6 @@ fn void? run(sample_args::Options options) {
             build_root_span,
         )!;
 
-        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-
         gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
         defer (void)gpu::discard_commands(&cmd);
 
@@ -342,10 +385,10 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
         gpu::ColorTargetDesc[1] colors = {{
-            .texture = acquired.texture,
+            .view     = color_view,
             .load_op = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
-            .clear = { .rgba = { 0.03f, 0.03f, 0.08f, 1.0f } },
+            .clear    = { .rgba = { 0.03f, 0.03f, 0.08f, 1.0f } },
         }};
         gpu::RenderPassDesc pass = {
             .colors = colors[..],
@@ -401,6 +444,10 @@ fn void? run(sample_args::Options options) {
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_attachment_views::retire_attachment_views(
+            &attachment_views,
+            last_graphics,
+        )!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
@@ -419,7 +466,12 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
 
         frame++;

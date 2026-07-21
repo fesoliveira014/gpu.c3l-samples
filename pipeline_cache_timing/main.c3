@@ -110,6 +110,12 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     };
     gpu::TextureHandle target = gpu::create_texture(device, &target_desc)!;
     defer (void)gpu::destroy_texture(device, target);
+    gpu::AttachmentViewDesc target_view_desc = { .texture = target };
+    gpu::AttachmentViewHandle target_view = gpu::create_attachment_view(
+        device,
+        &target_view_desc,
+    )!;
+    defer (void)gpu::destroy_attachment_view(device, target_view);
 
     gpu::AllocationDesc input_desc = {
         .size         = SCALE_COUNT * float::size,
@@ -173,7 +179,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     };
     gpu::cmd_texture_barrier(&cmd, &to_attach)!;
     gpu::ColorTargetDesc[1] colors = {{
-        .texture  = target,
+        .view     = target_view,
         .load_op  = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
         .clear    = { .rgba = { 0, 0, 0, 1 } },

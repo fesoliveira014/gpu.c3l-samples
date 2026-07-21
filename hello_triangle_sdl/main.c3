@@ -1,6 +1,7 @@
 module hello_triangle_sdl;
 
 import gpu;
+import sample_attachment_views;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -14,21 +15,22 @@ const uint TEX_SIZE = 16;
 const usz UPLOAD_BYTES_PER_SLOT = 64;
 
 struct FrameWork {
-    gpu::Device*                 device;
-    sample_window::SampleWindow* window;
-    gpu::SwapchainHandle         swapchain;
-    gpu::SwapchainInfo*          swapchain_info;
-    gpu::PipelineHandle          pipeline;
-    gpu::TextureHandle           checker;
-    gpu::TextureIndex            tex_index;
-    gpu::SamplerIndex            smp_index;
-    gpu::GpuSpan                 staging_span;
-    sample_frame_upload::FrameUploadRing* upload_ring;
-    sample_args::Options*        options;
-    bool*                        checker_uploaded;
-    gpu::CompletionPoint*         last_graphics;
-    long                         frame;
-    bool                         rendered;
+    gpu::Device*                                      device;
+    sample_window::SampleWindow*                      window;
+    gpu::SwapchainHandle                              swapchain;
+    gpu::SwapchainInfo*                               swapchain_info;
+    sample_attachment_views::AttachmentViewCache*     attachment_views;
+    gpu::PipelineHandle                               pipeline;
+    gpu::TextureHandle                                checker;
+    gpu::TextureIndex                                 tex_index;
+    gpu::SamplerIndex                                 smp_index;
+    gpu::GpuSpan                                      staging_span;
+    sample_frame_upload::FrameUploadRing*             upload_ring;
+    sample_args::Options*                             options;
+    bool*                                             checker_uploaded;
+    gpu::CompletionPoint*                             last_graphics;
+    long                                              frame;
+    bool                                              rendered;
 }
 
 fn int main(String[] args) {
@@ -44,7 +46,14 @@ fn void? render_frame(FrameWork* ctx) {
     gpu::AcquiredImage? acquired = gpu::acquire_next_image(ctx.device, ctx.swapchain);
     if (catch err = acquired) {
         if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-        if (err == gpu::SWAPCHAIN_OUT_OF_DATE) *ctx.swapchain_info = sample_window::recover_swapchain(ctx.device, ctx.swapchain, ctx.window)!;
+        if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
+            *ctx.swapchain_info = sample_window::recover_swapchain(
+                device:           ctx.device,
+                swapchain:        ctx.swapchain,
+                sample:           ctx.window,
+                attachment_views: ctx.attachment_views,
+            )!;
+        }
         return;
     }
 
@@ -63,6 +72,11 @@ fn void? render_frame(FrameWork* ctx) {
     }
 
     gpu::Queue graphics_queue = gpu::get_queue(ctx.device, gpu::QueueKind.GRAPHICS)!;
+    gpu::AttachmentViewHandle color_view =
+        sample_attachment_views::attachment_view_for(
+            ctx.attachment_views,
+            acquired,
+        )!;
 
     gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
     defer (void)gpu::discard_commands(&cmd);
@@ -125,7 +139,7 @@ fn void? render_frame(FrameWork* ctx) {
     frag_root.sampler_index = ctx.smp_index;
 
     gpu::ColorTargetDesc[1] colors = {{
-        .texture = acquired.texture,
+        .view = color_view,
         .load_op = gpu::LoadOp.CLEAR,
         .store_op = gpu::StoreOp.STORE,
         .clear = { .rgba = { 0.05f + pulse, 0.05f, 0.12f, 1.0f } },
@@ -163,6 +177,10 @@ fn void? render_frame(FrameWork* ctx) {
         .readiness     = acquired.readiness,
     };
     *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
+    sample_attachment_views::retire_attachment_views(
+        ctx.attachment_views,
+        *ctx.last_graphics,
+    )!;
     sample_frame_upload::retire_frame_upload(&upload_batch, *ctx.last_graphics)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
@@ -181,7 +199,12 @@ fn void? render_frame(FrameWork* ctx) {
 
     if (catch err = sample_window::present_when_ready(ctx.device, &acquired, *ctx.last_graphics)) {
         if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-        *ctx.swapchain_info = sample_window::recover_swapchain(ctx.device, ctx.swapchain, ctx.window)!;
+        *ctx.swapchain_info = sample_window::recover_swapchain(
+            device:           ctx.device,
+            swapchain:        ctx.swapchain,
+            sample:           ctx.window,
+            attachment_views: ctx.attachment_views,
+        )!;
     }
 
     ctx.rendered = true;
@@ -229,6 +252,14 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+    sample_attachment_views::AttachmentViewCache attachment_views =
+        sample_attachment_views::create_attachment_view_cache(
+            &device,
+            swapchain_info.image_count,
+        )!;
+    defer (void)sample_attachment_views::destroy_attachment_view_cache(
+        &attachment_views,
+    );
 
     gpu::TextureDesc tex_desc = {
         .dimension = gpu::TextureDimension.TEX_2D,
@@ -310,7 +341,12 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -330,6 +366,7 @@ fn void? run(sample_args::Options options) {
             .window           = &window,
             .swapchain        = swapchain,
             .swapchain_info   = &swapchain_info,
+            .attachment_views = &attachment_views,
             .pipeline         = pipeline,
             .checker          = checker,
             .tex_index        = tex_index,

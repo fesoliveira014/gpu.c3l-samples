@@ -1,6 +1,7 @@
 module texture_filtering;
 
 import gpu;
+import sample_attachment_views;
 import sample_args;
 import sample_camera;
 import sample_capture;
@@ -142,6 +143,14 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+    sample_attachment_views::AttachmentViewCache attachment_views =
+        sample_attachment_views::create_attachment_view_cache(
+            &device,
+            swapchain_info.image_count,
+        )!;
+    defer (void)sample_attachment_views::destroy_attachment_view_cache(
+        &attachment_views,
+    );
 
     gpu::AllocationDesc vertex_desc = {
         .size         = PLANE_VERTEX_BYTES,
@@ -306,7 +315,12 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -324,9 +338,22 @@ fn void? run(sample_args::Options options) {
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
+                swapchain_info = sample_window::recover_swapchain(
+                    device:           &device,
+                    swapchain:        swapchain,
+                    sample:           &window,
+                    attachment_views: &attachment_views,
+                )!;
+            }
             continue;
         }
+
+        gpu::AttachmentViewHandle color_view =
+            sample_attachment_views::attachment_view_for(
+                &attachment_views,
+                acquired,
+            )!;
 
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
@@ -383,7 +410,7 @@ fn void? run(sample_args::Options options) {
         gpu::GpuAddress root_address = gpu::get_span_address(&device, root_span)!;
 
         gpu::ColorTargetDesc[1] colors = {{
-            .texture  = acquired.texture,
+            .view     = color_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .rgba = { 0.35f, 0.55f, 0.85f, 1.0f } },
@@ -421,6 +448,10 @@ fn void? run(sample_args::Options options) {
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_attachment_views::retire_attachment_views(
+            &attachment_views,
+            last_graphics,
+        )!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
@@ -439,7 +470,12 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
 
         frame++;

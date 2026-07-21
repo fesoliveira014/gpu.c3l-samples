@@ -1,6 +1,7 @@
 module deferred_shading;
 
 import gpu;
+import sample_attachment_views;
 import sample_args;
 import sample_camera;
 import sample_capture;
@@ -120,17 +121,21 @@ fn gpu::TextureUse? swapchain_texture_use(gpu::TextureUse use) {
 }
 
 struct GBuffer {
-    gpu::TextureHandle albedo;
-    gpu::TextureHandle normal;
-    gpu::TextureHandle position;
-    gpu::TextureHandle depth;
-    gpu::TextureView   albedo_view;
-    gpu::TextureView   normal_view;
-    gpu::TextureView   position_view;
-    gpu::TextureIndex  albedo_index;
-    gpu::TextureIndex  normal_index;
-    gpu::TextureIndex  position_index;
-    bool               fresh;
+    gpu::TextureHandle         albedo;
+    gpu::TextureHandle         normal;
+    gpu::TextureHandle         position;
+    gpu::TextureHandle         depth;
+    gpu::TextureView           albedo_view;
+    gpu::TextureView           normal_view;
+    gpu::TextureView           position_view;
+    gpu::AttachmentViewHandle  albedo_attachment;
+    gpu::AttachmentViewHandle  normal_attachment;
+    gpu::AttachmentViewHandle  position_attachment;
+    gpu::AttachmentViewHandle  depth_attachment;
+    gpu::TextureIndex          albedo_index;
+    gpu::TextureIndex          normal_index;
+    gpu::TextureIndex          position_index;
+    bool                       fresh;
 }
 
 fn gpu::TextureHandle? create_target(gpu::Device* device, uint width, uint height, gpu::Format format, ZString name) {
@@ -147,7 +152,8 @@ fn gpu::TextureHandle? create_target(gpu::Device* device, uint width, uint heigh
 }
 
 fn GBuffer? create_gbuffer(gpu::Device* device, uint width, uint height) {
-    GBuffer g;
+    GBuffer g = {};
+    defer catch destroy_gbuffer(device, &g);
     g.albedo   = create_target(device, width, height, gpu::Format.RGBA8_UNORM, "g_albedo")!;
     g.normal   = create_target(device, width, height, gpu::Format.RGBA16_FLOAT, "g_normal")!;
     g.position = create_target(device, width, height, gpu::Format.RGBA16_FLOAT, "g_position")!;
@@ -164,6 +170,15 @@ fn GBuffer? create_gbuffer(gpu::Device* device, uint width, uint height) {
     g.albedo_view   = gpu::create_texture_view(device, g.albedo, null)!;
     g.normal_view   = gpu::create_texture_view(device, g.normal, null)!;
     g.position_view = gpu::create_texture_view(device, g.position, null)!;
+    gpu::AttachmentViewDesc attachment_desc;
+    attachment_desc.texture = g.albedo;
+    g.albedo_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
+    attachment_desc.texture = g.normal;
+    g.normal_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
+    attachment_desc.texture = g.position;
+    g.position_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
+    attachment_desc.texture = g.depth;
+    g.depth_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
     g.albedo_index   = g.albedo_view.index;
     g.normal_index   = g.normal_view.index;
     g.position_index = g.position_view.index;
@@ -172,6 +187,10 @@ fn GBuffer? create_gbuffer(gpu::Device* device, uint width, uint height) {
 }
 
 fn void destroy_gbuffer(gpu::Device* device, GBuffer* g) {
+    (void)gpu::destroy_attachment_view(device, g.depth_attachment);
+    (void)gpu::destroy_attachment_view(device, g.position_attachment);
+    (void)gpu::destroy_attachment_view(device, g.normal_attachment);
+    (void)gpu::destroy_attachment_view(device, g.albedo_attachment);
     (void)gpu::destroy_texture_view(device, g.position_view);
     (void)gpu::destroy_texture_view(device, g.normal_view);
     (void)gpu::destroy_texture_view(device, g.albedo_view);
@@ -232,6 +251,14 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+    sample_attachment_views::AttachmentViewCache attachment_views =
+        sample_attachment_views::create_attachment_view_cache(
+            &device,
+            swapchain_info.image_count,
+        )!;
+    defer (void)sample_attachment_views::destroy_attachment_view_cache(
+        &attachment_views,
+    );
 
     GBuffer gbuffer;
     uint gbuffer_width;
@@ -338,7 +365,12 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -376,9 +408,22 @@ fn void? run(sample_args::Options options) {
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
+                swapchain_info = sample_window::recover_swapchain(
+                    device:           &device,
+                    swapchain:        swapchain,
+                    sample:           &window,
+                    attachment_views: &attachment_views,
+                )!;
+            }
             continue;
         }
+
+        gpu::AttachmentViewHandle color_view =
+            sample_attachment_views::attachment_view_for(
+                &attachment_views,
+                acquired,
+            )!;
 
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
@@ -449,26 +494,26 @@ fn void? run(sample_args::Options options) {
 
         gpu::ColorTargetDesc[3] gbuffer_colors = {
             {
-                .texture  = gbuffer.albedo,
+                .view     = gbuffer.albedo_attachment,
                 .load_op  = gpu::LoadOp.CLEAR,
                 .store_op = gpu::StoreOp.STORE,
                 .clear    = { .rgba = { 0, 0, 0, 0 } },
             },
             {
-                .texture  = gbuffer.normal,
+                .view     = gbuffer.normal_attachment,
                 .load_op  = gpu::LoadOp.CLEAR,
                 .store_op = gpu::StoreOp.STORE,
                 .clear    = { .rgba = { 0, 0, 0, 0 } },
             },
             {
-                .texture  = gbuffer.position,
+                .view     = gbuffer.position_attachment,
                 .load_op  = gpu::LoadOp.CLEAR,
                 .store_op = gpu::StoreOp.STORE,
                 .clear    = { .rgba = { 0, 0, 0, 0 } },
             },
         };
         gpu::DepthTargetDesc gbuffer_depth = {
-            .texture  = gbuffer.depth,
+            .view     = gbuffer.depth_attachment,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .depth = 1.0f },
@@ -508,7 +553,7 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
         gpu::ColorTargetDesc[1] swap_colors = {{
-            .texture  = acquired.texture,
+            .view     = color_view,
             .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .rgba = { 0, 0, 0, 1 } },
@@ -540,6 +585,10 @@ fn void? run(sample_args::Options options) {
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
+        sample_attachment_views::retire_attachment_views(
+            &attachment_views,
+            last_graphics,
+        )!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
@@ -558,7 +607,12 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(
+                device:           &device,
+                swapchain:        swapchain,
+                sample:           &window,
+                attachment_views: &attachment_views,
+            )!;
         }
 
         frame++;
