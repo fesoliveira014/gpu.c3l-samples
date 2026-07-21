@@ -95,11 +95,7 @@ fn ModeStats? run_mode_window(
         sample_window::WindowEvents events = sample_window::pump_events(window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(
-                device:           device,
-                swapchain:        swapchain,
-                sample:           window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -123,11 +119,7 @@ fn ModeStats? run_mode_window(
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
-                swapchain_info = sample_window::recover_swapchain(
-                    device:           device,
-                    swapchain:        swapchain,
-                    sample:           window,
-                )!;
+                swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
             }
             (void)frame_clk.mark();
             continue;
@@ -215,11 +207,7 @@ fn ModeStats? run_mode_window(
 
         if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(
-                device:           device,
-                swapchain:        swapchain,
-                sample:           window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, window)!;
             (void)frame_clk.mark();
             continue;
         }

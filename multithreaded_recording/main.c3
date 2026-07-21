@@ -71,7 +71,7 @@ fn void? record_chunk(
 
 struct WorkerArgs {
     gpu::Queue                  queue;
-    gpu::AttachmentViewHandle  target_view;
+    gpu::AttachmentViewHandle   target_view;
     gpu::PipelineHandle         pipeline;
     gpu::GpuAddress             roots_base;
     uint                        first_chunk;

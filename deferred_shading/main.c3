@@ -169,15 +169,14 @@ fn GBuffer? create_gbuffer(gpu::Device* device, uint width, uint height) {
     g.albedo_view   = gpu::create_texture_view(device, g.albedo, null)!;
     g.normal_view   = gpu::create_texture_view(device, g.normal, null)!;
     g.position_view = gpu::create_texture_view(device, g.position, null)!;
-    gpu::AttachmentViewDesc attachment_desc;
-    attachment_desc.texture = g.albedo;
-    g.albedo_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
-    attachment_desc.texture = g.normal;
-    g.normal_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
-    attachment_desc.texture = g.position;
-    g.position_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
-    attachment_desc.texture = g.depth;
-    g.depth_attachment = gpu::create_attachment_view(device, &attachment_desc)!;
+    gpu::AttachmentViewDesc albedo_attachment_desc = { .texture = g.albedo };
+    g.albedo_attachment = gpu::create_attachment_view(device, &albedo_attachment_desc)!;
+    gpu::AttachmentViewDesc normal_attachment_desc = { .texture = g.normal };
+    g.normal_attachment = gpu::create_attachment_view(device, &normal_attachment_desc)!;
+    gpu::AttachmentViewDesc position_attachment_desc = { .texture = g.position };
+    g.position_attachment = gpu::create_attachment_view(device, &position_attachment_desc)!;
+    gpu::AttachmentViewDesc depth_attachment_desc = { .texture = g.depth };
+    g.depth_attachment = gpu::create_attachment_view(device, &depth_attachment_desc)!;
     g.albedo_index   = g.albedo_view.index;
     g.normal_index   = g.normal_view.index;
     g.position_index = g.position_view.index;
@@ -250,6 +249,7 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+
     GBuffer gbuffer;
     uint gbuffer_width;
     uint gbuffer_height;
@@ -355,11 +355,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(
-                device:           &device,
-                swapchain:        swapchain,
-                sample:           &window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -397,13 +393,7 @@ fn void? run(sample_args::Options options) {
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
-                swapchain_info = sample_window::recover_swapchain(
-                    device:           &device,
-                    swapchain:        swapchain,
-                    sample:           &window,
-                )!;
-            }
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             continue;
         }
 
@@ -587,11 +577,7 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(
-                device:           &device,
-                swapchain:        swapchain,
-                sample:           &window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
         frame++;

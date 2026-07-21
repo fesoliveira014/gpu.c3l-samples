@@ -114,11 +114,7 @@ fn void pixel_size(SampleWindow* sample, uint* width, uint* height) {
     *height = h < 0 ? 0 : (uint)h;
 }
 
-fn gpu::SwapchainInfo? recover_swapchain(
-    gpu::Device* device,
-    gpu::SwapchainHandle swapchain,
-    SampleWindow* sample,
-) {
+fn gpu::SwapchainInfo? recover_swapchain(gpu::Device* device, gpu::SwapchainHandle swapchain, SampleWindow* sample) {
     uint width;
     uint height;
     pixel_size(sample, &width, &height);

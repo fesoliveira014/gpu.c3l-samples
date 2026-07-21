@@ -39,7 +39,7 @@ const usz FRAGMENT_ROOTS_UPLOAD_BYTES = INSTANCES * FragmentRoot::size;
 const usz BUILD_ROOT_UPLOAD_OFFSET =
     ((FRAGMENT_ROOTS_UPLOAD_OFFSET + FRAGMENT_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
 const usz UPLOAD_BYTES_PER_SLOT = BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size;
-const uint GENERATED_PREPROCESS_BUFFER_COUNT = 2;
+const uint GENERATED_PREPROCESS_BUFFER_COUNT = sample_frame_upload::FRAME_UPLOAD_SLOT_COUNT;
 $assert UPLOAD_BYTES_PER_SLOT == 31896;
 
 fn void? reserve_generated_draw_scratch(
@@ -124,6 +124,7 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+
     gpu::ShaderDesc build_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = BUILD_SPIRV[..], .entry_point = "main", .debug_name = "build_draws" };
     gpu::ShaderCode build_shader = gpu::prepare_shader_code(&build_sd)!;
     gpu::ComputePipelineDesc build_desc = { .shader = build_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "build_draws" };
@@ -152,7 +153,7 @@ fn void? run(sample_args::Options options) {
     defer {
         if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
     }
-    bool scratch_reserved;
+    bool scratch_reserved = false;
     if (use_generated && pipeline_valid) {
         reserve_generated_draw_scratch(graphics_queue, pipeline)!;
         scratch_reserved = true;
@@ -178,11 +179,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(
-                device:           &device,
-                swapchain:        swapchain,
-                sample:           &window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -212,13 +209,7 @@ fn void? run(sample_args::Options options) {
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
-                swapchain_info = sample_window::recover_swapchain(
-                    device:           &device,
-                    swapchain:        swapchain,
-                    sample:           &window,
-                )!;
-            }
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             continue;
         }
 
@@ -396,7 +387,7 @@ fn void? run(sample_args::Options options) {
 
         gpu::ColorTargetDesc[1] colors = {{
             .view     = color_view,
-            .load_op = gpu::LoadOp.CLEAR,
+            .load_op  = gpu::LoadOp.CLEAR,
             .store_op = gpu::StoreOp.STORE,
             .clear    = { .rgba = { 0.03f, 0.03f, 0.08f, 1.0f } },
         }};
@@ -472,11 +463,7 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(
-                device:           &device,
-                swapchain:        swapchain,
-                sample:           &window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
         frame++;

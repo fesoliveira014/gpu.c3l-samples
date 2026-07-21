@@ -143,6 +143,7 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+
     gpu::TextureHandle depth;
     gpu::AttachmentViewHandle depth_view;
     uint depth_width;
@@ -150,8 +151,11 @@ fn void? run(sample_args::Options options) {
     bool depth_valid = false;
     if (!swapchain_info.dormant) {
         depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height)!;
-        gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
-        depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+        {
+            defer catch (void)gpu::destroy_texture(&device, depth);
+            gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
+            depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+        }
         depth_width = swapchain_info.width;
         depth_height = swapchain_info.height;
         depth_valid = true;
@@ -261,11 +265,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(
-                device:           &device,
-                swapchain:        swapchain,
-                sample:           &window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -293,8 +293,11 @@ fn void? run(sample_args::Options options) {
             }
             depth_valid = false;
             depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height)!;
-            gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
-            depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+            {
+                defer catch (void)gpu::destroy_texture(&device, depth);
+                gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
+                depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+            }
             depth_width = swapchain_info.width;
             depth_height = swapchain_info.height;
             depth_valid = true;
@@ -304,13 +307,7 @@ fn void? run(sample_args::Options options) {
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain);
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
-                swapchain_info = sample_window::recover_swapchain(
-                    device:           &device,
-                    swapchain:        swapchain,
-                    sample:           &window,
-                )!;
-            }
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
             continue;
         }
 
@@ -466,11 +463,7 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(
-                device:           &device,
-                swapchain:        swapchain,
-                sample:           &window,
-            )!;
+            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
         }
 
         frame++;
