@@ -160,8 +160,9 @@ fn void? render_frame(FrameWork* ctx) {
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = {
-        .command_lists = lists[..],
-        .readiness     = acquired.readiness,
+        .command_lists    = lists[..],
+        .readiness        = acquired.readiness,
+        .readiness_before = { .color_output },
     };
     *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
     sample_frame_upload::retire_frame_upload(&upload_batch, *ctx.last_graphics)!;
