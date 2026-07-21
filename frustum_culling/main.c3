@@ -1,7 +1,6 @@
 module frustum_culling;
 
 import gpu;
-import sample_attachment_views;
 import sample_args;
 import sample_camera;
 import sample_capture;
@@ -169,15 +168,6 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
-    sample_attachment_views::AttachmentViewCache attachment_views =
-        sample_attachment_views::create_attachment_view_cache(
-            &device,
-            swapchain_info.image_count,
-        )!;
-    defer (void)sample_attachment_views::destroy_attachment_view_cache(
-        &attachment_views,
-    );
-
     gpu::TextureHandle depth;
     gpu::AttachmentViewHandle depth_view;
     uint depth_width;
@@ -300,7 +290,6 @@ fn void? run(sample_args::Options options) {
                 device:           &device,
                 swapchain:        swapchain,
                 sample:           &window,
-                attachment_views: &attachment_views,
             )!;
         }
         if (swapchain_info.dormant) {
@@ -347,17 +336,12 @@ fn void? run(sample_args::Options options) {
                     device:           &device,
                     swapchain:        swapchain,
                     sample:           &window,
-                    attachment_views: &attachment_views,
                 )!;
             }
             continue;
         }
 
-        gpu::AttachmentViewHandle color_view =
-            sample_attachment_views::attachment_view_for(
-                &attachment_views,
-                acquired,
-            )!;
+        gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
         sample_frame_upload::FrameUploadBatch upload_batch =
             sample_frame_upload::begin_frame_upload(&upload_ring)!;
@@ -507,10 +491,6 @@ fn void? run(sample_args::Options options) {
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
-        sample_attachment_views::retire_attachment_views(
-            &attachment_views,
-            last_graphics,
-        )!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (sample_stats) {
@@ -542,7 +522,6 @@ fn void? run(sample_args::Options options) {
                 device:           &device,
                 swapchain:        swapchain,
                 sample:           &window,
-                attachment_views: &attachment_views,
             )!;
         }
 

@@ -1,7 +1,6 @@
 module present_mode_explorer;
 
 import gpu;
-import sample_attachment_views;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -73,7 +72,6 @@ fn ModeStats? run_mode_window(
     gpu::SwapchainHandle swapchain,
     sample_window::SampleWindow* window,
     TestcardPipeline* pipeline,
-    sample_attachment_views::AttachmentViewCache* attachment_views,
     gpu::SwapchainInfo swapchain_info,
     uint* width,
     uint* height,
@@ -101,7 +99,6 @@ fn ModeStats? run_mode_window(
                 device:           device,
                 swapchain:        swapchain,
                 sample:           window,
-                attachment_views: attachment_views,
             )!;
         }
         if (swapchain_info.dormant) {
@@ -130,18 +127,13 @@ fn ModeStats? run_mode_window(
                     device:           device,
                     swapchain:        swapchain,
                     sample:           window,
-                    attachment_views: attachment_views,
                 )!;
             }
             (void)frame_clk.mark();
             continue;
         }
         double acquire_ms = ms(acquire_clk.mark());
-        gpu::AttachmentViewHandle color_view =
-            sample_attachment_views::attachment_view_for(
-                attachment_views,
-                acquired,
-            )!;
+        gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
         sample_frame_upload::FrameUploadBatch upload =
             sample_frame_upload::begin_frame_upload(upload_ring)!;
@@ -205,10 +197,6 @@ fn ModeStats? run_mode_window(
             .readiness     = acquired.readiness,
         };
         last_graphics = gpu::submit(graphics_queue, &submit)!;
-        sample_attachment_views::retire_attachment_views(
-            attachment_views,
-            last_graphics,
-        )!;
         sample_frame_upload::retire_frame_upload(&upload, last_graphics)!;
 
         if (frame == capture_at) {
@@ -231,7 +219,6 @@ fn ModeStats? run_mode_window(
                 device:           device,
                 swapchain:        swapchain,
                 sample:           window,
-                attachment_views: attachment_views,
             )!;
             (void)frame_clk.mark();
             continue;
@@ -321,14 +308,6 @@ fn void? run(sample_args::Options options) {
         }
     }
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    sample_attachment_views::AttachmentViewCache attachment_views =
-        sample_attachment_views::create_attachment_view_cache(
-            &device,
-            swapchain_info.image_count,
-        )!;
-    defer (void)sample_attachment_views::destroy_attachment_view_cache(
-        &attachment_views,
-    );
     gpu::PresentModeSupport support = gpu::get_present_mode_support(&device, swapchain)!;
     if (!support.fifo) {
         io::printn("present_mode_explorer: driver does not report FIFO — spec violation");
@@ -351,7 +330,6 @@ fn void? run(sample_args::Options options) {
         }
         // The probe swapchain is already FIFO; recreate for the others.
         if (i > 0) {
-            sample_attachment_views::clear_attachment_views(&attachment_views)!;
             sample_window::destroy_swapchain_when_ready(&device, swapchain)!;
             swapchain = gpu::SWAPCHAIN_HANDLE_INVALID;
             gpu::SwapchainDesc mode_desc = probe_desc;
@@ -359,10 +337,6 @@ fn void? run(sample_args::Options options) {
             mode_desc.debug_name   = "explorer_mode";
             swapchain = gpu::create_swapchain(&device, &surface, &mode_desc)!;
             swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-            sample_attachment_views::resize_attachment_view_cache(
-                &attachment_views,
-                swapchain_info.image_count,
-            )!;
         }
         ModeStats stats = run_mode_window(
             device:          &device,
@@ -370,7 +344,6 @@ fn void? run(sample_args::Options options) {
             swapchain:       swapchain,
             window:          &window,
             pipeline:        &pipeline,
-            attachment_views: &attachment_views,
             swapchain_info:  swapchain_info,
             width:           &width,
             height:          &height,

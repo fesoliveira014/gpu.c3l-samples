@@ -1,7 +1,6 @@
 module hello_triangle_sdl;
 
 import gpu;
-import sample_attachment_views;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -19,7 +18,6 @@ struct FrameWork {
     sample_window::SampleWindow*                      window;
     gpu::SwapchainHandle                              swapchain;
     gpu::SwapchainInfo*                               swapchain_info;
-    sample_attachment_views::AttachmentViewCache*     attachment_views;
     gpu::PipelineHandle                               pipeline;
     gpu::TextureHandle                                checker;
     gpu::TextureIndex                                 tex_index;
@@ -51,7 +49,6 @@ fn void? render_frame(FrameWork* ctx) {
                 device:           ctx.device,
                 swapchain:        ctx.swapchain,
                 sample:           ctx.window,
-                attachment_views: ctx.attachment_views,
             )!;
         }
         return;
@@ -72,11 +69,7 @@ fn void? render_frame(FrameWork* ctx) {
     }
 
     gpu::Queue graphics_queue = gpu::get_queue(ctx.device, gpu::QueueKind.GRAPHICS)!;
-    gpu::AttachmentViewHandle color_view =
-        sample_attachment_views::attachment_view_for(
-            ctx.attachment_views,
-            acquired,
-        )!;
+    gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
     gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
     defer (void)gpu::discard_commands(&cmd);
@@ -177,10 +170,6 @@ fn void? render_frame(FrameWork* ctx) {
         .readiness     = acquired.readiness,
     };
     *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
-    sample_attachment_views::retire_attachment_views(
-        ctx.attachment_views,
-        *ctx.last_graphics,
-    )!;
     sample_frame_upload::retire_frame_upload(&upload_batch, *ctx.last_graphics)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
@@ -203,7 +192,6 @@ fn void? render_frame(FrameWork* ctx) {
             device:           ctx.device,
             swapchain:        ctx.swapchain,
             sample:           ctx.window,
-            attachment_views: ctx.attachment_views,
         )!;
     }
 
@@ -252,15 +240,6 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
-    sample_attachment_views::AttachmentViewCache attachment_views =
-        sample_attachment_views::create_attachment_view_cache(
-            &device,
-            swapchain_info.image_count,
-        )!;
-    defer (void)sample_attachment_views::destroy_attachment_view_cache(
-        &attachment_views,
-    );
-
     gpu::TextureDesc tex_desc = {
         .dimension = gpu::TextureDimension.TEX_2D,
         .width     = TEX_SIZE,
@@ -345,7 +324,6 @@ fn void? run(sample_args::Options options) {
                 device:           &device,
                 swapchain:        swapchain,
                 sample:           &window,
-                attachment_views: &attachment_views,
             )!;
         }
         if (swapchain_info.dormant) {
@@ -366,7 +344,6 @@ fn void? run(sample_args::Options options) {
             .window           = &window,
             .swapchain        = swapchain,
             .swapchain_info   = &swapchain_info,
-            .attachment_views = &attachment_views,
             .pipeline         = pipeline,
             .checker          = checker,
             .tex_index        = tex_index,
