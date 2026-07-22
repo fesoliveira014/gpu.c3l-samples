@@ -140,6 +140,18 @@ class StrictApiCheckTests(unittest.TestCase):
             ],
         )
 
+    def test_retired_runtime_validation_field_is_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::RuntimeDesc desc = { .enable_validation = true };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            ["probe.c3:3: forbidden RuntimeDesc field '.enable_validation'"],
+        )
+
     def test_removed_dimension_support_is_a_forbidden_symbol(self) -> None:
         match = check_strict_api.SYMBOL_PATTERN.search(
             "gpu::TextureDimensionSupport support = {};"

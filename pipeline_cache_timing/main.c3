@@ -354,9 +354,11 @@ fn void? run() {
     Shaders shaders = prepare_shaders()!;
 
     gpu::RuntimeDesc runtime_a_desc = {
-        .backend           = gpu::BackendKind.VULKAN,
-        .enable_validation = true,
-        .application_name  = "pipeline_cache_timing",
+        .backend                      = gpu::BackendKind.VULKAN,
+        .contract_validation          = gpu::ContractValidation.FULL,
+        .track_resource_lifetimes     = true,
+        .enable_vulkan_validation     = true,
+        .application_name             = "pipeline_cache_timing",
     };
     gpu::Runtime runtime_a = gpu::create_runtime(&runtime_a_desc)!;
     defer (void)gpu::destroy_runtime(&runtime_a);
@@ -377,10 +379,12 @@ fn void? run() {
     destroy_all(&device_a, graphics_a[..], compute);
 
     gpu::RuntimeDesc runtime_b_desc = {
-        .backend             = gpu::BackendKind.VULKAN,
-        .enable_validation   = true,
-        .pipeline_cache_data = blob[:written],
-        .application_name    = "pipeline_cache_timing",
+        .backend                      = gpu::BackendKind.VULKAN,
+        .contract_validation          = gpu::ContractValidation.FULL,
+        .track_resource_lifetimes     = true,
+        .enable_vulkan_validation     = true,
+        .pipeline_cache_data          = blob[:written],
+        .application_name             = "pipeline_cache_timing",
     };
     gpu::Runtime runtime_b = gpu::create_runtime(&runtime_b_desc)!;
     defer (void)gpu::destroy_runtime(&runtime_b);

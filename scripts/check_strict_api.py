@@ -76,6 +76,7 @@ SYMBOL_PATTERN = re.compile(
     r"\b(?:" + "|".join(re.escape(symbol) for symbol in FORBIDDEN_SYMBOLS) + r")\b"
 )
 RETIRED_FIELD_RULES = (
+    ("RuntimeDesc", ("enable_validation",)),
     ("TextureDesc", ("dimension", "depth")),
     ("TextureViewDesc", ("format",)),
     ("TextureFormatSupport", ("dimensions",)),

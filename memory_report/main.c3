@@ -234,12 +234,14 @@ fn void? run(bool detailed) {
     defer print_debug_messages(&debug_messages);
 
     gpu::RuntimeDesc runtime_desc = {
-        .backend            = gpu::BackendKind.VULKAN,
-        .enable_validation  = true,
-        .enable_debug_names = true,
-        .application_name   = "memory_report",
-        .debug_callback     = &capture_debug_message,
-        .debug_user_data    = &debug_messages,
+        .backend                      = gpu::BackendKind.VULKAN,
+        .contract_validation          = gpu::ContractValidation.FULL,
+        .track_resource_lifetimes     = true,
+        .enable_vulkan_validation     = true,
+        .enable_debug_names           = true,
+        .application_name             = "memory_report",
+        .debug_callback               = &capture_debug_message,
+        .debug_user_data              = &debug_messages,
     };
     gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
     defer (void)gpu::destroy_runtime(&runtime);

@@ -174,11 +174,13 @@ fn void? check_results(gpu::Device* device, Fleet* fleet, gpu::GpuSpan out_span)
 
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
-        .backend                     = gpu::BackendKind.VULKAN,
-        .enable_validation           = true,
-        .texture_heap_capacity       = TEXTURE_COUNT + CAPACITY_SLACK,
-        .texture_capacity            = TEXTURE_COUNT + CAPACITY_SLACK,
-        .application_name            = "bindless_stress",
+        .backend                      = gpu::BackendKind.VULKAN,
+        .contract_validation          = gpu::ContractValidation.FULL,
+        .track_resource_lifetimes     = true,
+        .enable_vulkan_validation     = true,
+        .texture_heap_capacity        = TEXTURE_COUNT + CAPACITY_SLACK,
+        .texture_capacity             = TEXTURE_COUNT + CAPACITY_SLACK,
+        .application_name             = "bindless_stress",
     };
     gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
     defer (void)gpu::destroy_runtime(&runtime);

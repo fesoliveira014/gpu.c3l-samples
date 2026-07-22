@@ -28,10 +28,9 @@ Samples create a runtime, enumerate adapters, test an immutable strict request,
 and create a device from a supported adapter:
 
 ```c3
-gpu::RuntimeDesc runtime_desc = {
-    .backend          = gpu::BackendKind.VULKAN,
-    .application_name = "my_sample",
-};
+gpu::RuntimeDesc runtime_desc = gpu::full_validation_runtime_desc();
+runtime_desc.backend = gpu::BackendKind.VULKAN;
+runtime_desc.application_name = "my_sample";
 gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
 defer (void)gpu::destroy_runtime(&runtime);
 
@@ -47,6 +46,11 @@ for (uint i = 0; i < adapters.count; i++) {
 if (!device.is_valid()) return gpu::UNSUPPORTED_FEATURE~;
 defer (void)gpu::destroy_device(&device);
 ```
+
+`RuntimeDesc` defaults to trusted contracts with lifetime tracking and Vulkan
+layers disabled. The helper above enables full contract checks, command-resource
+lifetime tracking, and Vulkan validation layers for development; those three
+policies can also be selected independently.
 
 The reusable adapter-selection form lives in `shared/sample_device.c3`.
 Allocations, upload reuse, readback, and completion policy remain sample-local.
