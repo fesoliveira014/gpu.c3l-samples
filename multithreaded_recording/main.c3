@@ -75,7 +75,7 @@ struct WorkerArgs {
     gpu::GpuAddress                          roots_base;
     uint                                     first_chunk;
     uint                                     stride;
-    gpu::ExecutableCommandList[CHUNKS] lists;
+    gpu::ExecutableCommandList[CHUNKS]       lists;
     uint                                     list_count;
     bool                                     failed;
 }

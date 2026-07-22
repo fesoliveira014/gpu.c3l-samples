@@ -105,7 +105,7 @@ fn void? run(sample_args::Options options) {
     )!;
     gpu::CommandAllocatorDesc graphics_allocator_desc = {
         .command_buffer_capacity     = GENERATED_PREPROCESS_BUFFER_COUNT + 1,
-        .generated_preprocess_bytes = GENERATED_PREPROCESS_BUDGET_BYTES,
+        .generated_preprocess_bytes  = GENERATED_PREPROCESS_BUDGET_BYTES,
         .debug_name                  = "gpu_driven_graphics",
     };
     gpu::CommandAllocator graphics_allocator = gpu::create_command_allocator(
