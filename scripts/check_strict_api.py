@@ -154,18 +154,11 @@ def sanitize_c3_structure(text: str) -> str:
                 mask(index)
                 index += 1
         elif state == "doc_comment":
-            if text.startswith("<*", index):
+            if text.startswith("*>", index):
                 mask(index)
                 mask(index + 1)
                 index += 2
-                nesting += 1
-            elif text.startswith("*>", index):
-                mask(index)
-                mask(index + 1)
-                index += 2
-                nesting -= 1
-                if nesting == 0:
-                    state = "code"
+                state = "code"
             else:
                 mask(index)
                 index += 1
@@ -201,39 +194,93 @@ def sanitize_c3_structure(text: str) -> str:
 
 
 def find_forbidden_retired_fields(path: Path, text: str) -> list[str]:
-    findings: list[str] = []
+    finding_records: list[tuple[int, str]] = []
     structural_text = sanitize_c3_structure(text)
+
+    brace_stack: list[int] = []
+    brace_pairs: dict[int, int] = {}
+    for offset, character in enumerate(structural_text):
+        if character == "{":
+            brace_stack.append(offset)
+        elif character == "}" and brace_stack:
+            brace_pairs[brace_stack.pop()] = offset
+
+    def enclosing_scope_end(offset: int) -> int:
+        scopes = [
+            closing
+            for opening, closing in brace_pairs.items()
+            if opening < offset < closing
+        ]
+        return min(scopes, default=len(structural_text))
+
+    reported_offsets: set[tuple[str, int]] = set()
+
+    def report(type_name: str, field: str, offset: int) -> None:
+        key = (type_name, offset)
+        if key in reported_offsets:
+            return
+        reported_offsets.add(key)
+        line_number = text.count("\n", 0, offset) + 1
+        finding_records.append(
+            (
+                offset,
+                f"{path.relative_to(ROOT)}:{line_number}: "
+                f"forbidden {type_name} field {field!r}",
+            )
+        )
+
     for type_name, field_names in RETIRED_FIELD_RULES:
-        initializer_pattern = re.compile(
-            rf"\b(?:gpu::)?{re.escape(type_name)}\b[^;{{}}]*=\s*\{{"
+        declaration_pattern = re.compile(
+            rf"\b(?:gpu::)?{re.escape(type_name)}\b"
+            rf"\s*(?:\[[^\]\n]*\]|\*)?\s+([A-Za-z_]\w*)"
+            r"(?=\s*(?:[=;,)\[]|$))"
         )
         field_pattern = re.compile(
-            r"\.(?:" + "|".join(re.escape(field) for field in field_names) + r")\s*="
+            r"\.(?P<field>"
+            + "|".join(re.escape(field) for field in field_names)
+            + r")\s*="
         )
-        for initializer in initializer_pattern.finditer(structural_text):
-            opening_brace = initializer.end() - 1
-            depth = 0
-            closing_brace = None
-            for offset in range(opening_brace, len(structural_text)):
-                if structural_text[offset] == "{":
-                    depth += 1
-                elif structural_text[offset] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        closing_brace = offset
-                        break
-            if closing_brace is None:
-                continue
-            body = structural_text[opening_brace + 1 : closing_brace]
-            for match in field_pattern.finditer(body):
-                absolute_offset = opening_brace + 1 + match.start()
-                line_number = text.count("\n", 0, absolute_offset) + 1
-                field = match.group(0).split("=", maxsplit=1)[0].strip()
-                findings.append(
-                    f"{path.relative_to(ROOT)}:{line_number}: "
-                    f"forbidden {type_name} field {field!r}"
+        for declaration in declaration_pattern.finditer(structural_text):
+            variable = declaration.group(1)
+            search_start = declaration.start(1)
+            search_end = enclosing_scope_end(declaration.start())
+            assignment_pattern = re.compile(
+                rf"\b{re.escape(variable)}\b\s*=\s*\{{"
+            )
+            for initializer in assignment_pattern.finditer(
+                structural_text,
+                search_start,
+                search_end,
+            ):
+                opening_brace = initializer.end() - 1
+                closing_brace = brace_pairs.get(opening_brace)
+                if closing_brace is None or closing_brace > search_end:
+                    continue
+                body = structural_text[opening_brace + 1 : closing_brace]
+                for match in field_pattern.finditer(body):
+                    absolute_offset = opening_brace + 1 + match.start()
+                    report(
+                        type_name,
+                        f".{match.group('field')}",
+                        absolute_offset,
+                    )
+
+            member_pattern = re.compile(
+                rf"\b{re.escape(variable)}\b\s*"
+                rf"\.(?P<field>{'|'.join(re.escape(field) for field in field_names)})"
+                r"\s*="
+            )
+            for match in member_pattern.finditer(
+                structural_text,
+                search_start,
+                search_end,
+            ):
+                report(
+                    type_name,
+                    f".{match.group('field')}",
+                    match.start() + match.group(0).index("."),
                 )
-    return findings
+    return [message for _, message in sorted(finding_records)]
 
 
 def main() -> int:

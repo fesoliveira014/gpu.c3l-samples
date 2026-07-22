@@ -261,8 +261,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex gbuffer_sampler =
-        gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex gbuffer_sampler = gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc vertex_desc = {
         .size         = CUBE_VERTEX_COUNT * 32,

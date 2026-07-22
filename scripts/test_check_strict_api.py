@@ -67,6 +67,49 @@ class StrictApiCheckTests(unittest.TestCase):
             ["probe.c3:5: forbidden TextureViewDesc field '.format'"],
         )
 
+    def test_doc_comment_closes_at_first_terminator(self) -> None:
+        source = (
+            "module probe;\n"
+            "<* a literal <* does not nest *>\n"
+            "fn void probe() {\n"
+            "    gpu::TextureDesc desc = { .depth = 1 };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            ["probe.c3:4: forbidden TextureDesc field '.depth'"],
+        )
+
+    def test_retired_fields_in_reassignment_and_member_assignment(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::TextureDesc desc;\n"
+            "    desc = { .dimension = gpu::TextureDimension.D2 };\n"
+            "    desc.depth = 1;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            [
+                "probe.c3:4: forbidden TextureDesc field '.dimension'",
+                "probe.c3:5: forbidden TextureDesc field '.depth'",
+            ],
+        )
+
+    def test_reassignment_scanner_respects_type_and_lexical_content(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::RenderPassDesc desc;\n"
+            "    desc.depth = null;\n"
+            "    gpu::TextureDesc texture;\n"
+            "    // texture.depth = 1;\n"
+            "    ZString text = `texture = { .depth = 1 }`;\n"
+            "}\n"
+        )
+        self.assertEqual(self.findings_for(source), [])
+
     def test_valid_depth_fields_are_not_texture_descriptor_fields(self) -> None:
         source = (
             "module probe;\n"

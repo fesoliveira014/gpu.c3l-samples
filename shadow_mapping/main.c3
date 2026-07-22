@@ -211,8 +211,7 @@ fn void? run(sample_args::Options options) {
         .compare_enable = true,
         .compare        = gpu::CompareOp.LESS,
     };
-    gpu::SamplerIndex shadow_sampler =
-        gpu::intern_sampler(&device, &shadow_sampler_desc)!;
+    gpu::SamplerIndex shadow_sampler = gpu::intern_sampler(&device, &shadow_sampler_desc)!;
 
     gpu::AllocationDesc vertex_desc = {
         .size         = CUBE_VERTEX_COUNT * 16,

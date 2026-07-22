@@ -246,8 +246,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex albedo_sampler =
-        gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex albedo_sampler = gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = TEXTURE_COUNT * TEX_SIZE * TEX_SIZE * 4,
