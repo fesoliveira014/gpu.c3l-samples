@@ -11,7 +11,9 @@ struct Particle {
 
 layout(buffer_reference, std430) readonly buffer ReadState { Particle items[]; };
 layout(buffer_reference, std430) writeonly buffer WriteState { Particle items[]; };
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t root_gpu;
+} pc;
 
 const float MAX_AGE = 6.0;
 const float FIELD_STRENGTH = 0.9;

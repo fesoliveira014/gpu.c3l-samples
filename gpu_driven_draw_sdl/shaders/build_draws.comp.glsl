@@ -10,7 +10,9 @@ layout(buffer_reference, std430) writeonly buffer GeneratedRecords { GeneratedDr
 layout(buffer_reference, std430) writeonly buffer DrawRoots { DrawRoot roots[]; };
 layout(buffer_reference, std430) writeonly buffer FragmentRoots { FragmentRoot roots[]; };
 layout(buffer_reference, std430) writeonly buffer CountBuf { uint value; };
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t root_gpu;
+} pc;
 
 void main() {
     BuildRoot root = BuildRoot(pc.root_gpu);

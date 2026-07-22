@@ -7,7 +7,9 @@
 // its span plus a BLUR_RADIUS halo on both ends, then convolves from shared.
 // `horizontal` in the root swaps row/column indexing — one shader, two passes.
 layout(local_size_x = BLUR_TILE) in;
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t root_gpu;
+} pc;
 
 const float WEIGHTS[BLUR_RADIUS + 1] = float[](
     0.1006, 0.0977, 0.0894, 0.0771, 0.0626, 0.0479, 0.0345, 0.0234, 0.0150);

@@ -5,7 +5,10 @@
 // Vertex = two vec4s: position.xyz + pad, normal.xyz + pad.
 layout(buffer_reference, std430) readonly buffer Instances { vec4 data[]; };
 layout(buffer_reference, std430) readonly buffer Vertices { vec4 data[]; };
-layout(push_constant) uniform Push { GraphicsRootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t vertex_root_gpu;
+    uint64_t fragment_root_gpu;
+} pc;
 
 layout(location = 0) out vec3 v_world;
 layout(location = 1) out vec3 v_normal;

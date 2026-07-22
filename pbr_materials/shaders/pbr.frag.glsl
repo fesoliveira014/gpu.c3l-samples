@@ -11,7 +11,10 @@ layout(location = 2) in vec2 v_uv;
 layout(location = 3) flat in uint v_material;
 layout(location = 0) out vec4 o_color;
 
-layout(push_constant) uniform Push { GraphicsRootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t vertex_root_gpu;
+    uint64_t fragment_root_gpu;
+} pc;
 
 const float PI = 3.14159265;
 const float DIFFUSE_AMBIENT = 0.03;
