@@ -5,6 +5,10 @@
 Queries surface present-mode support, recreates the swapchain for each supported
 mode, and reports frame and acquire timing.
 
+Acquire timing covers successful calls made with the shared finite
+two-millisecond budget. A timed-out attempt returns to event processing and is
+not recorded as a completed frame.
+
 It demonstrates:
 
 - FIFO as the required baseline mode.
