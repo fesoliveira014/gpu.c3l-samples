@@ -309,13 +309,14 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = PBR_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::Format[1] color_formats = { swapchain_info.format };
+    gpu::ColorTargetState[1] color_targets = {{
+        .format     = swapchain_info.format,
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    }};
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .raster          = { .cull_mode = gpu::CullMode.BACK },
-        .color_formats   = color_formats[..],
+        .colors          = color_targets[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "pbr_forward",
     };
@@ -351,7 +352,7 @@ fn void? run(sample_args::Options options) {
             continue;
         }
 
-        bool pipeline_changed = !pipeline_valid || color_formats[0] != swapchain_info.format;
+        bool pipeline_changed = !pipeline_valid || color_targets[0].format != swapchain_info.format;
         bool depth_changed = !depth_valid
             || depth_width != swapchain_info.width
             || depth_height != swapchain_info.height;
@@ -361,7 +362,7 @@ fn void? run(sample_args::Options options) {
         if (pipeline_changed) {
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
-            color_formats[0] = swapchain_info.format;
+            color_targets[0].format = swapchain_info.format;
             pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
             pipeline_valid = true;
         }
@@ -480,6 +481,10 @@ fn void? run(sample_args::Options options) {
         gpu::RenderPassDesc pass = { .colors = colors[..], .depth = &depth_target, .width = width, .height = height };
         gpu::cmd_bind_pipeline(&cmd, pipeline)!;
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
+        gpu::DynamicRasterState raster_state = {
+            .cull_mode = gpu::CullMode.BACK,
+        };
+        gpu::cmd_set_raster_state(&cmd, &raster_state)!;
         gpu::DepthState depth_state = {
             .test_enable  = true,
             .write_enable = true,

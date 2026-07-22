@@ -249,7 +249,7 @@ fn void? run() {
 
     gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = VERIFY_COMP_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode shader = gpu::prepare_shader_code(&comp_sd)!;
-    gpu::ComputePipelineDesc pipe_desc = { .shader = shader, .push_constant_size = gpu::RootPush::size };
+    gpu::ComputePipelineDesc pipe_desc = { .shader = shader };
     gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, pipeline);
 

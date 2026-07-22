@@ -312,24 +312,29 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc rf_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = RESOLVE_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode resolve_frag = gpu::prepare_shader_code(&rf_sd)!;
 
-    gpu::Format[3] gbuffer_formats = { gpu::Format.RGBA8_UNORM, gpu::Format.RGBA16_FLOAT, gpu::Format.RGBA16_FLOAT };
+    gpu::ColorTargetState[3] gbuffer_targets = {
+        { .format = gpu::Format.RGBA8_UNORM,  .write_mask = gpu::COLOR_WRITE_ALL },
+        { .format = gpu::Format.RGBA16_FLOAT, .write_mask = gpu::COLOR_WRITE_ALL },
+        { .format = gpu::Format.RGBA16_FLOAT, .write_mask = gpu::COLOR_WRITE_ALL },
+    };
     gpu::GraphicsPipelineDesc geom_pd = {
         .vertex_shader   = geom_vert,
         .fragment_shader = geom_frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = gbuffer_formats[..],
+        .colors          = gbuffer_targets[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "gbuffer_pass",
     };
     gpu::PipelineHandle geom_pipe = gpu::create_graphics_pipeline(&device, &geom_pd)!;
     defer (void)gpu::destroy_pipeline(&device, geom_pipe);
 
-    gpu::Format[1] swap_formats = { swapchain_info.format };
+    gpu::ColorTargetState[1] swap_targets = {{
+        .format     = swapchain_info.format,
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    }};
     gpu::GraphicsPipelineDesc resolve_pd = {
         .vertex_shader   = resolve_vert,
         .fragment_shader = resolve_frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = swap_formats[..],
+        .colors          = swap_targets[..],
         .debug_name      = "resolve_pass",
     };
     gpu::PipelineHandle resolve_pipe;
@@ -362,7 +367,7 @@ fn void? run(sample_args::Options options) {
             continue;
         }
 
-        bool pipeline_changed = !resolve_pipe_valid || swap_formats[0] != swapchain_info.format;
+        bool pipeline_changed = !resolve_pipe_valid || swap_targets[0].format != swapchain_info.format;
         bool gbuffer_changed = !gbuffer_valid
             || gbuffer_width != swapchain_info.width
             || gbuffer_height != swapchain_info.height;
@@ -372,7 +377,7 @@ fn void? run(sample_args::Options options) {
         if (pipeline_changed) {
             if (resolve_pipe_valid) gpu::destroy_pipeline(&device, resolve_pipe)!;
             resolve_pipe_valid = false;
-            swap_formats[0] = swapchain_info.format;
+            swap_targets[0].format = swapchain_info.format;
             resolve_pipe = gpu::create_graphics_pipeline(&device, &resolve_pd)!;
             resolve_pipe_valid = true;
         }

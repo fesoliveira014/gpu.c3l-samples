@@ -111,7 +111,7 @@ fn void? run() {
     };
     gpu::ShaderCode shader = gpu::prepare_shader_code(&shader_desc)!;
 
-    gpu::ComputePipelineDesc pipe_desc = { .shader = shader, .push_constant_size = gpu::RootPush::size, .debug_name = "root_pointer" };
+    gpu::ComputePipelineDesc pipe_desc = { .shader = shader, .debug_name = "root_pointer" };
     gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
     defer gpu::destroy_pipeline(&device, pipeline)!!;
 

@@ -25,7 +25,7 @@ struct ModeStats {
 struct TestcardPipeline {
     gpu::PipelineHandle handle;
     gpu::GraphicsPipelineDesc desc;
-    gpu::Format[1] color_formats;
+    gpu::ColorTargetState[1] color_targets;
     bool valid;
 }
 
@@ -103,11 +103,14 @@ fn ModeStats? run_mode_window(
             continue;
         }
 
-        if (!pipeline.valid || pipeline.color_formats[0] != swapchain_info.format) {
+        if (!pipeline.valid || pipeline.color_targets[0].format != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (pipeline.valid) gpu::destroy_pipeline(device, pipeline.handle)!;
             pipeline.valid = false;
-            pipeline.color_formats[0] = swapchain_info.format;
+            pipeline.color_targets[0] = {
+                .format     = swapchain_info.format,
+                .write_mask = gpu::COLOR_WRITE_ALL,
+            };
             pipeline.handle = gpu::create_graphics_pipeline(device, &pipeline.desc)!;
             pipeline.valid = true;
         }
@@ -272,8 +275,7 @@ fn void? run(sample_args::Options options) {
     pipeline.desc = (gpu::GraphicsPipelineDesc){
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = pipeline.color_formats[..],
+        .colors          = pipeline.color_targets[..],
         .debug_name      = "testcard",
     };
     defer {

@@ -156,16 +156,13 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::ComputePipelineDesc sim_pd = { .shader = sim_shader, .push_constant_size = gpu::RootPush::size, .debug_name = "particle_sim" };
+    gpu::ComputePipelineDesc sim_pd = { .shader = sim_shader, .debug_name = "particle_sim" };
     gpu::PipelineHandle sim_pipe = gpu::create_compute_pipeline(&device, &sim_pd)!;
     defer (void)gpu::destroy_pipeline(&device, sim_pipe);
 
-    gpu::Format[1] color_formats = { swapchain_info.format };
-    gpu::GraphicsPipelineDesc draw_pd = {
-        .vertex_shader   = vert,
-        .fragment_shader = frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .blend           = {
+    gpu::ColorTargetState[1] color_targets = {{
+        .format     = swapchain_info.format,
+        .blend      = {
             .enable    = true,
             .src_color = gpu::BlendFactor.ONE,
             .dst_color = gpu::BlendFactor.ONE,
@@ -174,7 +171,12 @@ fn void? run(sample_args::Options options) {
             .dst_alpha = gpu::BlendFactor.ONE,
             .alpha_op  = gpu::BlendOp.ADD,
         },
-        .color_formats   = color_formats[..],
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    }};
+    gpu::GraphicsPipelineDesc draw_pd = {
+        .vertex_shader   = vert,
+        .fragment_shader = frag,
+        .colors          = color_targets[..],
         .debug_name      = "particle_draw",
     };
     gpu::PipelineHandle draw_pipe;
@@ -206,11 +208,11 @@ fn void? run(sample_args::Options options) {
             sample_window::throttle_dormant();
             continue;
         }
-        if (!draw_pipeline_valid || color_formats[0] != swapchain_info.format) {
+        if (!draw_pipeline_valid || color_targets[0].format != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (draw_pipeline_valid) gpu::destroy_pipeline(&device, draw_pipe)!;
             draw_pipeline_valid = false;
-            color_formats[0] = swapchain_info.format;
+            color_targets[0].format = swapchain_info.format;
             draw_pipe = gpu::create_graphics_pipeline(&device, &draw_pd)!;
             draw_pipeline_valid = true;
         }

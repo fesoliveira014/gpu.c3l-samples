@@ -203,12 +203,14 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = OFFSCREEN_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
+    gpu::ColorTargetState[1] color_targets = {{
+        .format     = gpu::Format.RGBA8_UNORM,
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    }};
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .topology        = gpu::PrimitiveTopology.TRIANGLES,
-        .color_formats   = color_formats[..],
+        .colors          = color_targets[..],
         .debug_name      = "offscreen_triangle",
     };
     gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;

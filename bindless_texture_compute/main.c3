@@ -75,10 +75,10 @@ fn void? run() {
     };
     gpu::ShaderCode sample_shader = gpu::prepare_shader_code(&sample_shader_desc)!;
 
-    gpu::ComputePipelineDesc write_pipe_desc = { .shader = write_shader, .push_constant_size = gpu::RootPush::size };
+    gpu::ComputePipelineDesc write_pipe_desc = { .shader = write_shader };
     gpu::PipelineHandle write_pipe = gpu::create_compute_pipeline(&device, &write_pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, write_pipe);
-    gpu::ComputePipelineDesc sample_pipe_desc = { .shader = sample_shader, .push_constant_size = gpu::RootPush::size };
+    gpu::ComputePipelineDesc sample_pipe_desc = { .shader = sample_shader };
     gpu::PipelineHandle sample_pipe = gpu::create_compute_pipeline(&device, &sample_pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, sample_pipe);
 

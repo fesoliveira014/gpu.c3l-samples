@@ -13,9 +13,9 @@ const char[*] SCALE_COMP_SPIRV = $embed("shaders/scale.comp.spv");
 const uint SMOKE_SIZE = 64;
 const uint SCALE_COUNT = 128;
 
-const gpu::PrimitiveTopology[2] TOPOLOGIES = { gpu::PrimitiveTopology.TRIANGLES, gpu::PrimitiveTopology.LINES };
 const gpu::Format[3] COLOR_FORMATS = { gpu::Format.RGBA8_UNORM, gpu::Format.BGRA8_UNORM, gpu::Format.RGBA16_FLOAT };
 const uint VARIANTS = 2 * 2 * 3 * 2;
+const uint IMMUTABLE_IDENTITIES = 2 * 3 * 2;
 
 struct Shaders {
     gpu::ShaderCode vert;
@@ -34,25 +34,26 @@ fn Shaders? prepare_shaders() {
     return s;
 }
 
-<* Variant v spreads over blend enable x topology x color format x depth
-   format presence — 24 distinct immutable-state keys, each a real driver compile. *>
-fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::Format[] color_slot) {
+<* Variant v spreads over blend enable x command-time topology x color format
+   x depth format. Topology pairs intentionally alias one immutable pipeline. *>
+fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::ColorTargetState[] color_slot) {
     bool blend_on  = (v & 1) != 0;
-    uint topo      = (v >> 1) & 1;
     uint fmt       = (v >> 2) % 3;
     bool has_depth = ((v >> 2) / 3) != 0;
-    color_slot[0] = COLOR_FORMATS[fmt];
+    color_slot[0] = {
+        .format     = COLOR_FORMATS[fmt],
+        .write_mask = gpu::COLOR_WRITE_ALL,
+    };
     gpu::GraphicsPipelineDesc desc = {
         .vertex_shader   = s.vert,
         .fragment_shader = s.frag,
-        .topology        = TOPOLOGIES[topo],
-        .color_formats   = color_slot,
+        .colors          = color_slot,
     };
     if (has_depth) {
         desc.depth_format = gpu::Format.D32_FLOAT;
     }
     if (blend_on) {
-        desc.blend = {
+        color_slot[0].blend = {
             .enable    = true,
             .src_color = gpu::BlendFactor.SRC_ALPHA,
             .dst_color = gpu::BlendFactor.ONE_MINUS_SRC_ALPHA,
@@ -75,7 +76,7 @@ struct TierResult {
    land in `graphics` (len VARIANTS) and `*compute`. *>
 fn TierResult? build_all(gpu::Device* device, Shaders* s, gpu::PipelineHandle[] graphics, gpu::PipelineHandle* compute) {
     TierResult r = { .min = (NanoDuration)long::max };
-    gpu::Format[1] color_slot;
+    gpu::ColorTargetState[1] color_slot;
     for (uint v = 0; v < VARIANTS; v++) {
         Clock clk = clock::now();
         gpu::GraphicsPipelineDesc desc = variant_desc(s, v, color_slot[..]);
@@ -86,7 +87,7 @@ fn TierResult? build_all(gpu::Device* device, Shaders* s, gpu::PipelineHandle[] 
         if (d > r.max) r.max = d;
     }
     Clock clk = clock::now();
-    gpu::ComputePipelineDesc comp_desc = { .shader = s.comp, .push_constant_size = gpu::RootPush::size };
+    gpu::ComputePipelineDesc comp_desc = { .shader = s.comp };
     *compute = gpu::create_compute_pipeline(device, &comp_desc)!;
     r.total += clk.mark();
     return r;
@@ -187,8 +188,21 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = SMOKE_SIZE, .height = SMOKE_SIZE };
     gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
     gpu::cmd_begin_render_pass(&cmd, &pass)!;
+    gpu::DynamicRasterState triangle_raster = {};
+    gpu::cmd_set_raster_state(&cmd, &triangle_raster)!;
     gpu::DepthState depth_state = {};
     gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+    gpu::cmd_draw(
+        commands:       &cmd,
+        vertex_root:    quad_address,
+        fragment_root:  quad_address,
+        vertex_count:   6,
+        instance_count: 1,
+    )!;
+    gpu::DynamicRasterState line_raster = {
+        .topology = gpu::PrimitiveTopology.LINES,
+    };
+    gpu::cmd_set_raster_state(&cmd, &line_raster)!;
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    quad_address,
@@ -357,7 +371,11 @@ fn void? run() {
     smoke(&device_b, graphics_b[0], compute)!;
     destroy_all(&device_b, graphics_b[..], compute);
 
-    io::printfn("pipeline_cache_timing: %d graphics variants + 1 compute", VARIANTS);
+    io::printfn(
+        "pipeline_cache_timing: %d graphics handles, %d immutable identities + 1 compute",
+        VARIANTS,
+        IMMUTABLE_IDENTITIES,
+    );
     print_tier("cold (device A) ", cold);
     print_tier("dedup (device A)", dedup);
     print_tier("warm (device B) ", warm);
