@@ -117,7 +117,6 @@ fn void write_matrix(gpu::Vec4f* columns, sample_camera::Mat4 m) {
 
 fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uint height) {
     gpu::TextureDesc desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = width,
         .height     = height,
         .format     = gpu::Format.D32_FLOAT,
@@ -222,7 +221,6 @@ fn void? run(sample_args::Options options) {
     gpu::TextureIndex[TEXTURE_COUNT] texture_indices;
     for (uint i = 0; i < TEXTURE_COUNT; i++) {
         gpu::TextureDesc tex_desc = {
-            .dimension  = gpu::TextureDimension.TEX_2D,
             .width      = TEX_SIZE,
             .height     = TEX_SIZE,
             .format     = gpu::Format.RGBA8_UNORM,
@@ -248,9 +246,8 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::Sampler albedo_sampler_identity = gpu::intern_sampler(&device, &sampler_desc)!;
     gpu::SamplerIndex albedo_sampler =
-        gpu::publish_sampler(&device, albedo_sampler_identity)!;
+        gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = TEXTURE_COUNT * TEX_SIZE * TEX_SIZE * 4,

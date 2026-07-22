@@ -94,7 +94,6 @@ fn void write_matrix(gpu::Vec4f* columns, sample_camera::Mat4 m) {
 
 fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uint height, bool sampled, ZString name) {
     gpu::TextureDesc desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = width,
         .height     = height,
         .format     = gpu::Format.D32_FLOAT,
@@ -212,10 +211,8 @@ fn void? run(sample_args::Options options) {
         .compare_enable = true,
         .compare        = gpu::CompareOp.LESS,
     };
-    gpu::Sampler shadow_sampler_identity =
-        gpu::intern_sampler(&device, &shadow_sampler_desc)!;
     gpu::SamplerIndex shadow_sampler =
-        gpu::publish_sampler(&device, shadow_sampler_identity)!;
+        gpu::intern_sampler(&device, &shadow_sampler_desc)!;
 
     gpu::AllocationDesc vertex_desc = {
         .size         = CUBE_VERTEX_COUNT * 16,

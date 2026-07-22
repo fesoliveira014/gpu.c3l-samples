@@ -27,7 +27,6 @@ fn char[4] payload_for(uint index, uint salt) {
 
 fn gpu::TextureHandle? create_stress_texture(gpu::Device* device) {
     gpu::TextureDesc desc = {
-        .dimension = gpu::TextureDimension.TEX_2D,
         .width     = 1,
         .height    = 1,
         .format    = gpu::Format.RGBA8_UNORM,
@@ -206,8 +205,7 @@ fn void? run() {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::Sampler sampler_identity = gpu::intern_sampler(&device, &sampler_desc)!;
-    gpu::SamplerIndex sampler = gpu::publish_sampler(&device, sampler_identity)!;
+    gpu::SamplerIndex sampler = gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = UPLOAD_BATCH * 4,

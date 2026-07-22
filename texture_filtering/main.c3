@@ -86,8 +86,7 @@ fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu:
         .anisotropy_enable = aniso,
         .max_anisotropy    = aniso ? 16.0f : 0.0f,
     };
-    gpu::Sampler sampler = gpu::intern_sampler(device, &desc)!;
-    return gpu::publish_sampler(device, sampler);
+    return gpu::intern_sampler(device, &desc);
 }
 
 fn int main(String[] args) {
@@ -158,7 +157,6 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = TEX_SIZE,
         .height     = TEX_SIZE,
         .mip_levels = MIP_LEVELS,
