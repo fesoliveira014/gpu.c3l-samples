@@ -340,9 +340,13 @@ struct RunResult {
    readbacks are byte-identical. *>
 fn RunResult? run_on_device(bool validation) {
     gpu::RuntimeDesc runtime_desc = {
-        .backend           = gpu::BackendKind.VULKAN,
-        .enable_validation = validation,
-        .application_name  = "multithreaded_recording",
+        .backend                      = gpu::BackendKind.VULKAN,
+        .contract_validation          = validation
+            ? gpu::ContractValidation.FULL
+            : gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = validation,
+        .enable_vulkan_validation     = validation,
+        .application_name             = "multithreaded_recording",
     };
     gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
     defer (void)gpu::destroy_runtime(&runtime);

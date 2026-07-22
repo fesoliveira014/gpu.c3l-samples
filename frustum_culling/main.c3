@@ -122,9 +122,11 @@ fn void? run(sample_args::Options options) {
     defer sample_window::destroy_sample_window(&window);
 
     gpu::RuntimeDesc runtime_desc = {
-        .backend           = gpu::BackendKind.VULKAN,
-        .enable_validation = true,
-        .application_name  = "frustum_culling",
+        .backend                      = gpu::BackendKind.VULKAN,
+        .contract_validation          = gpu::ContractValidation.FULL,
+        .track_resource_lifetimes     = true,
+        .enable_vulkan_validation     = true,
+        .application_name             = "frustum_culling",
     };
     gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
     defer (void)gpu::destroy_runtime(&runtime);
