@@ -119,6 +119,10 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator graphics_allocator =
+        gpu::create_command_allocator(&device, graphics_queue)!;
+    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
@@ -322,9 +326,7 @@ fn void? run(sample_args::Options options) {
             }
         };
 
-        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-
-        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
 
         if (!checker_uploaded) {
@@ -464,9 +466,8 @@ fn void? run(sample_args::Options options) {
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:              &device,
+                allocator:           &graphics_allocator,
                 producer_completion: last_graphics,
-                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:                 acquired.texture,
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,

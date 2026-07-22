@@ -19,6 +19,7 @@ fn int main() {
 
 fn void? dispatch_compute(
     gpu::Device* device,
+    gpu::CommandAllocator* command_allocator,
     gpu::GpuSpan input,
     gpu::GpuSpan output,
     gpu::PipelineHandle pipeline,
@@ -39,9 +40,7 @@ fn void? dispatch_compute(
     root.count      = COUNT;
     gpu::flush_mapped_span(device, root_span)!;
 
-    gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
-
-    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
     gpu::cmd_bind_pipeline(&cmd, pipeline)!;
     gpu::cmd_dispatch(
@@ -57,7 +56,7 @@ fn void? dispatch_compute(
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(command_allocator.queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
     gpu::invalidate_mapped_span(device, output)!;
@@ -80,6 +79,10 @@ fn void? run() {
     defer (void)gpu::destroy_runtime(&runtime);
     gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer gpu::destroy_device(&device)!!;
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::CommandAllocator compute_allocator =
+        gpu::create_command_allocator(&device, compute_queue)!;
+    defer gpu::destroy_command_allocator(&compute_allocator)!!;
 
     gpu::AllocationDesc input_desc = {
         .size         = COUNT * float::size,
@@ -118,9 +121,10 @@ fn void? run() {
     defer gpu::destroy_pipeline(&device, pipeline)!!;
 
     dispatch_compute(
-        device:   &device,
-        input:    input_span,
-        output:   output_span,
-        pipeline: pipeline,
+        device:            &device,
+        command_allocator: &compute_allocator,
+        input:             input_span,
+        output:            output_span,
+        pipeline:          pipeline,
     )!;
 }

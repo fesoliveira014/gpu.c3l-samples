@@ -77,6 +77,14 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator graphics_allocator =
+        gpu::create_command_allocator(&device, graphics_queue)!;
+    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::CommandAllocator compute_allocator =
+        gpu::create_command_allocator(&device, compute_queue)!;
+    defer (void)gpu::destroy_command_allocator(&compute_allocator);
 
     gpu::QueueRoles upload_access = { .graphics, .compute };
     sample_frame_upload::FrameUploadRing upload_ring =
@@ -109,7 +117,6 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::free_allocation(&device, &allocation_b);
     gpu::GpuSpan span_a = gpu::get_allocation_span(&device, allocation_a)!;
     gpu::GpuSpan span_b = gpu::get_allocation_span(&device, allocation_b)!;
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
     {
         gpu::QueueRoles seed_access = { .compute };
         gpu::AllocationDesc seed_desc = {
@@ -125,7 +132,7 @@ fn void? run(sample_args::Options options) {
         seed_particles((float*)gpu::get_span_mapping(&device, seed_span)!.ptr);
         gpu::flush_mapped_span(&device, seed_span)!;
 
-        gpu::CommandList upload_cmd = gpu::begin_commands(compute_queue)!;
+        gpu::CommandList upload_cmd = gpu::begin_commands(&compute_allocator)!;
         defer (void)gpu::discard_commands(&upload_cmd);
         gpu::Barrier seed_visible = {
             .before = { .host = true },
@@ -281,7 +288,7 @@ fn void? run(sample_args::Options options) {
         gpu::GpuAddress draw_root_address = gpu::get_span_address(&device, draw_span)!;
         sample_frame_upload::flush_frame_upload(&upload_batch)!;
 
-        gpu::CommandList sim_cmd = gpu::begin_commands(compute_queue)!;
+        gpu::CommandList sim_cmd = gpu::begin_commands(&compute_allocator)!;
         defer (void)gpu::discard_commands(&sim_cmd);
         gpu::cmd_bind_pipeline(&sim_cmd, sim_pipe)!;
         gpu::cmd_dispatch(
@@ -296,8 +303,7 @@ fn void? run(sample_args::Options options) {
         batch_completion = last_compute;
 
         // The draw submission waits on this compute completion across queues.
-        gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
@@ -364,9 +370,8 @@ fn void? run(sample_args::Options options) {
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:              &device,
+                allocator:           &graphics_allocator,
                 producer_completion: last_graphics,
-                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,

@@ -53,13 +53,14 @@ fn gpu::ScissorRect clamp_scissor_rect(gpu::ScissorRect rect, int width, int hei
 }
 
 fn void? read_color_target(
-    gpu::Device* device,
-    gpu::Queue queue,
+    gpu::CommandAllocator* allocator,
     gpu::TextureHandle target,
     gpu::CompletionPoint producer_completion,
     char[] out,
 ) {
-    defer (void)gpu::wait_completion(producer_completion, ulong::max);
+    gpu::wait_completion(producer_completion, ulong::max)!;
+    gpu::Device* device = &allocator.device;
+    gpu::Queue queue = allocator.queue;
 
     gpu::AllocationDesc readback_desc = {
         .size         = out.len,
@@ -72,7 +73,7 @@ fn void? read_color_target(
     defer (void)gpu::free_allocation(device, &readback_allocation);
     gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback_allocation)!;
 
-    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    gpu::CommandList commands = gpu::begin_commands(allocator)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_source = {
         .texture = target,
@@ -112,14 +113,7 @@ fn void? read_color_target(
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
-    gpu::CompletionWait[1] waits = {{
-        .point  = producer_completion,
-        .before = { .transfer },
-    }};
-    gpu::SubmitDesc submit = {
-        .command_lists    = lists[..],
-        .completion_waits = waits[..],
-    };
+    gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
@@ -259,8 +253,11 @@ fn void? run(sample_args::Options options) {
     gpu::flush_mapped_span(&device, roots_span)!;
 
     gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator allocator =
+        gpu::create_command_allocator(&device, graphics_queue)!;
+    defer (void)gpu::destroy_command_allocator(&allocator);
 
-    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(&allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier checker_to_dst = {
@@ -365,8 +362,7 @@ fn void? run(sample_args::Options options) {
     char[] pixels = mem::new_array(char, RT_BYTES);
     defer mem::free(pixels.ptr);
     read_color_target(
-        device:              &device,
-        queue:               graphics_queue,
+        allocator:           &allocator,
         target:              target,
         producer_completion: completion,
         out:                 pixels,
