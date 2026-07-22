@@ -42,7 +42,9 @@ jobs:
           sudo apt-get install -y glslc mesa-vulkan-drivers vulkan-validationlayers xvfb
 
       - name: Strict API gate
-        run: python3 scripts/check_strict_api.py
+        run: |
+          python3 -m unittest scripts.test_check_strict_api
+          python3 scripts/check_strict_api.py
 
       - name: ABI drift gate
         run: python3 scripts/gen_abi.py --check

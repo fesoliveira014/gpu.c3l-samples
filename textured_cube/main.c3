@@ -81,7 +81,6 @@ fn sample_camera::Mat4 spin_model(float time) {
 
 fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uint height) {
     gpu::TextureDesc desc = {
-        .dimension = gpu::TextureDimension.TEX_2D,
         .width     = width,
         .height    = height,
         .format    = gpu::Format.D32_FLOAT,
@@ -182,7 +181,6 @@ fn void? run(sample_args::Options options) {
     gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
-        .dimension = gpu::TextureDimension.TEX_2D,
         .width     = TEX_SIZE,
         .height    = TEX_SIZE,
         .format    = gpu::Format.RGBA8_UNORM,
@@ -202,8 +200,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::Sampler sampler = gpu::intern_sampler(&device, &sampler_desc)!;
-    gpu::SamplerIndex smp_index = gpu::publish_sampler(&device, sampler)!;
+    gpu::SamplerIndex smp_index = gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = TEX_SIZE * TEX_SIZE * 4,

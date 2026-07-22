@@ -102,7 +102,6 @@ fn void destroy_all(gpu::Device* device, gpu::PipelineHandle[] graphics, gpu::Pi
    compute pipeline; verify both readbacks. *>
 fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::PipelineHandle compute) {
     gpu::TextureDesc target_desc = {
-        .dimension = gpu::TextureDimension.TEX_2D,
         .width     = SMOKE_SIZE,
         .height    = SMOKE_SIZE,
         .format    = gpu::Format.RGBA8_UNORM,

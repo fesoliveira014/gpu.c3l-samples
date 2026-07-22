@@ -350,7 +350,6 @@ fn RunResult? run_on_device(bool validation) {
     defer (void)gpu::destroy_device(&device);
 
     gpu::TextureDesc target_desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = TARGET_SIZE,
         .height     = TARGET_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,

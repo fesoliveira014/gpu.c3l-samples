@@ -24,7 +24,6 @@ fn int main(String[] args) {
 
 fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_target, ZString name) {
     gpu::TextureDesc desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = IMAGE_SIZE,
         .height     = IMAGE_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,

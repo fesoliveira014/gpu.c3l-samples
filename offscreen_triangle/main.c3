@@ -150,7 +150,6 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_device(&device);
 
     gpu::TextureDesc rt_desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = RT_SIZE,
         .height     = RT_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
@@ -168,7 +167,6 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_attachment_view(&device, target_view);
 
     gpu::TextureDesc tex_desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = TEX_SIZE,
         .height     = TEX_SIZE,
         .format     = gpu::Format.RGBA8_UNORM,
@@ -189,8 +187,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::Sampler sampler = gpu::intern_sampler(&device, &sampler_desc)!;
-    gpu::SamplerIndex smp_index = gpu::publish_sampler(&device, sampler)!;
+    gpu::SamplerIndex smp_index = gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = TEX_SIZE * TEX_SIZE * 4,

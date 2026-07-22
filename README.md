@@ -54,6 +54,7 @@ Allocations, upload reuse, readback, and completion policy remain sample-local.
 ## Build and run
 
 ```sh
+python3 -m unittest scripts.test_check_strict_api
 python3 scripts/check_strict_api.py
 python3 scripts/gen_abi.py --check
 python3 scripts/build_shaders.py

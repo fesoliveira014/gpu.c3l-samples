@@ -98,7 +98,6 @@ fn void extract_planes(gpu::Vec4f* planes, sample_camera::Mat4 m) {
 
 fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uint height) {
     gpu::TextureDesc desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = width,
         .height     = height,
         .format     = gpu::Format.D32_FLOAT,

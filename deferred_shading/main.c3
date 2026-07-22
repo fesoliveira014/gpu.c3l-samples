@@ -131,7 +131,6 @@ struct GBuffer {
 
 fn gpu::TextureHandle? create_target(gpu::Device* device, uint width, uint height, gpu::Format format, ZString name) {
     gpu::TextureDesc desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = width,
         .height     = height,
         .format     = format,
@@ -149,7 +148,6 @@ fn GBuffer? create_gbuffer(gpu::Device* device, uint width, uint height) {
     g.normal   = create_target(device, width, height, gpu::Format.RGBA16_FLOAT, "g_normal")!;
     g.position = create_target(device, width, height, gpu::Format.RGBA16_FLOAT, "g_position")!;
     gpu::TextureDesc depth_desc = {
-        .dimension  = gpu::TextureDimension.TEX_2D,
         .width      = width,
         .height     = height,
         .format     = gpu::Format.D32_FLOAT,
@@ -263,9 +261,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::Sampler gbuffer_sampler_identity = gpu::intern_sampler(&device, &sampler_desc)!;
-    gpu::SamplerIndex gbuffer_sampler =
-        gpu::publish_sampler(&device, gbuffer_sampler_identity)!;
+    gpu::SamplerIndex gbuffer_sampler = gpu::intern_sampler(&device, &sampler_desc)!;
 
     gpu::AllocationDesc vertex_desc = {
         .size         = CUBE_VERTEX_COUNT * 32,

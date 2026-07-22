@@ -295,7 +295,6 @@ fn void? run(bool detailed) {
     }
 
     gpu::TextureDesc sampled_desc = {
-        .dimension = gpu::TextureDimension.TEX_2D,
         .width     = 256,
         .height    = 256,
         .mip_levels = 4,
@@ -308,7 +307,6 @@ fn void? run(bool detailed) {
     defer (void)gpu::destroy_texture(&device, sampled);
 
     gpu::TextureDesc depth_desc = {
-        .dimension = gpu::TextureDimension.TEX_2D,
         .width     = 512,
         .height    = 512,
         .format    = gpu::Format.D32_FLOAT,
