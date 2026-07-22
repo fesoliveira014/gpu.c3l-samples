@@ -161,8 +161,8 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_pipeline(&device, sim_pipe);
 
     gpu::ColorTargetState[1] color_targets = {{
-        .format = swapchain_info.format,
-        .blend  = {
+        .format     = swapchain_info.format,
+        .blend      = {
             .enable    = true,
             .src_color = gpu::BlendFactor.ONE,
             .dst_color = gpu::BlendFactor.ONE,
@@ -326,10 +326,6 @@ fn void? run(sample_args::Options options) {
         };
         gpu::cmd_bind_pipeline(&cmd, draw_pipe)!;
         gpu::cmd_begin_render_pass(&cmd, &pass)!;
-        gpu::DynamicRasterState raster_state = {
-            .topology = gpu::PrimitiveTopology.TRIANGLES,
-        };
-        gpu::cmd_set_raster_state(&cmd, &raster_state)!;
         gpu::DepthState depth_state = {};
         gpu::cmd_set_depth_state(&cmd, &depth_state)!;
         gpu::cmd_draw(
