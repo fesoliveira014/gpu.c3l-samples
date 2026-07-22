@@ -128,14 +128,6 @@ fn gpu::TextureHandle? create_depth_texture(gpu::Device* device, uint width, uin
     return gpu::create_texture(device, &desc);
 }
 
-fn gpu::TextureUse? swapchain_texture_use(gpu::TextureUse use) {
-    switch (use) {
-        case gpu::TextureUse.UNDEFINED: return gpu::TextureUse.UNDEFINED;
-        case gpu::TextureUse.PRESENT:   return gpu::TextureUse.PRESENT;
-        default:                           return gpu::INVALID_RESOURCE_STATE~;
-    }
-}
-
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
         io::printfn("pbr_materials: FAIL (%s)", err);
@@ -429,9 +421,13 @@ fn void? run(sample_args::Options options) {
         if (!textures_uploaded) {
             for (uint i = 0; i < TEXTURE_COUNT; i++) {
                 gpu::TextureBarrier to_dst = {
-                    .texture       = textures[i],
-                    .before        = gpu::TextureUse.UNDEFINED,
-                    .after         = gpu::TextureUse.TRANSFER_DESTINATION,
+                    .texture = textures[i],
+                    .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+                    .after   = {
+                        .layout = gpu::TextureLayout.TRANSFER_DESTINATION,
+                        .stages = { .transfer },
+                        .access = { .write },
+                    },
                 };
                 gpu::cmd_texture_barrier(&cmd, &to_dst)!;
                 usz byte_offset = (usz)i * TEX_SIZE * TEX_SIZE * 4;
@@ -439,9 +435,13 @@ fn void? run(sample_args::Options options) {
                 gpu::BufferTextureCopyDesc upload = { .src = slice, .texture = textures[i] };
                 gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
                 gpu::TextureBarrier to_read = {
-                    .texture       = textures[i],
-                    .before        = gpu::TextureUse.TRANSFER_DESTINATION,
-                    .after         = gpu::TextureUse.SAMPLED_FRAGMENT,
+                    .texture = textures[i],
+                    .before  = {
+                        .layout = gpu::TextureLayout.TRANSFER_DESTINATION,
+                        .stages = { .transfer },
+                        .access = { .write },
+                    },
+                    .after   = gpu::sampled_at({ .fragment_shader }),
                 };
                 gpu::cmd_texture_barrier(&cmd, &to_read)!;
             }
@@ -450,9 +450,13 @@ fn void? run(sample_args::Options options) {
 
         if (depth_fresh) {
             gpu::TextureBarrier depth_init = {
-                .texture       = depth,
-                .before        = gpu::TextureUse.UNDEFINED,
-                .after         = gpu::TextureUse.DEPTH_ATTACHMENT,
+                .texture = depth,
+                .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+                .after   = {
+                    .layout = gpu::TextureLayout.DEPTH_ATTACHMENT,
+                    .stages = { .depth_output },
+                    .access = { .read, .write },
+                },
             };
             gpu::cmd_texture_barrier(&cmd, &depth_init)!;
             depth_fresh = false;
@@ -460,8 +464,12 @@ fn void? run(sample_args::Options options) {
 
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
-            before:  swapchain_texture_use(acquired.prior_use)!,
-            after:   gpu::TextureUse.COLOR_ATTACHMENT,
+            before:  acquired.prior_state,
+            after:   {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
@@ -502,8 +510,14 @@ fn void? run(sample_args::Options options) {
 
         gpu::TextureBarrier to_present = gpu::texture_transition(
             texture: acquired.texture,
-            before:  gpu::TextureUse.COLOR_ATTACHMENT,
-            after:   gpu::TextureUse.PRESENT,
+            before:  {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
+            after:   {
+                .layout = gpu::TextureLayout.PRESENT,
+            },
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
@@ -525,7 +539,9 @@ fn void? run(sample_args::Options options) {
                 width:       width,
                 height:      height,
                 format:      swapchain_info.format,
-                from_use:    gpu::TextureUse.PRESENT,
+                from_state:  {
+                    .layout = gpu::TextureLayout.PRESENT,
+                },
                 path:        options.screenshot_path,
             )!;
         }

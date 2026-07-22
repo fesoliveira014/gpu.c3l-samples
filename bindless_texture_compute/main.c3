@@ -114,9 +114,9 @@ fn void? run() {
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier to_general = {
-        .texture       = texture,
-        .before        = gpu::TextureUse.UNDEFINED,
-        .after         = gpu::TextureUse.STORAGE_COMPUTE,
+        .texture = texture,
+        .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+        .after   = gpu::storage_at({ .compute }, { .write }),
     };
     gpu::cmd_texture_barrier(&cmd, &to_general)!;
 
@@ -129,9 +129,9 @@ fn void? run() {
     )!;
 
     gpu::TextureBarrier write_to_sample = {
-        .texture       = texture,
-        .before        = gpu::TextureUse.STORAGE_COMPUTE,
-        .after         = gpu::TextureUse.SAMPLED_COMPUTE,
+        .texture = texture,
+        .before  = gpu::storage_at({ .compute }, { .write }),
+        .after   = gpu::sampled_at({ .compute }),
     };
     gpu::cmd_texture_barrier(&cmd, &write_to_sample)!;
 

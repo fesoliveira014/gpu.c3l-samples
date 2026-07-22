@@ -142,9 +142,9 @@ fn void? run(sample_args::Options options) {
     gpu::TextureHandle[2] images = { image_a, image_b };
     foreach (image : images) {
         gpu::TextureBarrier to_general = {
-            .texture       = image,
-            .before        = gpu::TextureUse.UNDEFINED,
-            .after         = gpu::TextureUse.STORAGE_COMPUTE,
+            .texture = image,
+            .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+            .after   = gpu::storage_at({ .compute }, { .write }),
         };
         gpu::cmd_texture_barrier(&cmd, &to_general)!;
     }
@@ -161,9 +161,9 @@ fn void? run(sample_args::Options options) {
 
     // Storage write -> storage read between every chain stage.
     gpu::TextureBarrier a_written = {
-        .texture       = image_a,
-        .before        = gpu::TextureUse.STORAGE_COMPUTE,
-        .after         = gpu::TextureUse.STORAGE_COMPUTE,
+        .texture = image_a,
+        .before  = gpu::storage_at({ .compute }, { .write }),
+        .after   = gpu::storage_at({ .compute }, { .read }),
     };
     gpu::cmd_texture_barrier(&cmd, &a_written)!;
 
@@ -177,6 +177,13 @@ fn void? run(sample_args::Options options) {
     gpu::TextureBarrier b_written = a_written;
     b_written.texture = image_b;
     gpu::cmd_texture_barrier(&cmd, &b_written)!;
+
+    gpu::TextureBarrier a_read_to_write = {
+        .texture = image_a,
+        .before  = gpu::storage_at({ .compute }, { .read }),
+        .after   = gpu::storage_at({ .compute }, { .write }),
+    };
+    gpu::cmd_texture_barrier(&cmd, &a_read_to_write)!;
 
     gpu::cmd_dispatch(
         commands: &cmd,
@@ -218,7 +225,7 @@ fn void? run(sample_args::Options options) {
             width:               IMAGE_SIZE,
             height:              IMAGE_SIZE,
             format:              gpu::Format.RGBA8_UNORM,
-            from_use:            gpu::TextureUse.STORAGE_COMPUTE,
+            from_state:          gpu::storage_at({ .compute }, { .read }),
             path:                options.screenshot_path,
         )!;
     }
