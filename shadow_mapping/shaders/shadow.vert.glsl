@@ -5,10 +5,13 @@
 // Instance = three vec4s: center, per-axis scale, color (color unused here).
 layout(buffer_reference, std430) readonly buffer Instances { vec4 data[]; };
 layout(buffer_reference, std430) readonly buffer Vertices { vec4 data[]; };
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t vertex_root_gpu;
+    uint64_t fragment_root_gpu;
+} pc;
 
 void main() {
-    ShadowPassRoot root = ShadowPassRoot(pc.root_gpu);
+    ShadowPassRoot root = ShadowPassRoot(pc.vertex_root_gpu);
     mat4 light_vp = mat4(root.light_vp_c0, root.light_vp_c1, root.light_vp_c2, root.light_vp_c3);
 
     vec4 scale4 = Instances(root.instances_gpu).data[gl_InstanceIndex * 3 + 1];

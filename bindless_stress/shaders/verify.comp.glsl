@@ -8,7 +8,9 @@ layout(local_size_x = 64) in;
 layout(buffer_reference, std430) readonly buffer Indices { uint data[]; };
 layout(buffer_reference, std430) writeonly buffer Results { vec4 data[]; };
 
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t root_gpu;
+} pc;
 
 void main() {
     StressRoot root = StressRoot(pc.root_gpu);

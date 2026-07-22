@@ -4,7 +4,9 @@
 #include "descriptor_heap.glsl"
 
 layout(local_size_x = GEN_TILE, local_size_y = GEN_TILE) in;
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t root_gpu;
+} pc;
 
 void main() {
     GenerateRoot root = GenerateRoot(pc.root_gpu);

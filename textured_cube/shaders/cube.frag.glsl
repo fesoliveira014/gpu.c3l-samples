@@ -7,7 +7,10 @@ layout(location = 0) in vec2 v_uv;
 layout(location = 1) in float v_lambert;
 layout(location = 0) out vec4 o_color;
 
-layout(push_constant) uniform Push { GraphicsRootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t vertex_root_gpu;
+    uint64_t fragment_root_gpu;
+} pc;
 
 void main() {
     SceneRoot root = SceneRoot(pc.fragment_root_gpu);

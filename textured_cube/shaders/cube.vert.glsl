@@ -4,7 +4,10 @@
 
 // Vertex = position (xyz) + face lambert factor (w), uv (xy) packed as two vec4s.
 layout(buffer_reference, std430) readonly buffer Vertices { vec4 data[]; };
-layout(push_constant) uniform Push { GraphicsRootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t vertex_root_gpu;
+    uint64_t fragment_root_gpu;
+} pc;
 
 layout(location = 0) out vec2 v_uv;
 layout(location = 1) out float v_lambert;

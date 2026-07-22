@@ -7,7 +7,9 @@ layout(local_size_x = 64) in;
 layout(buffer_reference, std430) readonly buffer Input { float data[]; };
 layout(buffer_reference, std430) writeonly buffer Output { float data[]; };
 
-layout(push_constant) uniform Push { RootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t root_gpu;
+} pc;
 
 void main() {
     ScaleRoot root = ScaleRoot(pc.root_gpu);

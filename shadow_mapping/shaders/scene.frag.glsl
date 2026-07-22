@@ -8,7 +8,10 @@ layout(location = 1) in vec3 v_color;
 layout(location = 2) in float v_lambert_base;
 layout(location = 0) out vec4 o_color;
 
-layout(push_constant) uniform Push { GraphicsRootPush pc; };
+layout(push_constant) uniform Push {
+    uint64_t vertex_root_gpu;
+    uint64_t fragment_root_gpu;
+} pc;
 
 const float AMBIENT = 0.22;
 
