@@ -331,9 +331,9 @@ fn void? run(sample_args::Options options) {
         height = swapchain_info.height;
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(
-            &device,
-            swapchain,
-            sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
+            device:     &device,
+            swapchain:  swapchain,
+            timeout_ns: sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
         );
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;

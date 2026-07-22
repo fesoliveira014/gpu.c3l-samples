@@ -43,9 +43,9 @@ fn int main(String[] args) {
 
 fn void? render_frame(FrameWork* ctx) {
     gpu::AcquiredImage? acquired = gpu::acquire_next_image(
-        ctx.device,
-        ctx.swapchain,
-        sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
+        device:     ctx.device,
+        swapchain:  ctx.swapchain,
+        timeout_ns: sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
     );
     if (catch err = acquired) {
         if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
