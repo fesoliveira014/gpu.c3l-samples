@@ -100,7 +100,12 @@ fn void destroy_all(gpu::Device* device, gpu::PipelineHandle[] graphics, gpu::Pi
 
 <* Correctness smoke: draw variant 0 to a small offscreen target and run the
    compute pipeline; verify both readbacks. *>
-fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::PipelineHandle compute) {
+fn void? smoke(
+    gpu::Device* device,
+    gpu::CommandAllocator* allocator,
+    gpu::PipelineHandle quad_pipe,
+    gpu::PipelineHandle compute,
+) {
     gpu::TextureDesc target_desc = {
         .width     = SMOKE_SIZE,
         .height    = SMOKE_SIZE,
@@ -168,9 +173,9 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     gpu::GpuAddress scale_address = gpu::get_span_address(device, scale_span)!;
     gpu::flush_mapped_span(device, roots_span)!;
 
-    gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::Queue graphics_queue = allocator.queue;
 
-    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(allocator)!;
     defer (void)gpu::discard_commands(&cmd);
     gpu::TextureBarrier to_attach = {
         .texture = target,
@@ -233,8 +238,7 @@ fn void? smoke(gpu::Device* device, gpu::PipelineHandle quad_pipe, gpu::Pipeline
     char[] pixels = mem::new_array(char, (usz)SMOKE_SIZE * SMOKE_SIZE * 4);
     defer mem::free(pixels.ptr);
     read_color_target(
-        device:              device,
-        queue:               graphics_queue,
+        allocator:           allocator,
         target:              target,
         producer_completion: completion,
         out:                 pixels,
@@ -263,13 +267,14 @@ fn void print_tier(String name, TierResult r) {
 }
 
 fn void? read_color_target(
-    gpu::Device* device,
-    gpu::Queue queue,
+    gpu::CommandAllocator* allocator,
     gpu::TextureHandle target,
     gpu::CompletionPoint producer_completion,
     char[] out,
 ) {
-    defer (void)gpu::wait_completion(producer_completion, ulong::max);
+    gpu::wait_completion(producer_completion, ulong::max)!;
+    gpu::Device* device = &allocator.device;
+    gpu::Queue queue = allocator.queue;
 
     gpu::AllocationDesc readback_desc = {
         .size         = out.len,
@@ -282,7 +287,7 @@ fn void? read_color_target(
     defer (void)gpu::free_allocation(device, &readback_allocation);
     gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback_allocation)!;
 
-    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    gpu::CommandList commands = gpu::begin_commands(allocator)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_source = {
         .texture = target,
@@ -322,14 +327,7 @@ fn void? read_color_target(
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
-    gpu::CompletionWait[1] waits = {{
-        .point  = producer_completion,
-        .before = { .transfer },
-    }};
-    gpu::SubmitDesc submit = {
-        .command_lists    = lists[..],
-        .completion_waits = waits[..],
-    };
+    gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
@@ -364,8 +362,18 @@ fn void? run() {
     defer (void)gpu::destroy_runtime(&runtime_a);
     gpu::Device device_a = sample_device::create_strict_device(&runtime_a)!;
     defer (void)gpu::destroy_device(&device_a);
+    gpu::Queue graphics_queue_a =
+        gpu::get_queue(&device_a, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator allocator_a =
+        gpu::create_command_allocator(&device_a, graphics_queue_a)!;
+    defer (void)gpu::destroy_command_allocator(&allocator_a);
     TierResult cold = build_all(&device_a, &shaders, graphics_a[..], &compute)!;
-    smoke(&device_a, graphics_a[0], compute)!;
+    smoke(
+        device:    &device_a,
+        allocator: &allocator_a,
+        quad_pipe: graphics_a[0],
+        compute:   compute,
+    )!;
 
     gpu::PipelineHandle[VARIANTS] graphics_dedup;
     gpu::PipelineHandle compute_dedup;
@@ -390,8 +398,18 @@ fn void? run() {
     defer (void)gpu::destroy_runtime(&runtime_b);
     gpu::Device device_b = sample_device::create_strict_device(&runtime_b)!;
     defer (void)gpu::destroy_device(&device_b);
+    gpu::Queue graphics_queue_b =
+        gpu::get_queue(&device_b, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator allocator_b =
+        gpu::create_command_allocator(&device_b, graphics_queue_b)!;
+    defer (void)gpu::destroy_command_allocator(&allocator_b);
     TierResult warm = build_all(&device_b, &shaders, graphics_b[..], &compute)!;
-    smoke(&device_b, graphics_b[0], compute)!;
+    smoke(
+        device:    &device_b,
+        allocator: &allocator_b,
+        quad_pipe: graphics_b[0],
+        compute:   compute,
+    )!;
     destroy_all(&device_b, graphics_b[..], compute);
 
     io::printfn(

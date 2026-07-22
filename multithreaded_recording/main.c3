@@ -6,7 +6,6 @@ import std::io;
 import std::thread;
 import std::time;
 import std::core::mem;
-import std::core::mem::allocator;
 
 const char[*] QUAD_VERT_SPIRV = $embed("shaders/quad.vert.spv");
 const char[*] QUAD_FRAG_SPIRV = $embed("shaders/quad.frag.spv");
@@ -70,56 +69,58 @@ fn void? record_chunk(
 }
 
 struct WorkerArgs {
-    gpu::Queue                  queue;
-    gpu::AttachmentViewHandle   target_view;
-    gpu::PipelineHandle         pipeline;
-    gpu::GpuAddress             roots_base;
-    uint                        first_chunk;
-    uint                        stride;
-    gpu::ExecutableCommandList[CHUNKS] lists;
-    uint                        list_count;
-    bool                        failed;
+    gpu::CommandAllocator                    allocator;
+    gpu::AttachmentViewHandle                target_view;
+    gpu::PipelineHandle                      pipeline;
+    gpu::GpuAddress                          roots_base;
+    uint                                     first_chunk;
+    uint                                     stride;
+    gpu::ExecutableCommandList[CHUNKS]       lists;
+    uint                                     list_count;
+    bool                                     failed;
 }
 
 fn int record_worker(void* arg) {
     WorkerArgs* args = (WorkerArgs*)arg;
-    @pool_init(&allocators::LIBC_ALLOCATOR, 64 * 1024) {
-        for (uint chunk = args.first_chunk; chunk < CHUNKS; chunk += args.stride) {
-            gpu::CommandList? list = gpu::begin_commands(args.queue);
-            if (catch list) { args.failed = true; return 1; }
-            if (catch record_chunk(
-                list:        &list,
-                target_view: args.target_view,
-                pipeline:    args.pipeline,
-                roots_base:  args.roots_base,
-                chunk:       chunk,
-            )) {
-                (void)gpu::discard_commands(&list);
-                args.failed = true;
-                return 1;
-            }
-            gpu::ExecutableCommandList? executable = gpu::end_commands(&list);
-            if (catch executable) {
-                (void)gpu::discard_commands(&list);
-                args.failed = true;
-                return 1;
-            }
-            args.lists[args.list_count++] = executable;
+    for (uint chunk = args.first_chunk; chunk < CHUNKS; chunk += args.stride) {
+        gpu::CommandList? list = gpu::begin_commands(&args.allocator);
+        if (catch list) {
+            args.failed = true;
+            return 1;
         }
-    };
+        if (catch record_chunk(
+            list:        &list,
+            target_view: args.target_view,
+            pipeline:    args.pipeline,
+            roots_base:  args.roots_base,
+            chunk:       chunk,
+        )) {
+            (void)gpu::discard_commands(&list);
+            args.failed = true;
+            return 1;
+        }
+        gpu::ExecutableCommandList? executable = gpu::end_commands(&list);
+        if (catch executable) {
+            (void)gpu::discard_commands(&list);
+            args.failed = true;
+            return 1;
+        }
+        args.lists[args.list_count++] = executable;
+    }
     return 0;
 }
 
 fn double ms(NanoDuration d) => (double)(long)d / 1_000_000.0;
 
 fn void? read_color_target(
-    gpu::Device* device,
-    gpu::Queue queue,
+    gpu::CommandAllocator* allocator,
     gpu::TextureHandle target,
     gpu::CompletionPoint producer_completion,
     char[] out,
 ) {
-    defer (void)gpu::wait_completion(producer_completion, ulong::max);
+    gpu::wait_completion(producer_completion, ulong::max)!;
+    gpu::Device* device = &allocator.device;
+    gpu::Queue queue = allocator.queue;
 
     gpu::AllocationDesc readback_desc = {
         .size         = out.len,
@@ -132,7 +133,7 @@ fn void? read_color_target(
     defer (void)gpu::free_allocation(device, &readback_allocation);
     gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback_allocation)!;
 
-    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    gpu::CommandList commands = gpu::begin_commands(allocator)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_source = {
         .texture = target,
@@ -172,14 +173,7 @@ fn void? read_color_target(
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
-    gpu::CompletionWait[1] waits = {{
-        .point  = producer_completion,
-        .before = { .transfer },
-    }};
-    gpu::SubmitDesc submit = {
-        .command_lists    = lists[..],
-        .completion_waits = waits[..],
-    };
+    gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
@@ -211,8 +205,18 @@ fn NanoDuration? run_once(
     bool* target_seen,
 ) {
     gpu::Queue queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocatorDesc primary_allocator_desc = {
+        .command_buffer_capacity = CHUNKS + 1,
+        .debug_name              = "mtrec_primary",
+    };
+    gpu::CommandAllocator primary_allocator = gpu::create_command_allocator(
+        device,
+        queue,
+        &primary_allocator_desc,
+    )!;
+    defer (void)gpu::destroy_command_allocator(&primary_allocator);
 
-    gpu::CommandList preamble = gpu::begin_commands(queue)!;
+    gpu::CommandList preamble = gpu::begin_commands(&primary_allocator)!;
     defer (void)gpu::discard_commands(&preamble);
     // Readback restores COLOR_ATTACHMENT, so only the
     // first run needs a transition out of UNDEFINED.
@@ -248,9 +252,28 @@ fn NanoDuration? run_once(
 
     gpu::ExecutableCommandList[CHUNKS] all_lists;
     uint list_count;
+    WorkerArgs[] worker_args = mem::new_array(WorkerArgs, MAX_WORKERS);
+    defer mem::free(worker_args.ptr);
+    Thread[MAX_WORKERS] threads;
+    uint worker_allocators_created;
+    uint threads_created;
+    uint threads_joined;
     defer {
+        for (uint worker = threads_joined; worker < threads_created; worker++) {
+            (void)threads[worker].join();
+        }
         for (uint i = 0; i < list_count; i++) {
             (void)gpu::discard_executable_commands(&all_lists[i]);
+        }
+        for (uint worker = 0; worker < worker_allocators_created; worker++) {
+            for (uint i = 0; i < worker_args[worker].list_count; i++) {
+                (void)gpu::discard_executable_commands(
+                    &worker_args[worker].lists[i],
+                );
+            }
+            (void)gpu::destroy_command_allocator(
+                &worker_args[worker].allocator,
+            );
         }
     }
 
@@ -258,7 +281,7 @@ fn NanoDuration? run_once(
     NanoDuration record_time;
     if (workers == 0) {
         for (uint chunk = 0; chunk < CHUNKS; chunk++) {
-            gpu::CommandList list = gpu::begin_commands(queue)!;
+            gpu::CommandList list = gpu::begin_commands(&primary_allocator)!;
             defer (void)gpu::discard_commands(&list);
             record_chunk(
                 list:        &list,
@@ -272,31 +295,25 @@ fn NanoDuration? run_once(
         }
         record_time = clk.mark();
     } else {
-        WorkerArgs[] wargs = mem::new_array(WorkerArgs, MAX_WORKERS);
-        defer mem::free(wargs.ptr);
-        Thread[MAX_WORKERS] threads;
-        uint threads_created;
-        uint threads_joined;
-        defer {
-            for (uint w = threads_joined; w < threads_created; w++) {
-                (void)threads[w].join();
-            }
-            for (uint w = 0; w < threads_created; w++) {
-                for (uint i = 0; i < wargs[w].list_count; i++) {
-                    (void)gpu::discard_executable_commands(&wargs[w].lists[i]);
-                }
-            }
-        }
         for (uint w = 0; w < workers; w++) {
-            wargs[w] = {
-                .queue       = queue,
+            gpu::CommandAllocatorDesc worker_allocator_desc = {
+                .command_buffer_capacity = (CHUNKS + workers - 1 - w) / workers,
+                .debug_name              = "mtrec_worker",
+            };
+            worker_args[w] = {
                 .target_view = target_view,
                 .pipeline    = pipeline,
                 .roots_base  = roots_base,
                 .first_chunk = w,
                 .stride      = workers,
             };
-            threads[w].create(&record_worker, &wargs[w])!;
+            worker_args[w].allocator = gpu::create_command_allocator(
+                device,
+                queue,
+                &worker_allocator_desc,
+            )!;
+            worker_allocators_created++;
+            threads[w].create(&record_worker, &worker_args[w])!;
             threads_created++;
         }
         for (uint w = 0; w < workers; w++) {
@@ -305,14 +322,16 @@ fn NanoDuration? run_once(
         }
         record_time = clk.mark();
         bool failed = false;
-        for (uint w = 0; w < workers; w++) failed = failed || wargs[w].failed;
+        for (uint w = 0; w < workers; w++) {
+            failed = failed || worker_args[w].failed;
+        }
         if (failed) return gpu::INVALID_ARGUMENT~;
         // Chunk order in the submit does not affect pixels (disjoint bands),
         // but keep it deterministic anyway: chunk index = w + i*workers.
         for (uint w = 0; w < workers; w++) {
-            for (uint i = 0; i < wargs[w].list_count; i++) {
-                all_lists[w + i * workers] = wargs[w].lists[i];
-                wargs[w].lists[i] = {};
+            for (uint i = 0; i < worker_args[w].list_count; i++) {
+                all_lists[w + i * workers] = worker_args[w].lists[i];
+                worker_args[w].lists[i] = {};
                 list_count++;
             }
         }
@@ -322,8 +341,7 @@ fn NanoDuration? run_once(
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
 
     read_color_target(
-        device:              device,
-        queue:               queue,
+        allocator:           &primary_allocator,
         target:              target,
         producer_completion: completion,
         out:                 out,

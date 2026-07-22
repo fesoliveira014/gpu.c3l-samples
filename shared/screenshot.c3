@@ -8,9 +8,8 @@ import sample_png;
    pre-present, with the PRESENT state). The source needs
    transfer_src usage — swapchain images carry it when the surface allows. *>
 fn void? capture_texture_png(
-    gpu::Device* device,
+    gpu::CommandAllocator* allocator,
     gpu::CompletionPoint producer_completion,
-    gpu::QueueKind queue_kind,
     gpu::TextureHandle src,
     uint width,
     uint height,
@@ -18,20 +17,16 @@ fn void? capture_texture_png(
     gpu::TextureState from_state,
     String path,
 ) {
+    if (allocator == null) return gpu::INVALID_HANDLE~;
     if (width == 0 || height == 0 || !producer_completion.is_valid()) {
         return gpu::INVALID_ARGUMENT~;
     }
+    gpu::wait_completion(producer_completion)!;
     usz pixel_count = (usz)width * (usz)height;
     if (pixel_count > usz::max / 4) return gpu::INVALID_ARGUMENT~;
     usz byte_count = pixel_count * 4;
 
-    gpu::QueueRoles access;
-    switch (queue_kind) {
-        case gpu::QueueKind.GRAPHICS: access.graphics = true;
-        case gpu::QueueKind.COMPUTE:  access.compute = true;
-        case gpu::QueueKind.TRANSFER: access.transfer = true;
-        default: return gpu::INVALID_ARGUMENT~;
-    }
+    gpu::QueueRoles access = allocator.queue.roles;
     gpu::AllocationDesc readback_desc = {
         .size         = byte_count,
         .alignment    = 16,
@@ -39,12 +34,13 @@ fn void? capture_texture_png(
         .access       = access,
         .debug_name   = "sample_capture_readback",
     };
+    gpu::Device* device = &allocator.device;
     gpu::GpuAllocation readback = gpu::allocate_memory(device, &readback_desc)!;
     defer (void)gpu::free_allocation(device, &readback);
     gpu::GpuSpan readback_span = gpu::get_allocation_span(device, readback)!;
 
-    gpu::Queue queue = gpu::get_queue(device, queue_kind)!;
-    gpu::CommandList commands = gpu::begin_commands(queue)!;
+    gpu::Queue queue = allocator.queue;
+    gpu::CommandList commands = gpu::begin_commands(allocator)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_transfer = {
         .texture = src,
@@ -78,14 +74,7 @@ fn void? capture_texture_png(
     gpu::cmd_texture_barrier(&commands, &restore)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
-    gpu::CompletionWait[1] waits = {{
-        .point  = producer_completion,
-        .before = { .transfer },
-    }};
-    gpu::SubmitDesc submit = {
-        .command_lists    = lists[..],
-        .completion_waits = waits[..],
-    };
+    gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
     gpu::wait_completion(completion)!;
     gpu::invalidate_mapped_span(device, readback_span)!;

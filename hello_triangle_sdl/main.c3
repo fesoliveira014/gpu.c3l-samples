@@ -15,6 +15,7 @@ const usz UPLOAD_BYTES_PER_SLOT = 64;
 
 struct FrameWork {
     gpu::Device*                 device;
+    gpu::CommandAllocator*       command_allocator;
     sample_window::SampleWindow* window;
     gpu::SwapchainHandle         swapchain;
     gpu::SwapchainInfo*          swapchain_info;
@@ -62,10 +63,9 @@ fn void? render_frame(FrameWork* ctx) {
         if (owned_fault != gpu::INVALID_ARGUMENT) return gpu::INVALID_RESOURCE_STATE~;
     }
 
-    gpu::Queue graphics_queue = gpu::get_queue(ctx.device, gpu::QueueKind.GRAPHICS)!;
     gpu::AttachmentViewHandle color_view = acquired.attachment_view;
 
-    gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(ctx.command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     if (!*ctx.checker_uploaded) {
@@ -173,14 +173,13 @@ fn void? render_frame(FrameWork* ctx) {
         .readiness        = acquired.readiness,
         .readiness_before = { .color_output },
     };
-    *ctx.last_graphics = gpu::submit(graphics_queue, &submit)!;
+    *ctx.last_graphics = gpu::submit(ctx.command_allocator.queue, &submit)!;
     sample_frame_upload::retire_frame_upload(&upload_batch, *ctx.last_graphics)!;
 
     if (ctx.options.capture_frame(ctx.frame)) {
         sample_capture::capture_texture_png(
-            device:              ctx.device,
+            allocator:           ctx.command_allocator,
             producer_completion: *ctx.last_graphics,
-            queue_kind:          gpu::QueueKind.GRAPHICS,
             src:                 acquired.texture,
             width:       ctx.swapchain_info.width,
             height:      ctx.swapchain_info.height,
@@ -219,6 +218,10 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator graphics_allocator =
+        gpu::create_command_allocator(&device, graphics_queue)!;
+    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
@@ -342,6 +345,7 @@ fn void? run(sample_args::Options options) {
 
         FrameWork work = {
             .device           = &device,
+            .command_allocator = &graphics_allocator,
             .window           = &window,
             .swapchain        = swapchain,
             .swapchain_info   = &swapchain_info,

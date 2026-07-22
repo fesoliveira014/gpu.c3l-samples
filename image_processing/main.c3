@@ -49,6 +49,10 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::destroy_runtime(&runtime);
     gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::CommandAllocator compute_allocator =
+        gpu::create_command_allocator(&device, compute_queue)!;
+    defer (void)gpu::destroy_command_allocator(&compute_allocator);
 
     gpu::TextureHandle image_a = create_storage_image(&device, true, "plasma_a")!;
     defer (void)gpu::destroy_texture(&device, image_a);
@@ -128,9 +132,7 @@ fn void? run(sample_args::Options options) {
     hist_root.size     = IMAGE_SIZE;
     gpu::flush_mapped_span(&device, roots_span)!;
 
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
-
-    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(&compute_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::cmd_fill_buffer(&cmd, bins_span, 0)!;
@@ -219,9 +221,8 @@ fn void? run(sample_args::Options options) {
 
     if (options.wants_screenshot()) {
         sample_capture::capture_texture_png(
-            device:              &device,
+            allocator:           &compute_allocator,
             producer_completion: completion,
-            queue_kind:          gpu::QueueKind.COMPUTE,
             src:                 image_a,
             width:               IMAGE_SIZE,
             height:              IMAGE_SIZE,

@@ -40,10 +40,11 @@ const usz BUILD_ROOT_UPLOAD_OFFSET =
     ((FRAGMENT_ROOTS_UPLOAD_OFFSET + FRAGMENT_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
 const usz UPLOAD_BYTES_PER_SLOT = BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size;
 const uint GENERATED_PREPROCESS_BUFFER_COUNT = sample_frame_upload::FRAME_UPLOAD_SLOT_COUNT;
+const usz GENERATED_PREPROCESS_BUDGET_BYTES = 32 * 1024 * 1024;
 $assert UPLOAD_BYTES_PER_SLOT == 31896;
 
 fn void? reserve_generated_draw_scratch(
-    gpu::Queue queue,
+    gpu::CommandAllocator* allocator,
     gpu::PipelineHandle pipeline,
 ) {
     gpu::GeneratedScratchDesc desc = {
@@ -52,7 +53,7 @@ fn void? reserve_generated_draw_scratch(
         .max_commands_per_list   = INSTANCES,
         .preprocess_buffer_count = GENERATED_PREPROCESS_BUFFER_COUNT,
     };
-    return gpu::reserve_generated_scratch(queue, &desc);
+    return gpu::reserve_generated_scratch(allocator, &desc);
 }
 
 fn int main(String[] args) {
@@ -102,15 +103,17 @@ fn void? run(sample_args::Options options) {
         &device,
         gpu::QueueKind.GRAPHICS,
     )!;
-    io::printfn(
-        "gpu_driven_draw_sdl: generated-work path %s (max %d)",
-        use_generated ? "on" : "off",
-        caps.max_generated_work_count,
-    );
-    io::printfn(
-        "gpu_driven_draw_sdl: indirect-count fallback %s",
-        use_count ? "on" : "off",
-    );
+    gpu::CommandAllocatorDesc graphics_allocator_desc = {
+        .command_buffer_capacity     = GENERATED_PREPROCESS_BUFFER_COUNT + 1,
+        .generated_preprocess_bytes  = GENERATED_PREPROCESS_BUDGET_BYTES,
+        .debug_name                  = "gpu_driven_graphics",
+    };
+    gpu::CommandAllocator graphics_allocator = gpu::create_command_allocator(
+        &device,
+        graphics_queue,
+        &graphics_allocator_desc,
+    )!;
+    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
 
     uint width;
     uint height;
@@ -159,13 +162,30 @@ fn void? run(sample_args::Options options) {
     }
     bool scratch_reserved = false;
     if (use_generated && pipeline_valid) {
-        reserve_generated_draw_scratch(graphics_queue, pipeline)!;
-        scratch_reserved = true;
+        if (catch err = reserve_generated_draw_scratch(
+            &graphics_allocator,
+            pipeline,
+        )) {
+            if (err != gpu::COMMAND_ALLOCATOR_CAPACITY_EXCEEDED) return err~;
+            use_generated = false;
+            use_count = caps.draw_indirect_count;
+        } else {
+            scratch_reserved = true;
+        }
     }
+    io::printfn(
+        "gpu_driven_draw_sdl: generated-work path %s (max %d)",
+        use_generated ? "on" : "off",
+        caps.max_generated_work_count,
+    );
+    io::printfn(
+        "gpu_driven_draw_sdl: indirect-count fallback %s",
+        use_count ? "on" : "off",
+    );
     defer {
         if (scratch_reserved) {
             (void)gpu::release_generated_scratch(
-                graphics_queue,
+                &graphics_allocator,
                 pipeline,
                 gpu::GeneratedWorkKind.DRAW_INDEXED,
             );
@@ -193,7 +213,7 @@ fn void? run(sample_args::Options options) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (scratch_reserved) {
                 gpu::release_generated_scratch(
-                    graphics_queue,
+                    &graphics_allocator,
                     pipeline,
                     gpu::GeneratedWorkKind.DRAW_INDEXED,
                 )!;
@@ -205,8 +225,18 @@ fn void? run(sample_args::Options options) {
             pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
             pipeline_valid = true;
             if (use_generated) {
-                reserve_generated_draw_scratch(graphics_queue, pipeline)!;
-                scratch_reserved = true;
+                if (catch err = reserve_generated_draw_scratch(
+                    &graphics_allocator,
+                    pipeline,
+                )) {
+                    if (err != gpu::COMMAND_ALLOCATOR_CAPACITY_EXCEEDED) {
+                        return err~;
+                    }
+                    use_generated = false;
+                    use_count = caps.draw_indirect_count;
+                } else {
+                    scratch_reserved = true;
+                }
             }
         }
 
@@ -353,7 +383,7 @@ fn void? run(sample_args::Options options) {
             build_root_span,
         )!;
 
-        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
 
         gpu::cmd_bind_pipeline(&cmd, build_pipeline)!;
@@ -455,17 +485,16 @@ fn void? run(sample_args::Options options) {
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                device:              &device,
+                allocator:           &graphics_allocator,
                 producer_completion: last_graphics,
-                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:                 acquired.texture,
-                width:       swapchain_info.width,
-                height:      swapchain_info.height,
-                format:      swapchain_info.format,
-                from_state:  {
+                width:               swapchain_info.width,
+                height:              swapchain_info.height,
+                format:              swapchain_info.format,
+                from_state:          {
                     .layout = gpu::TextureLayout.PRESENT,
                 },
-                path:        options.screenshot_path,
+                path:                options.screenshot_path,
             )!;
         }
 

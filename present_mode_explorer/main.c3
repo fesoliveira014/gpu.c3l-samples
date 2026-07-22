@@ -60,6 +60,7 @@ fn int main(String[] args) {
    stats. Captures a screenshot on frame `capture_at` when non-negative. *>
 fn ModeStats? run_mode_window(
     gpu::Device* device,
+    gpu::CommandAllocator* command_allocator,
     sample_frame_upload::FrameUploadRing* upload_ring,
     gpu::SwapchainHandle swapchain,
     sample_window::SampleWindow* window,
@@ -140,9 +141,7 @@ fn ModeStats? run_mode_window(
         gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
         sample_frame_upload::flush_frame_upload(&upload)!;
 
-        gpu::Queue graphics_queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
-
-        gpu::CommandList cmd = gpu::begin_commands(graphics_queue)!;
+        gpu::CommandList cmd = gpu::begin_commands(command_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
@@ -194,14 +193,13 @@ fn ModeStats? run_mode_window(
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
-        last_graphics = gpu::submit(graphics_queue, &submit)!;
+        last_graphics = gpu::submit(command_allocator.queue, &submit)!;
         sample_frame_upload::retire_frame_upload(&upload, last_graphics)!;
 
         if (frame == capture_at) {
             sample_capture::capture_texture_png(
-                device:              device,
+                allocator:           command_allocator,
                 producer_completion: last_graphics,
-                queue_kind:          gpu::QueueKind.GRAPHICS,
                 src:         acquired.texture,
                 width:       *width,
                 height:      *height,
@@ -257,6 +255,10 @@ fn void? run(sample_args::Options options) {
 
     gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
+    gpu::CommandAllocator graphics_allocator =
+        gpu::create_command_allocator(&device, graphics_queue)!;
+    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
@@ -336,17 +338,18 @@ fn void? run(sample_args::Options options) {
             swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
         }
         ModeStats stats = run_mode_window(
-            device:          &device,
-            upload_ring:     &upload_ring,
-            swapchain:       swapchain,
-            window:          &window,
-            pipeline:        &pipeline,
-            swapchain_info:  swapchain_info,
-            width:           &width,
-            height:          &height,
-            frames:          frames_per_mode,
-            capture_at:      mode == gpu::PresentMode.FIFO && options.wants_screenshot() ? frames_per_mode - 1 : -1,
-            screenshot_path: options.screenshot_path,
+            device:            &device,
+            command_allocator: &graphics_allocator,
+            upload_ring:       &upload_ring,
+            swapchain:         swapchain,
+            window:            &window,
+            pipeline:          &pipeline,
+            swapchain_info:    swapchain_info,
+            width:             &width,
+            height:            &height,
+            frames:            frames_per_mode,
+            capture_at:        mode == gpu::PresentMode.FIFO && options.wants_screenshot() ? frames_per_mode - 1 : -1,
+            screenshot_path:   options.screenshot_path,
         )!;
         io::printfn("  %s  frame %6.2f ms mean (%.2f..%.2f)   acquire %5.2f ms   ~%.0f fps",
             mode_name(mode), stats.mean_ms, stats.min_ms, stats.max_ms, stats.acquire_ms,

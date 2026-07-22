@@ -57,6 +57,7 @@ struct Fleet {
 <* Upload payloads for texture slice [first, first+count) in one command list. *>
 fn void? upload_slice(
     gpu::Device* device,
+    gpu::CommandAllocator* command_allocator,
     Fleet* fleet,
     gpu::GpuSpan staging_span,
     uint first,
@@ -73,9 +74,7 @@ fn void? upload_slice(
     }
     gpu::flush_mapped_span(device, upload_span)!;
 
-    gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
-
-    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
     for (uint i = 0; i < count; i++) {
         gpu::TextureHandle tex = fleet.textures[first + i];
@@ -106,13 +105,14 @@ fn void? upload_slice(
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(command_allocator.queue, &submit)!;
     gpu::wait_completion(completion)!;
 }
 
 fn void? dispatch_verify(
     gpu::GpuSpan root_span,
     gpu::Device* device,
+    gpu::CommandAllocator* command_allocator,
     Fleet* fleet,
     gpu::PipelineHandle pipeline,
     gpu::GpuSpan index_span,
@@ -132,9 +132,7 @@ fn void? dispatch_verify(
     gpu::flush_mapped_span(device, root_span)!;
     gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
 
-    gpu::Queue compute_queue = gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;
-
-    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
     gpu::cmd_bind_pipeline(&cmd, pipeline)!;
     gpu::cmd_dispatch(
@@ -150,7 +148,7 @@ fn void? dispatch_verify(
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(command_allocator.queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion)!;
 }
@@ -186,6 +184,10 @@ fn void? run() {
     defer (void)gpu::destroy_runtime(&runtime);
     gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::CommandAllocator compute_allocator =
+        gpu::create_command_allocator(&device, compute_queue)!;
+    defer (void)gpu::destroy_command_allocator(&compute_allocator);
 
     Fleet fleet = {
         .textures = mem::new_array(gpu::TextureHandle, TEXTURE_COUNT),
@@ -272,24 +274,26 @@ fn void? run() {
 
     for (uint first = 0; first < TEXTURE_COUNT; first += UPLOAD_BATCH) {
         upload_slice(
-            device:       &device,
-            fleet:        &fleet,
-            staging_span: staging_span,
-            first:        first,
-            count:        UPLOAD_BATCH,
+            device:            &device,
+            command_allocator: &compute_allocator,
+            fleet:             &fleet,
+            staging_span:      staging_span,
+            first:             first,
+            count:             UPLOAD_BATCH,
         )!;
     }
     NanoDuration upload_time = clk.mark();
 
     dispatch_verify(
-        root_span:     root_span,
-        device:        &device,
-        fleet:         &fleet,
-        pipeline:      pipeline,
-        index_span:    index_span,
-        index_address: index_address,
-        out_address:   out_address,
-        sampler:       sampler,
+        root_span:         root_span,
+        device:            &device,
+        command_allocator: &compute_allocator,
+        fleet:             &fleet,
+        pipeline:          pipeline,
+        index_span:        index_span,
+        index_address:     index_address,
+        out_address:       out_address,
+        sampler:           sampler,
     )!;
     NanoDuration fill_verify_time = clk.mark();
     gpu::invalidate_mapped_span(&device, out_span)!;
@@ -309,23 +313,25 @@ fn void? run() {
         }
         for (uint first = cursor; first < cursor + CHURN_SLICE; first += UPLOAD_BATCH) {
             upload_slice(
-                device:       &device,
-                fleet:        &fleet,
-                staging_span: staging_span,
-                first:        first,
-                count:        UPLOAD_BATCH,
+                device:            &device,
+                command_allocator: &compute_allocator,
+                fleet:             &fleet,
+                staging_span:      staging_span,
+                first:             first,
+                count:             UPLOAD_BATCH,
             )!;
         }
 
         dispatch_verify(
-            root_span:     root_span,
-            device:        &device,
-            fleet:         &fleet,
-            pipeline:      pipeline,
-            index_span:    index_span,
-            index_address: index_address,
-            out_address:   out_address,
-            sampler:       sampler,
+            root_span:         root_span,
+            device:            &device,
+            command_allocator: &compute_allocator,
+            fleet:             &fleet,
+            pipeline:          pipeline,
+            index_span:        index_span,
+            index_address:     index_address,
+            out_address:       out_address,
+            sampler:           sampler,
         )!;
         gpu::invalidate_mapped_span(&device, out_span)!;
         check_results(&device, &fleet, out_span)!;

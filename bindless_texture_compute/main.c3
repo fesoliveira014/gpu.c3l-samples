@@ -30,6 +30,10 @@ fn void? run() {
     defer (void)gpu::destroy_runtime(&runtime);
     gpu::Device device = sample_device::create_strict_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
+    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
+    gpu::CommandAllocator compute_allocator =
+        gpu::create_command_allocator(&device, compute_queue)!;
+    defer (void)gpu::destroy_command_allocator(&compute_allocator);
 
     gpu::TextureDesc tex_desc = {
         .width      = TEX_SIZE,
@@ -108,9 +112,7 @@ fn void? run() {
     sample_root.height        = TEX_SIZE;
     gpu::flush_mapped_span(&device, roots_span)!;
 
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
-
-    gpu::CommandList cmd = gpu::begin_commands(compute_queue)!;
+    gpu::CommandList cmd = gpu::begin_commands(&compute_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier to_general = {
