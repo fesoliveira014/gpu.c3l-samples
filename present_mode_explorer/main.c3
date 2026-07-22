@@ -111,7 +111,11 @@ fn ModeStats? run_mode_window(
         *height = swapchain_info.height;
 
         Clock acquire_clk = clock::now();
-        gpu::AcquiredImage? acquired = gpu::acquire_next_image(device, swapchain);
+        gpu::AcquiredImage? acquired = gpu::acquire_next_image(
+            device,
+            swapchain,
+            sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
+        );
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {

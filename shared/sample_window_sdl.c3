@@ -8,6 +8,8 @@ import gpu::surface::x11;
 
 faultdef WINDOW_INIT_FAILED, UNSUPPORTED_VIDEO_DRIVER;
 
+const ulong FRAME_ACQUIRE_TIMEOUT_NS = 2_000_000;
+
 struct SampleWindow {
     sdl::Window* window;
 }

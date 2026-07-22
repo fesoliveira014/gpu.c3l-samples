@@ -73,6 +73,11 @@ Windowed samples accept `--frames N` for an automatic smoke-test exit and
 ./build/hello_triangle_sdl --frames 30
 ```
 
+Every windowed loop uses the shared finite two-millisecond image-acquisition
+budget. `WAIT_TIMEOUT` skips the current frame and returns to SDL event
+processing, which avoids both an unbounded WSI wait and a hot nonblocking retry
+loop.
+
 ## Smoke matrix
 
 All GPU samples require Vulkan 1.3. Windowed samples also require SDL3 and
