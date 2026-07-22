@@ -47,14 +47,6 @@ fn bool mode_supported(gpu::PresentModeSupport support, gpu::PresentMode mode) {
     }
 }
 
-fn gpu::TextureUse? swapchain_texture_use(gpu::TextureUse use) {
-    switch (use) {
-        case gpu::TextureUse.UNDEFINED: return gpu::TextureUse.UNDEFINED;
-        case gpu::TextureUse.PRESENT:   return gpu::TextureUse.PRESENT;
-        default:                           return gpu::INVALID_RESOURCE_STATE~;
-    }
-}
-
 fn int main(String[] args) {
     if (catch err = run(sample_args::parse_options(args))) {
         io::printfn("present_mode_explorer: FAIL (%s)", err);
@@ -154,8 +146,12 @@ fn ModeStats? run_mode_window(
         defer (void)gpu::discard_commands(&cmd);
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
-            before:  swapchain_texture_use(acquired.prior_use)!,
-            after:   gpu::TextureUse.COLOR_ATTACHMENT,
+            before:  acquired.prior_state,
+            after:   {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
@@ -181,8 +177,14 @@ fn ModeStats? run_mode_window(
 
         gpu::TextureBarrier to_present = gpu::texture_transition(
             texture: acquired.texture,
-            before:  gpu::TextureUse.COLOR_ATTACHMENT,
-            after:   gpu::TextureUse.PRESENT,
+            before:  {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
+            after:   {
+                .layout = gpu::TextureLayout.PRESENT,
+            },
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
@@ -204,7 +206,9 @@ fn ModeStats? run_mode_window(
                 width:       *width,
                 height:      *height,
                 format:      swapchain_info.format,
-                from_use:    gpu::TextureUse.PRESENT,
+                from_state:  {
+                    .layout = gpu::TextureLayout.PRESENT,
+                },
                 path:        screenshot_path,
             )!;
         }

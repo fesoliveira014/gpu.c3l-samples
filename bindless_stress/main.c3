@@ -81,18 +81,26 @@ fn void? upload_slice(
     for (uint i = 0; i < count; i++) {
         gpu::TextureHandle tex = fleet.textures[first + i];
         gpu::TextureBarrier to_dst = {
-            .texture       = tex,
-            .before        = gpu::TextureUse.UNDEFINED,
-            .after         = gpu::TextureUse.TRANSFER_DESTINATION,
+            .texture = tex,
+            .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+            .after   = {
+                .layout = gpu::TextureLayout.TRANSFER_DESTINATION,
+                .stages = { .transfer },
+                .access = { .write },
+            },
         };
         gpu::cmd_texture_barrier(&cmd, &to_dst)!;
         gpu::GpuSpan slice = upload_span.checked_subspan((usz)i * 4, 4)!;
         gpu::BufferTextureCopyDesc upload = { .src = slice, .texture = tex };
         gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
         gpu::TextureBarrier to_read = {
-            .texture       = tex,
-            .before        = gpu::TextureUse.TRANSFER_DESTINATION,
-            .after         = gpu::TextureUse.SAMPLED_COMPUTE,
+            .texture = tex,
+            .before  = {
+                .layout = gpu::TextureLayout.TRANSFER_DESTINATION,
+                .stages = { .transfer },
+                .access = { .write },
+            },
+            .after   = gpu::sampled_at({ .compute }),
         };
         gpu::cmd_texture_barrier(&cmd, &to_read)!;
     }

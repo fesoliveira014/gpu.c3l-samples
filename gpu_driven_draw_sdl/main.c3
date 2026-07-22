@@ -371,19 +371,14 @@ fn void? run(sample_args::Options options) {
         };
         gpu::cmd_barrier(&cmd, &indirect_ready)!;
 
-        gpu::TextureUse swapchain_before;
-        switch (acquired.prior_use) {
-            case gpu::TextureUse.UNDEFINED:
-                swapchain_before = gpu::TextureUse.UNDEFINED;
-            case gpu::TextureUse.PRESENT:
-                swapchain_before = gpu::TextureUse.PRESENT;
-            default:
-                return gpu::INVALID_RESOURCE_STATE~;
-        }
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
-            before:  swapchain_before,
-            after:   gpu::TextureUse.COLOR_ATTACHMENT,
+            before:  acquired.prior_state,
+            after:   {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
         )!;
         gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 
@@ -433,9 +428,15 @@ fn void? run(sample_args::Options options) {
         gpu::cmd_end_render_pass(&cmd)!;
 
         gpu::TextureBarrier to_present = {
-            .texture       = acquired.texture,
-            .before        = gpu::TextureUse.COLOR_ATTACHMENT,
-            .after         = gpu::TextureUse.PRESENT,
+            .texture = acquired.texture,
+            .before  = {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
+            .after   = {
+                .layout = gpu::TextureLayout.PRESENT,
+            },
         };
         gpu::cmd_texture_barrier(&cmd, &to_present)!;
 
@@ -459,7 +460,9 @@ fn void? run(sample_args::Options options) {
                 width:       swapchain_info.width,
                 height:      swapchain_info.height,
                 format:      swapchain_info.format,
-                from_use:    gpu::TextureUse.PRESENT,
+                from_state:  {
+                    .layout = gpu::TextureLayout.PRESENT,
+                },
                 path:        options.screenshot_path,
             )!;
         }

@@ -75,9 +75,17 @@ fn void? read_color_target(
     gpu::CommandList commands = gpu::begin_commands(queue)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_source = {
-        .texture       = target,
-        .before        = gpu::TextureUse.COLOR_ATTACHMENT,
-        .after         = gpu::TextureUse.TRANSFER_SOURCE,
+        .texture = target,
+        .before  = {
+            .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+            .stages = { .color_output },
+            .access = { .read, .write },
+        },
+        .after   = {
+            .layout = gpu::TextureLayout.TRANSFER_SOURCE,
+            .stages = { .transfer },
+            .access = { .read },
+        },
     };
     gpu::cmd_texture_barrier(&commands, &to_source)!;
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
@@ -88,9 +96,17 @@ fn void? read_color_target(
     };
     gpu::cmd_barrier(&commands, &to_host)!;
     gpu::TextureBarrier restore = {
-        .texture       = target,
-        .before        = gpu::TextureUse.TRANSFER_SOURCE,
-        .after         = gpu::TextureUse.COLOR_ATTACHMENT,
+        .texture = target,
+        .before  = {
+            .layout = gpu::TextureLayout.TRANSFER_SOURCE,
+            .stages = { .transfer },
+            .access = { .read },
+        },
+        .after   = {
+            .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+            .stages = { .color_output },
+            .access = { .read, .write },
+        },
     };
     gpu::cmd_texture_barrier(&commands, &restore)!;
 
@@ -249,24 +265,36 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier checker_to_dst = {
-        .texture       = checker,
-        .before        = gpu::TextureUse.UNDEFINED,
-        .after         = gpu::TextureUse.TRANSFER_DESTINATION,
+        .texture = checker,
+        .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+        .after   = {
+            .layout = gpu::TextureLayout.TRANSFER_DESTINATION,
+            .stages = { .transfer },
+            .access = { .write },
+        },
     };
     gpu::cmd_texture_barrier(&cmd, &checker_to_dst)!;
     gpu::BufferTextureCopyDesc upload = { .src = staging_span, .texture = checker };
     gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
     gpu::TextureBarrier checker_to_read = {
-        .texture       = checker,
-        .before        = gpu::TextureUse.TRANSFER_DESTINATION,
-        .after         = gpu::TextureUse.SAMPLED_FRAGMENT,
+        .texture = checker,
+        .before  = {
+            .layout = gpu::TextureLayout.TRANSFER_DESTINATION,
+            .stages = { .transfer },
+            .access = { .write },
+        },
+        .after   = gpu::sampled_at({ .fragment_shader }),
     };
     gpu::cmd_texture_barrier(&cmd, &checker_to_read)!;
 
     gpu::TextureBarrier to_attach = {
-        .texture       = target,
-        .before        = gpu::TextureUse.UNDEFINED,
-        .after         = gpu::TextureUse.COLOR_ATTACHMENT,
+        .texture = target,
+        .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+        .after   = {
+            .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+            .stages = { .color_output },
+            .access = { .read, .write },
+        },
     };
     gpu::cmd_texture_barrier(&cmd, &to_attach)!;
 

@@ -5,7 +5,7 @@ import sample_png;
 
 <* Read back a color target and write it as a PNG. Works on offscreen targets
    and acquired swapchain images (capture point for swapchain: post-submit,
-   pre-present, with the PRESENT semantic use). The source needs
+   pre-present, with the PRESENT state). The source needs
    transfer_src usage — swapchain images carry it when the surface allows. *>
 fn void? capture_texture_png(
     gpu::Device* device,
@@ -15,7 +15,7 @@ fn void? capture_texture_png(
     uint width,
     uint height,
     gpu::Format format,
-    gpu::TextureUse from_use,
+    gpu::TextureState from_state,
     String path,
 ) {
     if (width == 0 || height == 0 || !producer_completion.is_valid()) {
@@ -47,9 +47,13 @@ fn void? capture_texture_png(
     gpu::CommandList commands = gpu::begin_commands(queue)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_transfer = {
-        .texture       = src,
-        .before        = from_use,
-        .after         = gpu::TextureUse.TRANSFER_SOURCE,
+        .texture = src,
+        .before  = from_state,
+        .after   = {
+            .layout = gpu::TextureLayout.TRANSFER_SOURCE,
+            .stages = { .transfer },
+            .access = { .read },
+        },
     };
     gpu::cmd_texture_barrier(&commands, &to_transfer)!;
     gpu::TextureBufferCopyDesc copy = {
@@ -63,9 +67,13 @@ fn void? capture_texture_png(
     };
     gpu::cmd_barrier(&commands, &host_read)!;
     gpu::TextureBarrier restore = {
-        .texture       = src,
-        .before        = gpu::TextureUse.TRANSFER_SOURCE,
-        .after         = from_use,
+        .texture = src,
+        .before  = {
+            .layout = gpu::TextureLayout.TRANSFER_SOURCE,
+            .stages = { .transfer },
+            .access = { .read },
+        },
+        .after   = from_state,
     };
     gpu::cmd_texture_barrier(&commands, &restore)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };

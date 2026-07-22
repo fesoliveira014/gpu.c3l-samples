@@ -135,9 +135,17 @@ fn void? read_color_target(
     gpu::CommandList commands = gpu::begin_commands(queue)!;
     defer (void)gpu::discard_commands(&commands);
     gpu::TextureBarrier to_source = {
-        .texture       = target,
-        .before        = gpu::TextureUse.COLOR_ATTACHMENT,
-        .after         = gpu::TextureUse.TRANSFER_SOURCE,
+        .texture = target,
+        .before  = {
+            .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+            .stages = { .color_output },
+            .access = { .read, .write },
+        },
+        .after   = {
+            .layout = gpu::TextureLayout.TRANSFER_SOURCE,
+            .stages = { .transfer },
+            .access = { .read },
+        },
     };
     gpu::cmd_texture_barrier(&commands, &to_source)!;
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
@@ -148,9 +156,17 @@ fn void? read_color_target(
     };
     gpu::cmd_barrier(&commands, &to_host)!;
     gpu::TextureBarrier restore = {
-        .texture       = target,
-        .before        = gpu::TextureUse.TRANSFER_SOURCE,
-        .after         = gpu::TextureUse.COLOR_ATTACHMENT,
+        .texture = target,
+        .before  = {
+            .layout = gpu::TextureLayout.TRANSFER_SOURCE,
+            .stages = { .transfer },
+            .access = { .read },
+        },
+        .after   = {
+            .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+            .stages = { .color_output },
+            .access = { .read, .write },
+        },
     };
     gpu::cmd_texture_barrier(&commands, &restore)!;
 
@@ -202,9 +218,13 @@ fn NanoDuration? run_once(
     // first run needs a transition out of UNDEFINED.
     if (!*target_seen) {
         gpu::TextureBarrier to_attach = {
-            .texture       = target,
-            .before        = gpu::TextureUse.UNDEFINED,
-            .after         = gpu::TextureUse.COLOR_ATTACHMENT,
+            .texture = target,
+            .before  = { .layout = gpu::TextureLayout.UNDEFINED },
+            .after   = {
+                .layout = gpu::TextureLayout.COLOR_ATTACHMENT,
+                .stages = { .color_output },
+                .access = { .read, .write },
+            },
         };
         gpu::cmd_texture_barrier(&preamble, &to_attach)!;
     }
