@@ -301,10 +301,6 @@ fn void? run(sample_args::Options options) {
         .clear = { .rgba = { (float)CLEAR_R / 255.0f, (float)CLEAR_G / 255.0f, (float)CLEAR_B / 255.0f, 1.0f } },
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = RT_SIZE, .height = RT_SIZE };
-    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-    gpu::cmd_begin_render_pass(&cmd, &pass)!;
-    gpu::DepthState depth_state = {};
-    gpu::cmd_set_depth_state(&cmd, &depth_state)!;
     gpu::Viewport[2] viewports = {
         {
             .width = (float)RT_SIZE / 2.0f, .height = (float)RT_SIZE,
@@ -322,9 +318,17 @@ fn void? run(sample_args::Options options) {
             .width = (int)RT_SIZE / 2, .height = (int)RT_SIZE / 2,
         },
     };
+    gpu::GraphicsState graphics =
+        gpu::full_render_graphics_state(pass.width, pass.height)!;
+    graphics.viewport = viewports[0];
+    graphics.scissor = scissors[0];
+    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+    gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
     for (uint i = 0; i < viewports.len; i++) {
-        gpu::cmd_set_viewport(&cmd, &viewports[i])!;
-        gpu::cmd_set_scissor(&cmd, &scissors[i])!;
+        if (i > 0) {
+            gpu::cmd_set_viewport(&cmd, &viewports[i])!;
+            gpu::cmd_set_scissor(&cmd, &scissors[i])!;
+        }
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    verts_address,
