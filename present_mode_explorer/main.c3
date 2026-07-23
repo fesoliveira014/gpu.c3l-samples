@@ -165,10 +165,10 @@ fn ModeStats? run_mode_window(
             .clear    = { .rgba = { 0, 0, 0, 1 } },
         }};
         gpu::RenderPassDesc pass = { .colors = colors[..], .width = *width, .height = *height };
+        gpu::GraphicsState graphics =
+            gpu::full_render_graphics_state(pass.width, pass.height)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline.handle)!;
-        gpu::cmd_begin_render_pass(&cmd, &pass)!;
-        gpu::DepthState depth_state = {};
-        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+        gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,

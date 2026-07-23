@@ -409,10 +409,10 @@ fn void? run(sample_args::Options options) {
             .width  = swapchain_info.width,
             .height = swapchain_info.height,
         };
+        gpu::GraphicsState graphics =
+            gpu::full_render_graphics_state(pass.width, pass.height)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass(&cmd, &pass)!;
-        gpu::DepthState depth_state = {};
-        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+        gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,

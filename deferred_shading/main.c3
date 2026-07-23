@@ -508,14 +508,15 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc geometry_pass = { .colors = gbuffer_colors[..], .depth = &gbuffer_depth, .width = width, .height = height };
-        gpu::cmd_bind_pipeline(&cmd, geom_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &geometry_pass)!;
-        gpu::DepthState geometry_depth_state = {
+        gpu::GraphicsState geometry_graphics =
+            gpu::full_render_graphics_state(geometry_pass.width, geometry_pass.height)!;
+        geometry_graphics.depth = {
             .test_enable  = true,
             .write_enable = true,
             .compare      = gpu::CompareOp.LESS,
         };
-        gpu::cmd_set_depth_state(&cmd, &geometry_depth_state)!;
+        gpu::cmd_bind_pipeline(&cmd, geom_pipe)!;
+        gpu::cmd_begin_render_pass(&cmd, &geometry_pass, &geometry_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    geometry_root_address,
@@ -556,10 +557,10 @@ fn void? run(sample_args::Options options) {
             .clear    = { .rgba = { 0, 0, 0, 1 } },
         }};
         gpu::RenderPassDesc resolve_pass = { .colors = swap_colors[..], .width = width, .height = height };
+        gpu::GraphicsState resolve_graphics =
+            gpu::full_render_graphics_state(resolve_pass.width, resolve_pass.height)!;
         gpu::cmd_bind_pipeline(&cmd, resolve_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &resolve_pass)!;
-        gpu::DepthState resolve_depth_state = {};
-        gpu::cmd_set_depth_state(&cmd, &resolve_depth_state)!;
+        gpu::cmd_begin_render_pass(&cmd, &resolve_pass, &resolve_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    resolve_root_address,

@@ -491,18 +491,18 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc pass = { .colors = colors[..], .depth = &depth_target, .width = width, .height = height };
-        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass(&cmd, &pass)!;
-        gpu::DynamicRasterState raster_state = {
+        gpu::GraphicsState graphics =
+            gpu::full_render_graphics_state(pass.width, pass.height)!;
+        graphics.raster = {
             .cull_mode = gpu::CullMode.BACK,
         };
-        gpu::cmd_set_raster_state(&cmd, &raster_state)!;
-        gpu::DepthState depth_state = {
+        graphics.depth = {
             .test_enable  = true,
             .write_enable = true,
             .compare      = gpu::CompareOp.LESS,
         };
-        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+        gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,

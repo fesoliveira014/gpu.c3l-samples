@@ -442,21 +442,23 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc shadow_pass = { .depth = &shadow_target, .width = SHADOW_MAP_SIZE, .height = SHADOW_MAP_SIZE };
-        gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &shadow_pass)!;
         gpu::DynamicRasterState shadow_raster = {
             .cull_mode           = gpu::CullMode.FRONT,
             .depth_bias_enable   = true,
             .depth_bias_constant = 0.0f,
             .depth_bias_slope    = 1.0f,
         };
-        gpu::cmd_set_raster_state(&cmd, &shadow_raster)!;
         gpu::DepthState depth_state = {
             .test_enable  = true,
             .write_enable = true,
             .compare      = gpu::CompareOp.LESS,
         };
-        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+        gpu::GraphicsState shadow_graphics =
+            gpu::full_render_graphics_state(shadow_pass.width, shadow_pass.height)!;
+        shadow_graphics.raster = shadow_raster;
+        shadow_graphics.depth = depth_state;
+        gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
+        gpu::cmd_begin_render_pass(&cmd, &shadow_pass, &shadow_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    shadow_root_address,
@@ -515,9 +517,11 @@ fn void? run(sample_args::Options options) {
             .clear    = { .depth = 1.0f },
         };
         gpu::RenderPassDesc scene_pass = { .colors = colors[..], .depth = &scene_depth_target, .width = width, .height = height };
+        gpu::GraphicsState scene_graphics =
+            gpu::full_render_graphics_state(scene_pass.width, scene_pass.height)!;
+        scene_graphics.depth = depth_state;
         gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &scene_pass)!;
-        gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+        gpu::cmd_begin_render_pass(&cmd, &scene_pass, &scene_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    scene_root_address,

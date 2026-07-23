@@ -194,12 +194,10 @@ fn void? smoke(
         .clear    = { .rgba = { 0, 0, 0, 1 } },
     }};
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = SMOKE_SIZE, .height = SMOKE_SIZE };
+    gpu::GraphicsState graphics =
+        gpu::full_render_graphics_state(pass.width, pass.height)!;
     gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
-    gpu::cmd_begin_render_pass(&cmd, &pass)!;
-    gpu::DynamicRasterState triangle_raster = {};
-    gpu::cmd_set_raster_state(&cmd, &triangle_raster)!;
-    gpu::DepthState depth_state = {};
-    gpu::cmd_set_depth_state(&cmd, &depth_state)!;
+    gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    quad_address,
