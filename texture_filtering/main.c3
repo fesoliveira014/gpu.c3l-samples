@@ -15,6 +15,7 @@ const uint TEX_SIZE = 256;
 const uint MIP_LEVELS = 9;
 const uint CHECKER_CELLS = 8;
 const usz UPLOAD_BYTES_PER_SLOT = 112;
+const float REQUESTED_MAX_ANISOTROPY = 16.0f;
 
 const uint PLANE_VERTEX_COUNT = 6;
 const usz  PLANE_VERTEX_BYTES = PLANE_VERTEX_COUNT * 32;
@@ -74,7 +75,7 @@ fn void write_matrix(gpu::Vec4f* columns, sample_camera::Mat4 m) {
     }
 }
 
-fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu::Filter mip_filter, float max_lod, bool aniso = false) {
+fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu::Filter mip_filter, float max_lod, float max_anisotropy = 0.0f) {
     gpu::SamplerDesc desc = {
         .min_filter        = filter,
         .mag_filter        = filter,
@@ -83,8 +84,8 @@ fn gpu::SamplerIndex? make_sampler(gpu::Device* device, gpu::Filter filter, gpu:
         .address_v         = gpu::AddressMode.REPEAT,
         .address_w         = gpu::AddressMode.REPEAT,
         .max_lod           = max_lod,
-        .anisotropy_enable = aniso,
-        .max_anisotropy    = aniso ? 16.0f : 0.0f,
+        .anisotropy_enable = max_anisotropy >= 1.0f,
+        .max_anisotropy    = max_anisotropy,
     };
     return gpu::intern_sampler(device, &desc);
 }
@@ -277,12 +278,15 @@ fn void? run(sample_args::Options options) {
         mip_filter: gpu::Filter.LINEAR,
         max_lod:    (float)MIP_LEVELS,
     )!;
+    float max_anisotropy = caps.max_sampler_anisotropy;
+    if (max_anisotropy < 1.0f) max_anisotropy = 0.0f;
+    if (max_anisotropy > REQUESTED_MAX_ANISOTROPY) max_anisotropy = REQUESTED_MAX_ANISOTROPY;
     gpu::SamplerIndex aniso_smp = make_sampler(
-        device:     &device,
-        filter:     gpu::Filter.LINEAR,
-        mip_filter: gpu::Filter.LINEAR,
-        max_lod:    (float)MIP_LEVELS,
-        aniso:      caps.max_sampler_anisotropy > 0,
+        device:         &device,
+        filter:         gpu::Filter.LINEAR,
+        mip_filter:     gpu::Filter.LINEAR,
+        max_lod:        (float)MIP_LEVELS,
+        max_anisotropy: max_anisotropy,
     )!;
 
     gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = PLANE_VERT_SPIRV[..], .entry_point = "main" };
