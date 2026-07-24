@@ -47,10 +47,10 @@ if (!device.is_valid()) return gpu::UNSUPPORTED_FEATURE~;
 defer (void)gpu::destroy_device(&device);
 ```
 
-`RuntimeDesc` defaults to trusted contracts with lifetime tracking and Vulkan
-layers disabled. The helper above enables full contract checks, command-resource
-lifetime tracking, and Vulkan validation layers for development; those three
-policies can also be selected independently.
+`RuntimeDesc` defaults to trusted contracts; command-resource lifetime tracking
+and Vulkan validation layers are both disabled. The helper above enables full
+contract checks, lifetime tracking, and Vulkan validation layers for
+development; those three policies can also be selected independently.
 
 The reusable adapter-selection form lives in `shared/sample_device.c3`.
 Allocations, upload reuse, readback, and completion policy remain sample-local.
