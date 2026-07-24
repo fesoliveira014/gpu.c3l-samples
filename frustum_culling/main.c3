@@ -475,7 +475,7 @@ fn void? run(sample_args::Options options) {
             .compare      = gpu::CompareOp.LESS,
         };
         gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
         gpu::cmd_draw_indirect(
             commands:      &cmd,
             vertex_root:   draw_root_address,

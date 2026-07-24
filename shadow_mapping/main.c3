@@ -458,7 +458,7 @@ fn void? run(sample_args::Options options) {
         shadow_graphics.raster = shadow_raster;
         shadow_graphics.depth = depth_state;
         gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &shadow_pass, &shadow_graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &shadow_pass, &shadow_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    shadow_root_address,
@@ -521,7 +521,7 @@ fn void? run(sample_args::Options options) {
             gpu::full_render_graphics_state(scene_pass.width, scene_pass.height)!;
         scene_graphics.depth = depth_state;
         gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &scene_pass, &scene_graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &scene_pass, &scene_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    scene_root_address,

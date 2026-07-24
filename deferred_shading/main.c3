@@ -516,7 +516,7 @@ fn void? run(sample_args::Options options) {
             .compare      = gpu::CompareOp.LESS,
         };
         gpu::cmd_bind_pipeline(&cmd, geom_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &geometry_pass, &geometry_graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &geometry_pass, &geometry_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    geometry_root_address,
@@ -560,7 +560,7 @@ fn void? run(sample_args::Options options) {
         gpu::GraphicsState resolve_graphics =
             gpu::full_render_graphics_state(resolve_pass.width, resolve_pass.height)!;
         gpu::cmd_bind_pipeline(&cmd, resolve_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &resolve_pass, &resolve_graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &resolve_pass, &resolve_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    resolve_root_address,

@@ -53,7 +53,7 @@ fn void? record_chunk(
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
     gpu::cmd_bind_pipeline(list, pipeline)!;
-    gpu::cmd_begin_render_pass(list, &pass, &graphics)!;
+    gpu::cmd_begin_render_pass_with_state(list, &pass, &graphics)!;
     for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
         ulong index = (ulong)chunk * DRAWS_PER_CHUNK + draw;
         gpu::GpuAddress root = (gpu::GpuAddress)((ulong)roots_base + index * QuadRoot::size);
@@ -241,7 +241,7 @@ fn NanoDuration? run_once(
     gpu::RenderPassDesc clear_pass = { .colors = clear_colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::GraphicsState clear_graphics =
         gpu::full_render_graphics_state(clear_pass.width, clear_pass.height)!;
-    gpu::cmd_begin_render_pass(&preamble, &clear_pass, &clear_graphics)!;
+    gpu::cmd_begin_render_pass_with_state(&preamble, &clear_pass, &clear_graphics)!;
     gpu::cmd_end_render_pass(&preamble)!;
     gpu::ExecutableCommandList[1] preamble_lists = {
         gpu::end_commands(&preamble)!,
