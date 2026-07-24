@@ -334,7 +334,7 @@ fn void? run(sample_args::Options options) {
         gpu::GraphicsState graphics =
             gpu::full_render_graphics_state(pass.width, pass.height)!;
         gpu::cmd_bind_pipeline(&cmd, draw_pipe)!;
-        gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    draw_root_address,

@@ -168,7 +168,7 @@ fn ModeStats? run_mode_window(
         gpu::GraphicsState graphics =
             gpu::full_render_graphics_state(pass.width, pass.height)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline.handle)!;
-        gpu::cmd_begin_render_pass(&cmd, &pass, &graphics)!;
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,
