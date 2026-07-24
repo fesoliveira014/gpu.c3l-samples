@@ -123,8 +123,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "frustum_culling",
     };
@@ -399,7 +399,7 @@ fn void? run(sample_args::Options options) {
                     .access = { .read, .write },
                 },
             };
-            gpu::cmd_texture_barrier(&cmd, &depth_init)!;
+            gpu::cmd_texture_barrier(&cmd, &depth_init);
             depth_fresh = false;
         }
 
@@ -413,34 +413,34 @@ fn void? run(sample_args::Options options) {
                 .before = { .compute = true },
                 .after = { .transfer = true },
             };
-            gpu::cmd_barrier(&cmd, &stats_before_clear)!;
-            gpu::cmd_fill_buffer(&cmd, stats_span, 0)!;
+            gpu::cmd_barrier(&cmd, &stats_before_clear);
+            gpu::cmd_fill_buffer(&cmd, stats_span, 0);
             gpu::Barrier stats_after_clear = {
                 .before = { .transfer = true },
                 .after = { .compute = true },
             };
-            gpu::cmd_barrier(&cmd, &stats_after_clear)!;
+            gpu::cmd_barrier(&cmd, &stats_after_clear);
         }
 
-        gpu::cmd_bind_pipeline(&cmd, cull_pipe)!;
+        gpu::cmd_bind_pipeline(&cmd, cull_pipe);
         gpu::cmd_dispatch(
             commands: &cmd,
             root:     cull_root_address,
             groups:   { (INSTANCE_COUNT + CULL_TILE - 1) / CULL_TILE, 1, 1 },
-        )!;
+        );
 
         gpu::Barrier args_ready = {
             .before = { .compute = true },
             .after = { .compute = true },
             .hazards = { .draw_arguments = true },
         };
-        gpu::cmd_barrier(&cmd, &args_ready)!;
+        gpu::cmd_barrier(&cmd, &args_ready);
         if (sample_stats) {
             gpu::Barrier stats_ready = {
                 .before = { .compute = true },
                 .after = { .host = true },
             };
-            gpu::cmd_barrier(&cmd, &stats_ready)!;
+            gpu::cmd_barrier(&cmd, &stats_ready);
         }
 
         gpu::TextureBarrier to_attach = gpu::texture_transition(
@@ -452,7 +452,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        gpu::cmd_texture_barrier(&cmd, &to_attach);
 
         gpu::ColorTargetDesc[1] colors = {{
             .view     = color_view,
@@ -474,16 +474,16 @@ fn void? run(sample_args::Options options) {
             .write_enable = true,
             .compare      = gpu::CompareOp.LESS,
         };
-        gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, scene_pipe);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
         gpu::cmd_draw_indirect(
             commands:      &cmd,
             vertex_root:   draw_root_address,
             fragment_root: draw_root_address,
             args:          args_span,
             draw_count:    INSTANCE_COUNT,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
+        );
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier to_present = gpu::texture_transition(
             texture: acquired.texture,
@@ -496,7 +496,7 @@ fn void? run(sample_args::Options options) {
                 .layout = gpu::TextureLayout.PRESENT,
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::cmd_texture_barrier(&cmd, &to_present);
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
         defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {

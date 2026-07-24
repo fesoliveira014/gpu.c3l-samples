@@ -21,8 +21,8 @@ fn int main() {
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "bindless_texture_compute",
     };
@@ -120,35 +120,35 @@ fn void? run() {
         .before  = { .layout = gpu::TextureLayout.UNDEFINED },
         .after   = gpu::storage_at({ .compute }, { .write }),
     };
-    gpu::cmd_texture_barrier(&cmd, &to_general)!;
+    gpu::cmd_texture_barrier(&cmd, &to_general);
 
     const uint GROUPS = (TEX_SIZE + HEAP_TILE - 1) / HEAP_TILE;
-    gpu::cmd_bind_pipeline(&cmd, write_pipe)!;
+    gpu::cmd_bind_pipeline(&cmd, write_pipe);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(&device, write_root_span)!,
         groups:   { GROUPS, GROUPS, 1 },
-    )!;
+    );
 
     gpu::TextureBarrier write_to_sample = {
         .texture = texture,
         .before  = gpu::storage_at({ .compute }, { .write }),
         .after   = gpu::sampled_at({ .compute }),
     };
-    gpu::cmd_texture_barrier(&cmd, &write_to_sample)!;
+    gpu::cmd_texture_barrier(&cmd, &write_to_sample);
 
-    gpu::cmd_bind_pipeline(&cmd, sample_pipe)!;
+    gpu::cmd_bind_pipeline(&cmd, sample_pipe);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(&device, sample_root_span)!,
         groups:   { GROUPS, GROUPS, 1 },
-    )!;
+    );
 
     gpu::Barrier out_bar = {
         .before = { .compute = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&cmd, &out_bar)!;
+    gpu::cmd_barrier(&cmd, &out_bar);
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);

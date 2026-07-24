@@ -29,7 +29,122 @@ class StrictApiCheckTests(unittest.TestCase):
                         path,
                         source,
                     )
+                if check == "fast_commands":
+                    return check_strict_api.find_fast_command_call_policy(
+                        path,
+                        source,
+                    )
+                if check == "fast_runtime":
+                    return check_strict_api.find_fast_runtime_policy(
+                        path,
+                        source,
+                    )
                 return check_strict_api.find_forbidden_retired_fields(path, source)
+
+    def test_fast_command_policy_preserves_only_generated_faults(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::CommandList* commands) {\n"
+            "    gpu::cmd_barrier(commands, &{});\n"
+            "    gpu::cmd_draw_indexed_generated(\n"
+            "        commands: commands,\n"
+            "        records:  {},\n"
+            "    )!;\n"
+            "}\n"
+        )
+        self.assertEqual(self.findings_for(source, "fast_commands"), [])
+
+    def test_fast_command_policy_rejects_inverted_fault_handling(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::CommandList* commands) {\n"
+            "    gpu::cmd_dispatch(commands, {}, {})!;\n"
+            "    gpu::cmd_draw_generated(commands, {}, {}, 1);\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "fast_commands"),
+            [
+                "probe.c3:3: FAST ordinary command 'cmd_dispatch' must not "
+                "propagate a fault",
+                "probe.c3:4: generated command 'cmd_draw_generated' must "
+                "propagate its optional result",
+            ],
+        )
+
+    def test_fast_runtime_policy_requires_explicit_trusted_tracking_off(
+        self,
+    ) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::RuntimeDesc good = {\n"
+            "        .contract_validation = gpu::ContractValidation.TRUSTED,\n"
+            "        .track_resource_lifetimes = false,\n"
+            "    };\n"
+            "    gpu::RuntimeDesc bad = {\n"
+            "        .contract_validation = gpu::ContractValidation.FULL,\n"
+            "        .track_resource_lifetimes = true,\n"
+            "    };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "fast_runtime"),
+            [
+                "probe.c3:7: RuntimeDesc 'bad' must disable resource lifetime "
+                "tracking",
+                "probe.c3:7: RuntimeDesc 'bad' must select TRUSTED",
+            ],
+        )
+
+    def test_fast_target_profile_requires_feature_on_every_executable(
+        self,
+    ) -> None:
+        source = (
+            '{\n'
+            '  "targets": {\n'
+            '    "fast": {\n'
+            '      "type": "executable",\n'
+            '      "features": [ "GPU_FAST_COMMANDS", "DIRECT_COMMAND_TOKENS" ],\n'
+            '      "sources": [ "fast.c3" ]\n'
+            "    },\n"
+            '    "missing": {\n'
+            '      "type": "executable",\n'
+            '      "sources": [ "missing.c3" ]\n'
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+        with tempfile.TemporaryDirectory() as temp_directory:
+            root = Path(temp_directory)
+            path = root / "project.json"
+            with mock.patch.object(check_strict_api, "ROOT", root):
+                self.assertEqual(
+                    check_strict_api.find_fast_target_profile(path, source),
+                    [
+                        "project.json:8: executable target 'missing' must "
+                        "enable GPU_FAST_COMMANDS",
+                        "project.json:8: FAST executable target 'missing' must "
+                        "enable DIRECT_COMMAND_TOKENS",
+                    ],
+                )
+
+    def test_fast_command_totals_pin_the_audited_surface(self) -> None:
+        path = Path("probe.c3")
+        records = [
+            (path, index, "cmd_barrier", False)
+            for index in range(check_strict_api.EXPECTED_ORDINARY_COMMAND_CALLS)
+        ]
+        records.append((path, len(records), "cmd_draw_indexed_generated", True))
+        self.assertEqual(check_strict_api.find_fast_command_totals(records), [])
+        records.pop()
+        self.assertEqual(
+            check_strict_api.find_fast_command_totals(records),
+            [
+                "FAST sample generated-command audit expected "
+                "{'cmd_draw_indexed_generated': 1}, found {}"
+            ],
+        )
 
     def test_retired_field_survives_braces_in_lexical_content(self) -> None:
         prefixes = (

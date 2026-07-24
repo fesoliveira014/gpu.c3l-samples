@@ -71,8 +71,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "gpu_driven_draw_sdl",
     };
@@ -390,12 +390,12 @@ fn void? run(sample_args::Options options) {
         gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
 
-        gpu::cmd_bind_pipeline(&cmd, build_pipeline)!;
+        gpu::cmd_bind_pipeline(&cmd, build_pipeline);
         gpu::cmd_dispatch(
             commands: &cmd,
             root:     build_root_address,
             groups:   { (INSTANCES + BUILD_WORKGROUP - 1) / BUILD_WORKGROUP, 1, 1 },
-        )!;
+        );
 
         gpu::Barrier indirect_ready = {
             .before = { .compute = true },
@@ -405,7 +405,7 @@ fn void? run(sample_args::Options options) {
             },
             .hazards = { .draw_arguments = true },
         };
-        gpu::cmd_barrier(&cmd, &indirect_ready)!;
+        gpu::cmd_barrier(&cmd, &indirect_ready);
 
         gpu::TextureBarrier to_attach = gpu::texture_transition(
             texture: acquired.texture,
@@ -416,7 +416,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        gpu::cmd_texture_barrier(&cmd, &to_attach);
 
         gpu::ColorTargetDesc[1] colors = {{
             .view     = color_view,
@@ -431,8 +431,8 @@ fn void? run(sample_args::Options options) {
         };
         gpu::GraphicsState graphics =
             gpu::full_render_graphics_state(pass.width, pass.height)!;
-        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
         if (use_generated) {
             gpu::cmd_draw_indexed_generated(
                 commands:      &cmd,
@@ -450,7 +450,7 @@ fn void? run(sample_args::Options options) {
                 count_span:     count_span,
                 max_draw_count: INSTANCES,
                 index_span:     index_span,
-            )!;
+            );
         } else {
             gpu::cmd_draw_indexed_indirect(
                 commands:      &cmd,
@@ -459,9 +459,9 @@ fn void? run(sample_args::Options options) {
                 args:          args_span,
                 draw_count:    INSTANCES,
                 index_span:    index_span,
-            )!;
+            );
         }
-        gpu::cmd_end_render_pass(&cmd)!;
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier to_present = {
             .texture = acquired.texture,
@@ -474,7 +474,7 @@ fn void? run(sample_args::Options options) {
                 .layout = gpu::TextureLayout.PRESENT,
             },
         };
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::cmd_texture_barrier(&cmd, &to_present);
 
         sample_frame_upload::flush_frame_upload(&upload_batch)!;
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };

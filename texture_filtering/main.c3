@@ -105,8 +105,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "texture_filtering",
     };
@@ -221,7 +221,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&upload_commands, &to_transfer)!;
+        gpu::cmd_texture_barrier(&upload_commands, &to_transfer);
 
         byte_offset = 0;
         for (uint level = 0; level < MIP_LEVELS; level++) {
@@ -233,7 +233,7 @@ fn void? run(sample_args::Options options) {
                 .texture = checker,
                 .mip     = level,
             };
-            gpu::cmd_copy_buffer_to_texture(&upload_commands, &copy)!;
+            gpu::cmd_copy_buffer_to_texture(&upload_commands, &copy);
             byte_offset += level_bytes;
         }
 
@@ -246,7 +246,7 @@ fn void? run(sample_args::Options options) {
             },
             after:   gpu::sampled_at({ .fragment_shader }),
         )!;
-        gpu::cmd_texture_barrier(&upload_commands, &to_sample)!;
+        gpu::cmd_texture_barrier(&upload_commands, &to_sample);
         gpu::ExecutableCommandList[1] upload_lists = {
             gpu::end_commands(&upload_commands)!,
         };
@@ -371,7 +371,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        gpu::cmd_texture_barrier(&cmd, &to_attach);
 
         sample_camera::Mat4 view_proj = sample_camera::mul(
             sample_camera::perspective(
@@ -411,16 +411,16 @@ fn void? run(sample_args::Options options) {
         };
         gpu::GraphicsState graphics =
             gpu::full_render_graphics_state(pass.width, pass.height)!;
-        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,
             fragment_root:  root_address,
             vertex_count:   PLANE_VERTEX_COUNT,
             instance_count: 1,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
+        );
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier to_present = {
             .texture = acquired.texture,
@@ -433,7 +433,7 @@ fn void? run(sample_args::Options options) {
                 .layout = gpu::TextureLayout.PRESENT,
             },
         };
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::cmd_texture_barrier(&cmd, &to_present);
 
         sample_frame_upload::flush_frame_upload(&upload_batch)!;
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };

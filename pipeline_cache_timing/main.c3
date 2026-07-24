@@ -186,7 +186,7 @@ fn void? smoke(
             .access = { .read, .write },
         },
     };
-    gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+    gpu::cmd_texture_barrier(&cmd, &to_attach);
     gpu::ColorTargetDesc[1] colors = {{
         .view     = target_view,
         .load_op  = gpu::LoadOp.CLEAR,
@@ -196,38 +196,38 @@ fn void? smoke(
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = SMOKE_SIZE, .height = SMOKE_SIZE };
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
-    gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
-    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+    gpu::cmd_bind_pipeline(&cmd, quad_pipe);
+    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    quad_address,
         fragment_root:  quad_address,
         vertex_count:   6,
         instance_count: 1,
-    )!;
+    );
     gpu::DynamicRasterState line_raster = {
         .topology = gpu::PrimitiveTopology.LINES,
     };
-    gpu::cmd_set_raster_state(&cmd, &line_raster)!;
+    gpu::cmd_set_raster_state(&cmd, &line_raster);
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    quad_address,
         fragment_root:  quad_address,
         vertex_count:   6,
         instance_count: 1,
-    )!;
-    gpu::cmd_end_render_pass(&cmd)!;
-    gpu::cmd_bind_pipeline(&cmd, compute)!;
+    );
+    gpu::cmd_end_render_pass(&cmd);
+    gpu::cmd_bind_pipeline(&cmd, compute);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     scale_address,
         groups:   { (SCALE_COUNT + CACHE_COMPUTE_WORKGROUP - 1) / CACHE_COMPUTE_WORKGROUP, 1, 1 },
-    )!;
+    );
     gpu::Barrier host_read = {
         .before = { .compute = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&cmd, &host_read)!;
+    gpu::cmd_barrier(&cmd, &host_read);
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
@@ -300,14 +300,14 @@ fn void? read_color_target(
             .access = { .read },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &to_source)!;
+    gpu::cmd_texture_barrier(&commands, &to_source);
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
-    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy);
     gpu::Barrier to_host = {
         .before = { .transfer = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&commands, &to_host)!;
+    gpu::cmd_barrier(&commands, &to_host);
     gpu::TextureBarrier restore = {
         .texture = target,
         .before  = {
@@ -321,7 +321,7 @@ fn void? read_color_target(
             .access = { .read, .write },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &restore)!;
+    gpu::cmd_texture_barrier(&commands, &restore);
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
@@ -351,8 +351,8 @@ fn void? run() {
 
     gpu::RuntimeDesc runtime_a_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "pipeline_cache_timing",
     };
@@ -386,8 +386,8 @@ fn void? run() {
 
     gpu::RuntimeDesc runtime_b_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .pipeline_cache_data          = blob[:written],
         .application_name             = "pipeline_cache_timing",

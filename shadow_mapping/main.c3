@@ -119,8 +119,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "shadow_mapping",
     };
@@ -432,7 +432,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         };
-        gpu::cmd_texture_barrier(&cmd, &shadow_to_write)!;
+        gpu::cmd_texture_barrier(&cmd, &shadow_to_write);
         shadow_map_initialized = true;
 
         gpu::DepthTargetDesc shadow_target = {
@@ -457,16 +457,16 @@ fn void? run(sample_args::Options options) {
             gpu::full_render_graphics_state(shadow_pass.width, shadow_pass.height)!;
         shadow_graphics.raster = shadow_raster;
         shadow_graphics.depth = depth_state;
-        gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &shadow_pass, &shadow_graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, shadow_pipe);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &shadow_pass, &shadow_graphics);
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    shadow_root_address,
             fragment_root:  shadow_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: INSTANCE_COUNT,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
+        );
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier shadow_to_read = {
             .texture = shadow_map,
@@ -477,7 +477,7 @@ fn void? run(sample_args::Options options) {
             },
             .after   = gpu::sampled_at({ .fragment_shader }),
         };
-        gpu::cmd_texture_barrier(&cmd, &shadow_to_read)!;
+        gpu::cmd_texture_barrier(&cmd, &shadow_to_read);
 
         if (scene_depth_fresh) {
             gpu::TextureBarrier depth_init = {
@@ -489,7 +489,7 @@ fn void? run(sample_args::Options options) {
                     .access = { .read, .write },
                 },
             };
-            gpu::cmd_texture_barrier(&cmd, &depth_init)!;
+            gpu::cmd_texture_barrier(&cmd, &depth_init);
             scene_depth_fresh = false;
         }
 
@@ -502,7 +502,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        gpu::cmd_texture_barrier(&cmd, &to_attach);
 
         gpu::ColorTargetDesc[1] colors = {{
             .view     = color_view,
@@ -520,16 +520,16 @@ fn void? run(sample_args::Options options) {
         gpu::GraphicsState scene_graphics =
             gpu::full_render_graphics_state(scene_pass.width, scene_pass.height)!;
         scene_graphics.depth = depth_state;
-        gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &scene_pass, &scene_graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, scene_pipe);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &scene_pass, &scene_graphics);
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    scene_root_address,
             fragment_root:  scene_root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: INSTANCE_COUNT,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
+        );
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier to_present = gpu::texture_transition(
             texture: acquired.texture,
@@ -542,7 +542,7 @@ fn void? run(sample_args::Options options) {
                 .layout = gpu::TextureLayout.PRESENT,
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::cmd_texture_barrier(&cmd, &to_present);
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
         defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {

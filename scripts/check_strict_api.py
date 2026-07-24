@@ -82,6 +82,45 @@ RETIRED_FIELD_RULES = (
     ("TextureFormatSupport", ("dimensions",)),
     ("DepthTargetDesc", ("stencil",)),
 )
+ORDINARY_COMMANDS = frozenset(
+    {
+        "cmd_barrier",
+        "cmd_begin_label",
+        "cmd_begin_render_pass",
+        "cmd_begin_render_pass_with_state",
+        "cmd_bind_pipeline",
+        "cmd_copy_buffer",
+        "cmd_copy_buffer_to_texture",
+        "cmd_copy_texture_to_buffer",
+        "cmd_dispatch",
+        "cmd_dispatch_indirect",
+        "cmd_draw",
+        "cmd_draw_indexed",
+        "cmd_draw_indexed_indirect",
+        "cmd_draw_indexed_indirect_count",
+        "cmd_draw_indirect",
+        "cmd_end_label",
+        "cmd_end_render_pass",
+        "cmd_fill_buffer",
+        "cmd_set_depth_state",
+        "cmd_set_graphics_state",
+        "cmd_set_raster_state",
+        "cmd_set_scissor",
+        "cmd_set_viewport",
+        "cmd_texture_barrier",
+    }
+)
+GENERATED_COMMANDS = frozenset(
+    {
+        "cmd_dispatch_generated",
+        "cmd_draw_generated",
+        "cmd_draw_indexed_generated",
+    }
+)
+EXPECTED_ORDINARY_COMMAND_CALLS = 182
+EXPECTED_GENERATED_COMMAND_CALLS = {
+    "cmd_draw_indexed_generated": 1,
+}
 
 
 def sanitize_c3_structure(text: str) -> str:
@@ -192,6 +231,173 @@ def sanitize_c3_structure(text: str) -> str:
                     state = "code"
 
     return "".join(sanitized)
+
+
+def command_call_records(
+    path: Path,
+    text: str,
+) -> list[tuple[Path, int, str, bool]]:
+    structural_text = sanitize_c3_structure(text)
+    names = sorted(ORDINARY_COMMANDS | GENERATED_COMMANDS, key=len, reverse=True)
+    pattern = re.compile(
+        r"\bgpu::(?P<name>"
+        + "|".join(re.escape(name) for name in names)
+        + r")\s*\("
+    )
+    records: list[tuple[Path, int, str, bool]] = []
+    for match in pattern.finditer(structural_text):
+        depth = 1
+        cursor = match.end()
+        while cursor < len(structural_text) and depth:
+            if structural_text[cursor] == "(":
+                depth += 1
+            elif structural_text[cursor] == ")":
+                depth -= 1
+            cursor += 1
+        if depth:
+            continue
+        while cursor < len(structural_text) and structural_text[cursor].isspace():
+            cursor += 1
+        records.append(
+            (
+                path,
+                match.start(),
+                match.group("name"),
+                cursor < len(structural_text) and structural_text[cursor] == "!",
+            )
+        )
+    return records
+
+
+def find_fast_command_call_policy(path: Path, text: str) -> list[str]:
+    findings: list[str] = []
+    for _, offset, name, propagates in command_call_records(path, text):
+        line_number = text.count("\n", 0, offset) + 1
+        if name in ORDINARY_COMMANDS and propagates:
+            findings.append(
+                f"{path.relative_to(ROOT)}:{line_number}: "
+                f"FAST ordinary command {name!r} must not propagate a fault"
+            )
+        elif name in GENERATED_COMMANDS and not propagates:
+            findings.append(
+                f"{path.relative_to(ROOT)}:{line_number}: "
+                f"generated command {name!r} must propagate its optional result"
+            )
+    return findings
+
+
+def find_fast_runtime_policy(path: Path, text: str) -> list[str]:
+    structural_text = sanitize_c3_structure(text)
+    brace_stack: list[int] = []
+    brace_pairs: dict[int, int] = {}
+    for offset, character in enumerate(structural_text):
+        if character == "{":
+            brace_stack.append(offset)
+        elif character == "}" and brace_stack:
+            brace_pairs[brace_stack.pop()] = offset
+
+    findings: list[tuple[int, str]] = []
+    pattern = re.compile(
+        r"\b(?:gpu::)?RuntimeDesc\s+(?P<name>[A-Za-z_]\w*)\s*=\s*\{"
+    )
+    for match in pattern.finditer(structural_text):
+        opening = match.end() - 1
+        closing = brace_pairs.get(opening)
+        if closing is None:
+            continue
+        body = structural_text[opening + 1 : closing]
+        line_number = text.count("\n", 0, match.start()) + 1
+        if not re.search(
+            r"\.contract_validation\s*=\s*"
+            r"gpu::ContractValidation\.TRUSTED\s*,",
+            body,
+        ):
+            findings.append(
+                (
+                    match.start(),
+                    f"{path.relative_to(ROOT)}:{line_number}: "
+                    f"RuntimeDesc {match.group('name')!r} must select TRUSTED",
+                )
+            )
+        if not re.search(
+            r"\.track_resource_lifetimes\s*=\s*false\s*,",
+            body,
+        ):
+            findings.append(
+                (
+                    match.start(),
+                    f"{path.relative_to(ROOT)}:{line_number}: "
+                    f"RuntimeDesc {match.group('name')!r} must disable "
+                    "resource lifetime tracking",
+                )
+            )
+    return [message for _, message in sorted(findings)]
+
+
+def find_fast_target_profile(path: Path, text: str) -> list[str]:
+    findings: list[str] = []
+    target_pattern = re.compile(
+        r'(?ms)^    "(?P<name>[^"]+)":\s*\{\n'
+        r"(?P<body>.*?)(?=^    \},?$)"
+    )
+    for match in target_pattern.finditer(text):
+        body = match.group("body")
+        if '"type": "executable"' not in body:
+            continue
+        if not re.search(
+            r'"features"\s*:\s*\[[^\]]*"GPU_FAST_COMMANDS"[^\]]*\]',
+            body,
+        ):
+            line_number = text.count("\n", 0, match.start()) + 1
+            findings.append(
+                f"{path.relative_to(ROOT)}:{line_number}: "
+                f"executable target {match.group('name')!r} must enable "
+                "GPU_FAST_COMMANDS"
+            )
+        if not re.search(
+            r'"features"\s*:\s*\[[^\]]*"DIRECT_COMMAND_TOKENS"[^\]]*\]',
+            body,
+        ):
+            line_number = text.count("\n", 0, match.start()) + 1
+            findings.append(
+                f"{path.relative_to(ROOT)}:{line_number}: "
+                f"FAST executable target {match.group('name')!r} must enable "
+                "DIRECT_COMMAND_TOKENS"
+            )
+    return findings
+
+
+def find_fast_command_totals(
+    records: list[tuple[Path, int, str, bool]],
+) -> list[str]:
+    ordinary_count = sum(name in ORDINARY_COMMANDS for _, _, name, _ in records)
+    generated_counts = {
+        name: sum(record_name == name for _, _, record_name, _ in records)
+        for name in GENERATED_COMMANDS
+    }
+    findings: list[str] = []
+    if ordinary_count != EXPECTED_ORDINARY_COMMAND_CALLS:
+        findings.append(
+            "FAST sample command audit expected "
+            f"{EXPECTED_ORDINARY_COMMAND_CALLS} ordinary calls, found "
+            f"{ordinary_count}"
+        )
+    expected_generated = {
+        name: count
+        for name, count in EXPECTED_GENERATED_COMMAND_CALLS.items()
+        if count
+    }
+    actual_generated = {
+        name: count
+        for name, count in generated_counts.items()
+        if count
+    }
+    if actual_generated != expected_generated:
+        findings.append(
+            "FAST sample generated-command audit expected "
+            f"{expected_generated!r}, found {actual_generated!r}"
+        )
+    return findings
 
 
 def find_forbidden_strict_api_tokens(path: Path, text: str) -> list[str]:
@@ -670,6 +876,14 @@ def find_forbidden_retired_fields(path: Path, text: str) -> list[str]:
 
 def main() -> int:
     findings: list[str] = []
+    project_path = ROOT / "project.json"
+    findings.extend(
+        find_fast_target_profile(
+            project_path,
+            project_path.read_text(encoding="utf-8"),
+        )
+    )
+    command_records: list[tuple[Path, int, str, bool]] = []
     for path in sorted(ROOT.rglob("*.c3")):
         if any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts):
             continue
@@ -677,6 +891,10 @@ def main() -> int:
         findings.extend(find_forbidden_strict_api_tokens(path, text))
         findings.extend(find_command_allocator_policy(path, text))
         findings.extend(find_forbidden_retired_fields(path, text))
+        findings.extend(find_fast_command_call_policy(path, text))
+        findings.extend(find_fast_runtime_policy(path, text))
+        command_records.extend(command_call_records(path, text))
+    findings.extend(find_fast_command_totals(command_records))
 
     if findings:
         print("\n".join(findings), file=sys.stderr)

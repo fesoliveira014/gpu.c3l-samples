@@ -82,9 +82,9 @@ fn void? render_frame(FrameWork* ctx) {
                 .access = { .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_dst)!;
+        gpu::cmd_texture_barrier(&cmd, &to_dst);
         gpu::BufferTextureCopyDesc upload = { .src = ctx.staging_span, .texture = ctx.checker };
-        gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
+        gpu::cmd_copy_buffer_to_texture(&cmd, &upload);
         gpu::TextureBarrier to_read = gpu::texture_transition(
             texture: ctx.checker,
             before:  {
@@ -94,7 +94,7 @@ fn void? render_frame(FrameWork* ctx) {
             },
             after:   gpu::sampled_at({ .fragment_shader }),
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_read)!;
+        gpu::cmd_texture_barrier(&cmd, &to_read);
         *ctx.checker_uploaded = true;
     }
 
@@ -107,7 +107,7 @@ fn void? render_frame(FrameWork* ctx) {
             .access = { .read, .write },
         },
     )!;
-    gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+    gpu::cmd_texture_barrier(&cmd, &to_attach);
 
     float pulse = (float)(ctx.frame % 120) / 120.0f * 0.15f;
     gpu::GpuSpan verts_span = sample_frame_upload::alloc_frame_upload(
@@ -145,16 +145,16 @@ fn void? render_frame(FrameWork* ctx) {
     };
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
-    gpu::cmd_bind_pipeline(&cmd, ctx.pipeline)!;
-    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+    gpu::cmd_bind_pipeline(&cmd, ctx.pipeline);
+    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    gpu::get_span_address(ctx.device, verts_span)!,
         fragment_root:  gpu::get_span_address(ctx.device, frag_span)!,
         vertex_count:   3,
         instance_count: 1,
-    )!;
-    gpu::cmd_end_render_pass(&cmd)!;
+    );
+    gpu::cmd_end_render_pass(&cmd);
 
     gpu::TextureBarrier to_present = gpu::texture_transition(
         texture: acquired.texture,
@@ -167,7 +167,7 @@ fn void? render_frame(FrameWork* ctx) {
             .layout = gpu::TextureLayout.PRESENT,
         },
     )!;
-    gpu::cmd_texture_barrier(&cmd, &to_present)!;
+    gpu::cmd_texture_barrier(&cmd, &to_present);
 
     sample_frame_upload::flush_frame_upload(&upload_batch)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
@@ -209,8 +209,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "hello_triangle_sdl",
     };

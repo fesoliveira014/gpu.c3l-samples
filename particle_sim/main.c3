@@ -64,8 +64,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "particle_sim",
     };
@@ -138,17 +138,17 @@ fn void? run(sample_args::Options options) {
             .before = { .host = true },
             .after = { .transfer = true },
         };
-        gpu::cmd_barrier(&upload_cmd, &seed_visible)!;
+        gpu::cmd_barrier(&upload_cmd, &seed_visible);
         gpu::BufferCopyDesc seed_copy = {
             .src = seed_span,
             .dst = span_a,
         };
-        gpu::cmd_copy_buffer(&upload_cmd, &seed_copy)!;
+        gpu::cmd_copy_buffer(&upload_cmd, &seed_copy);
         gpu::Barrier seed_ready = {
             .before = { .transfer = true },
             .after = { .compute = true },
         };
-        gpu::cmd_barrier(&upload_cmd, &seed_ready)!;
+        gpu::cmd_barrier(&upload_cmd, &seed_ready);
         gpu::ExecutableCommandList[1] upload_lists = { gpu::end_commands(&upload_cmd)! };
         defer (void)gpu::discard_executable_commands(&upload_lists[0]);
         gpu::SubmitDesc upload_submit = { .command_lists = upload_lists[..] };
@@ -294,12 +294,12 @@ fn void? run(sample_args::Options options) {
 
         gpu::CommandList sim_cmd = gpu::begin_commands(&compute_allocator)!;
         defer (void)gpu::discard_commands(&sim_cmd);
-        gpu::cmd_bind_pipeline(&sim_cmd, sim_pipe)!;
+        gpu::cmd_bind_pipeline(&sim_cmd, sim_pipe);
         gpu::cmd_dispatch(
             commands: &sim_cmd,
             root:     sim_root_address,
             groups:   { (PARTICLE_COUNT + SIM_TILE - 1) / SIM_TILE, 1, 1 },
-        )!;
+        );
         gpu::ExecutableCommandList[1] sim_lists = { gpu::end_commands(&sim_cmd)! };
         defer (void)gpu::discard_executable_commands(&sim_lists[0]);
         gpu::SubmitDesc sim_submit = { .command_lists = sim_lists[..] };
@@ -318,7 +318,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        gpu::cmd_texture_barrier(&cmd, &to_attach);
 
         gpu::ColorTargetDesc[1] colors = {{
             .view     = color_view,
@@ -333,16 +333,16 @@ fn void? run(sample_args::Options options) {
         };
         gpu::GraphicsState graphics =
             gpu::full_render_graphics_state(pass.width, pass.height)!;
-        gpu::cmd_bind_pipeline(&cmd, draw_pipe)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, draw_pipe);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    draw_root_address,
             fragment_root:  draw_root_address,
             vertex_count:   6,
             instance_count: PARTICLE_COUNT,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
+        );
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier to_present = {
             .texture = acquired.texture,
@@ -355,7 +355,7 @@ fn void? run(sample_args::Options options) {
                 .layout = gpu::TextureLayout.PRESENT,
             },
         };
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::cmd_texture_barrier(&cmd, &to_present);
         gpu::ExecutableCommandList[1] draw_lists = { gpu::end_commands(&cmd)! };
         defer (void)gpu::discard_executable_commands(&draw_lists[0]);
         gpu::CompletionWait[1] draw_waits = {{

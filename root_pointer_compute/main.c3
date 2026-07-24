@@ -42,17 +42,17 @@ fn void? dispatch_compute(
 
     gpu::CommandList cmd = gpu::begin_commands(command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
-    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+    gpu::cmd_bind_pipeline(&cmd, pipeline);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(device, root_span)!,
         groups:   { (COUNT + ROOT_POINTER_WORKGROUP - 1) / ROOT_POINTER_WORKGROUP, 1, 1 },
-    )!;
+    );
     gpu::Barrier bar = {
         .before = { .compute = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&cmd, &bar)!;
+    gpu::cmd_barrier(&cmd, &bar);
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
@@ -70,8 +70,8 @@ fn void? dispatch_compute(
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "root_pointer_compute",
     };

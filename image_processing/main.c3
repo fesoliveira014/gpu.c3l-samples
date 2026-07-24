@@ -40,8 +40,8 @@ fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_ta
 fn void? run(sample_args::Options options) {
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "image_processing",
     };
@@ -135,12 +135,12 @@ fn void? run(sample_args::Options options) {
     gpu::CommandList cmd = gpu::begin_commands(&compute_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
-    gpu::cmd_fill_buffer(&cmd, bins_span, 0)!;
+    gpu::cmd_fill_buffer(&cmd, bins_span, 0);
     gpu::Barrier bins_cleared = {
         .before = { .transfer = true },
         .after = { .compute = true },
     };
-    gpu::cmd_barrier(&cmd, &bins_cleared)!;
+    gpu::cmd_barrier(&cmd, &bins_cleared);
 
     gpu::TextureHandle[2] images = { image_a, image_b };
     foreach (image : images) {
@@ -149,18 +149,18 @@ fn void? run(sample_args::Options options) {
             .before  = { .layout = gpu::TextureLayout.UNDEFINED },
             .after   = gpu::storage_at({ .compute }, { .write }),
         };
-        gpu::cmd_texture_barrier(&cmd, &to_general)!;
+        gpu::cmd_texture_barrier(&cmd, &to_general);
     }
 
     const uint TILE_GROUPS = (IMAGE_SIZE + GEN_TILE - 1) / GEN_TILE;
     const uint STRIP_GROUPS = (IMAGE_SIZE + BLUR_TILE - 1) / BLUR_TILE;
 
-    gpu::cmd_bind_pipeline(&cmd, gen_pipe)!;
+    gpu::cmd_bind_pipeline(&cmd, gen_pipe);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(&device, gen_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
-    )!;
+    );
 
     // Storage write -> storage read between every chain stage.
     gpu::TextureBarrier a_written = {
@@ -168,46 +168,46 @@ fn void? run(sample_args::Options options) {
         .before  = gpu::storage_at({ .compute }, { .write }),
         .after   = gpu::storage_at({ .compute }, { .read }),
     };
-    gpu::cmd_texture_barrier(&cmd, &a_written)!;
+    gpu::cmd_texture_barrier(&cmd, &a_written);
 
-    gpu::cmd_bind_pipeline(&cmd, blur_pipe)!;
+    gpu::cmd_bind_pipeline(&cmd, blur_pipe);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(&device, blur_h_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
-    )!;
+    );
 
     gpu::TextureBarrier b_written = a_written;
     b_written.texture = image_b;
-    gpu::cmd_texture_barrier(&cmd, &b_written)!;
+    gpu::cmd_texture_barrier(&cmd, &b_written);
 
     gpu::TextureBarrier a_read_to_write = {
         .texture = image_a,
         .before  = gpu::storage_at({ .compute }, { .read }),
         .after   = gpu::storage_at({ .compute }, { .write }),
     };
-    gpu::cmd_texture_barrier(&cmd, &a_read_to_write)!;
+    gpu::cmd_texture_barrier(&cmd, &a_read_to_write);
 
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(&device, blur_v_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
-    )!;
+    );
 
-    gpu::cmd_texture_barrier(&cmd, &a_written)!;
+    gpu::cmd_texture_barrier(&cmd, &a_written);
 
-    gpu::cmd_bind_pipeline(&cmd, hist_pipe)!;
+    gpu::cmd_bind_pipeline(&cmd, hist_pipe);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     gpu::get_span_address(&device, hist_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
-    )!;
+    );
 
     gpu::Barrier bins_read = {
         .before = { .compute = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&cmd, &bins_read)!;
+    gpu::cmd_barrier(&cmd, &bins_read);
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);

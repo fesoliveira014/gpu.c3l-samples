@@ -106,8 +106,8 @@ fn void? run(sample_args::Options options) {
 
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "textured_cube",
     };
@@ -343,9 +343,9 @@ fn void? run(sample_args::Options options) {
                     .access = { .write },
                 },
             };
-            gpu::cmd_texture_barrier(&cmd, &to_dst)!;
+            gpu::cmd_texture_barrier(&cmd, &to_dst);
             gpu::BufferTextureCopyDesc upload = { .src = staging_span, .texture = checker };
-            gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
+            gpu::cmd_copy_buffer_to_texture(&cmd, &upload);
             gpu::TextureBarrier to_read = {
                 .texture = checker,
                 .before  = {
@@ -355,7 +355,7 @@ fn void? run(sample_args::Options options) {
                 },
                 .after   = gpu::sampled_at({ .fragment_shader }),
             };
-            gpu::cmd_texture_barrier(&cmd, &to_read)!;
+            gpu::cmd_texture_barrier(&cmd, &to_read);
             checker_uploaded = true;
         }
 
@@ -369,7 +369,7 @@ fn void? run(sample_args::Options options) {
                     .access = { .read, .write },
                 },
             };
-            gpu::cmd_texture_barrier(&cmd, &depth_init)!;
+            gpu::cmd_texture_barrier(&cmd, &depth_init);
             depth_fresh = false;
         }
 
@@ -382,7 +382,7 @@ fn void? run(sample_args::Options options) {
                 .access = { .read, .write },
             },
         )!;
-        gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+        gpu::cmd_texture_barrier(&cmd, &to_attach);
 
         float time = (float)frame / 60.0f;
         camera.yaw = time * 0.5f;
@@ -434,16 +434,16 @@ fn void? run(sample_args::Options options) {
             .write_enable = true,
             .compare      = gpu::CompareOp.LESS,
         };
-        gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_bind_pipeline(&cmd, pipeline);
+        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,
             fragment_root:  root_address,
             vertex_count:   CUBE_VERTEX_COUNT,
             instance_count: 1,
-        )!;
-        gpu::cmd_end_render_pass(&cmd)!;
+        );
+        gpu::cmd_end_render_pass(&cmd);
 
         gpu::TextureBarrier to_present = {
             .texture = acquired.texture,
@@ -456,7 +456,7 @@ fn void? run(sample_args::Options options) {
                 .layout = gpu::TextureLayout.PRESENT,
             },
         };
-        gpu::cmd_texture_barrier(&cmd, &to_present)!;
+        gpu::cmd_texture_barrier(&cmd, &to_present);
 
         sample_frame_upload::flush_frame_upload(&upload_batch)!;
         gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };

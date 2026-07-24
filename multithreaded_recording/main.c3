@@ -52,8 +52,8 @@ fn void? record_chunk(
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
-    gpu::cmd_bind_pipeline(list, pipeline)!;
-    gpu::cmd_begin_render_pass_with_state(list, &pass, &graphics)!;
+    gpu::cmd_bind_pipeline(list, pipeline);
+    gpu::cmd_begin_render_pass_with_state(list, &pass, &graphics);
     for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
         ulong index = (ulong)chunk * DRAWS_PER_CHUNK + draw;
         gpu::GpuAddress root = (gpu::GpuAddress)((ulong)roots_base + index * QuadRoot::size);
@@ -63,9 +63,9 @@ fn void? record_chunk(
             fragment_root:  root,
             vertex_count:   6,
             instance_count: 1,
-        )!;
+        );
     }
-    gpu::cmd_end_render_pass(list)!;
+    gpu::cmd_end_render_pass(list);
 }
 
 struct WorkerArgs {
@@ -148,14 +148,14 @@ fn void? read_color_target(
             .access = { .read },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &to_source)!;
+    gpu::cmd_texture_barrier(&commands, &to_source);
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
-    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy);
     gpu::Barrier to_host = {
         .before = { .transfer = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&commands, &to_host)!;
+    gpu::cmd_barrier(&commands, &to_host);
     gpu::TextureBarrier restore = {
         .texture = target,
         .before  = {
@@ -169,7 +169,7 @@ fn void? read_color_target(
             .access = { .read, .write },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &restore)!;
+    gpu::cmd_texture_barrier(&commands, &restore);
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
@@ -230,7 +230,7 @@ fn NanoDuration? run_once(
                 .access = { .read, .write },
             },
         };
-        gpu::cmd_texture_barrier(&preamble, &to_attach)!;
+        gpu::cmd_texture_barrier(&preamble, &to_attach);
     }
     gpu::ColorTargetDesc[1] clear_colors = {{
         .view     = target_view,
@@ -241,8 +241,8 @@ fn NanoDuration? run_once(
     gpu::RenderPassDesc clear_pass = { .colors = clear_colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::GraphicsState clear_graphics =
         gpu::full_render_graphics_state(clear_pass.width, clear_pass.height)!;
-    gpu::cmd_begin_render_pass_with_state(&preamble, &clear_pass, &clear_graphics)!;
-    gpu::cmd_end_render_pass(&preamble)!;
+    gpu::cmd_begin_render_pass_with_state(&preamble, &clear_pass, &clear_graphics);
+    gpu::cmd_end_render_pass(&preamble);
     gpu::ExecutableCommandList[1] preamble_lists = {
         gpu::end_commands(&preamble)!,
     };
@@ -361,10 +361,8 @@ struct RunResult {
 fn RunResult? run_on_device(bool validation) {
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = validation
-            ? gpu::ContractValidation.FULL
-            : gpu::ContractValidation.TRUSTED,
-        .track_resource_lifetimes     = validation,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = validation,
         .application_name             = "multithreaded_recording",
     };

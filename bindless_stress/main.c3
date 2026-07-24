@@ -87,10 +87,10 @@ fn void? upload_slice(
                 .access = { .write },
             },
         };
-        gpu::cmd_texture_barrier(&cmd, &to_dst)!;
+        gpu::cmd_texture_barrier(&cmd, &to_dst);
         gpu::GpuSpan slice = upload_span.checked_subspan((usz)i * 4, 4)!;
         gpu::BufferTextureCopyDesc upload = { .src = slice, .texture = tex };
-        gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
+        gpu::cmd_copy_buffer_to_texture(&cmd, &upload);
         gpu::TextureBarrier to_read = {
             .texture = tex,
             .before  = {
@@ -100,7 +100,7 @@ fn void? upload_slice(
             },
             .after   = gpu::sampled_at({ .compute }),
         };
-        gpu::cmd_texture_barrier(&cmd, &to_read)!;
+        gpu::cmd_texture_barrier(&cmd, &to_read);
     }
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
@@ -134,17 +134,17 @@ fn void? dispatch_verify(
 
     gpu::CommandList cmd = gpu::begin_commands(command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
-    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
+    gpu::cmd_bind_pipeline(&cmd, pipeline);
     gpu::cmd_dispatch(
         commands: &cmd,
         root:     root_address,
         groups:   { (TEXTURE_COUNT + VERIFY_WORKGROUP - 1) / VERIFY_WORKGROUP, 1, 1 },
-    )!;
+    );
     gpu::Barrier host_read = {
         .before = { .compute = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&cmd, &host_read)!;
+    gpu::cmd_barrier(&cmd, &host_read);
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
@@ -173,8 +173,8 @@ fn void? check_results(gpu::Device* device, Fleet* fleet, gpu::GpuSpan out_span)
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .texture_heap_capacity        = TEXTURE_COUNT + CAPACITY_SLACK,
         .texture_capacity             = TEXTURE_COUNT + CAPACITY_SLACK,

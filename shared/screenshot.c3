@@ -51,17 +51,17 @@ fn void? capture_texture_png(
             .access = { .read },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &to_transfer)!;
+    gpu::cmd_texture_barrier(&commands, &to_transfer);
     gpu::TextureBufferCopyDesc copy = {
         .texture = src,
         .dst     = readback_span,
     };
-    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy);
     gpu::Barrier host_read = {
         .before = { .transfer = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&commands, &host_read)!;
+    gpu::cmd_barrier(&commands, &host_read);
     gpu::TextureBarrier restore = {
         .texture = src,
         .before  = {
@@ -71,7 +71,7 @@ fn void? capture_texture_png(
         },
         .after   = from_state,
     };
-    gpu::cmd_texture_barrier(&commands, &restore)!;
+    gpu::cmd_texture_barrier(&commands, &restore);
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };

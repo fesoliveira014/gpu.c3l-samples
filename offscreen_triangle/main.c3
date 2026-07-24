@@ -88,14 +88,14 @@ fn void? read_color_target(
             .access = { .read },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &to_source)!;
+    gpu::cmd_texture_barrier(&commands, &to_source);
     gpu::TextureBufferCopyDesc copy = { .texture = target, .dst = readback_span };
-    gpu::cmd_copy_texture_to_buffer(&commands, &copy)!;
+    gpu::cmd_copy_texture_to_buffer(&commands, &copy);
     gpu::Barrier to_host = {
         .before = { .transfer = true },
         .after = { .host = true },
     };
-    gpu::cmd_barrier(&commands, &to_host)!;
+    gpu::cmd_barrier(&commands, &to_host);
     gpu::TextureBarrier restore = {
         .texture = target,
         .before  = {
@@ -109,7 +109,7 @@ fn void? read_color_target(
             .access = { .read, .write },
         },
     };
-    gpu::cmd_texture_barrier(&commands, &restore)!;
+    gpu::cmd_texture_barrier(&commands, &restore);
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
@@ -135,8 +135,8 @@ fn int main(String[] args) {
 fn void? run(sample_args::Options options) {
     gpu::RuntimeDesc runtime_desc = {
         .backend                      = gpu::BackendKind.VULKAN,
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
+        .contract_validation          = gpu::ContractValidation.TRUSTED,
+        .track_resource_lifetimes     = false,
         .enable_vulkan_validation     = true,
         .application_name             = "offscreen_triangle",
     };
@@ -269,9 +269,9 @@ fn void? run(sample_args::Options options) {
             .access = { .write },
         },
     };
-    gpu::cmd_texture_barrier(&cmd, &checker_to_dst)!;
+    gpu::cmd_texture_barrier(&cmd, &checker_to_dst);
     gpu::BufferTextureCopyDesc upload = { .src = staging_span, .texture = checker };
-    gpu::cmd_copy_buffer_to_texture(&cmd, &upload)!;
+    gpu::cmd_copy_buffer_to_texture(&cmd, &upload);
     gpu::TextureBarrier checker_to_read = {
         .texture = checker,
         .before  = {
@@ -281,7 +281,7 @@ fn void? run(sample_args::Options options) {
         },
         .after   = gpu::sampled_at({ .fragment_shader }),
     };
-    gpu::cmd_texture_barrier(&cmd, &checker_to_read)!;
+    gpu::cmd_texture_barrier(&cmd, &checker_to_read);
 
     gpu::TextureBarrier to_attach = {
         .texture = target,
@@ -292,7 +292,7 @@ fn void? run(sample_args::Options options) {
             .access = { .read, .write },
         },
     };
-    gpu::cmd_texture_barrier(&cmd, &to_attach)!;
+    gpu::cmd_texture_barrier(&cmd, &to_attach);
 
     gpu::ColorTargetDesc[1] colors = {{
         .view = target_view,
@@ -322,12 +322,12 @@ fn void? run(sample_args::Options options) {
         gpu::full_render_graphics_state(pass.width, pass.height)!;
     graphics.viewport = viewports[0];
     graphics.scissor = scissors[0];
-    gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+    gpu::cmd_bind_pipeline(&cmd, pipeline);
+    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics);
     for (uint i = 0; i < viewports.len; i++) {
         if (i > 0) {
-            gpu::cmd_set_viewport(&cmd, &viewports[i])!;
-            gpu::cmd_set_scissor(&cmd, &scissors[i])!;
+            gpu::cmd_set_viewport(&cmd, &viewports[i]);
+            gpu::cmd_set_scissor(&cmd, &scissors[i]);
         }
         gpu::cmd_draw(
             commands:       &cmd,
@@ -335,7 +335,7 @@ fn void? run(sample_args::Options options) {
             fragment_root:  frag_address,
             vertex_count:   3,
             instance_count: 1,
-        )!;
+        );
     }
     gpu::ScissorRect ui_clip = {
         .x = -40, .y = 200, .width = 400, .height = 400,
@@ -347,16 +347,16 @@ fn void? run(sample_args::Options options) {
         .min_depth = 0.0f,
         .max_depth = 1.0f,
     };
-    gpu::cmd_set_viewport(&cmd, &ui_viewport)!;
-    gpu::cmd_set_scissor(&cmd, &ui_scissor)!;
+    gpu::cmd_set_viewport(&cmd, &ui_viewport);
+    gpu::cmd_set_scissor(&cmd, &ui_scissor);
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    verts_address,
         fragment_root:  frag_address,
         vertex_count:   3,
         instance_count: 1,
-    )!;
-    gpu::cmd_end_render_pass(&cmd)!;
+    );
+    gpu::cmd_end_render_pass(&cmd);
 
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
