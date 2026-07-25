@@ -56,6 +56,9 @@ development; those three policies can also be selected independently.
 The reusable default adapter-selection form lives in `shared/sample_device.c3`.
 Windowed samples use the same pattern with `DeviceDesc.surface` set.
 Allocations, upload reuse, readback, and completion policy remain sample-local.
+The default queue request selects one queue for each semantic role. Explicit
+requests use `QueueRequest.required` and `QueueRequest.distinct`; each selected
+role is retrieved with `get_queue(device, kind)` and has no public queue index.
 
 ## Build and run
 

@@ -29,6 +29,11 @@ class StrictApiCheckTests(unittest.TestCase):
                         path,
                         source,
                     )
+                if check == "indexed_get_queue":
+                    return check_strict_api.find_forbidden_indexed_get_queue_calls(
+                        path,
+                        source,
+                    )
                 return check_strict_api.find_forbidden_retired_fields(path, source)
 
     def test_retired_field_survives_braces_in_lexical_content(self) -> None:
@@ -229,6 +234,66 @@ class StrictApiCheckTests(unittest.TestCase):
                 match = check_strict_api.SYMBOL_PATTERN.search(symbol)
                 self.assertIsNotNone(match)
                 self.assertEqual(match.group(0), symbol)
+
+    def test_retired_queue_multiplicity_symbols_are_forbidden(self) -> None:
+        for symbol in (
+            "QueueRequirements",
+            "QueueCounts",
+            "get_queue_counts",
+        ):
+            with self.subTest(symbol=symbol):
+                match = check_strict_api.SYMBOL_PATTERN.search(symbol)
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(0), symbol)
+
+    def test_indexed_get_queue_call_is_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::Device* device) {\n"
+            "    gpu::Queue queue = gpu::get_queue(\n"
+            "        device,\n"
+            "        gpu::QueueKind.COMPUTE,\n"
+            "        0,\n"
+            "    )!;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "indexed_get_queue"),
+            ["probe.c3:3: forbidden indexed get_queue call"],
+        )
+
+    def test_semantic_get_queue_call_is_accepted(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::Device* device) {\n"
+            "    gpu::Queue queue = "
+            "gpu::get_queue(device, gpu::QueueKind.COMPUTE)!;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "indexed_get_queue"),
+            [],
+        )
+
+    def test_get_queue_argument_scanner_respects_nested_and_lexical_content(
+        self,
+    ) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::Device* device) {\n"
+            "    // gpu::get_queue(device, gpu::QueueKind.COMPUTE, 0)!;\n"
+            "    ZString retired = "
+            "`gpu::get_queue(device, gpu::QueueKind.COMPUTE, 0)`;\n"
+            "    gpu::Queue queue = gpu::get_queue(\n"
+            "        choose_device(device, fallback_device(1, 2)),\n"
+            "        gpu::QueueKind.COMPUTE,\n"
+            "    )!;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "indexed_get_queue"),
+            [],
+        )
 
     def test_retired_runtime_backend_field_is_reported(self) -> None:
         source = (
