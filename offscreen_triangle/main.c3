@@ -135,7 +135,6 @@ fn int main(String[] args) {
 fn void? run(sample_args::Options options) {
     gpu::RuntimeDesc runtime_desc = {
         .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
         .application_name             = "offscreen_triangle",
     };

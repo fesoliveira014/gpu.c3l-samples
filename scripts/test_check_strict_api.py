@@ -211,6 +211,26 @@ class StrictApiCheckTests(unittest.TestCase):
             ["probe.c3:3: forbidden RuntimeDesc field '.backend'"],
         )
 
+    def test_retired_lifetime_symbol_is_forbidden(self) -> None:
+        match = check_strict_api.SYMBOL_PATTERN.search("OBJECT_BOUNDARIES")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(0), "OBJECT_BOUNDARIES")
+
+    def test_retired_runtime_lifetime_field_is_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::RuntimeDesc desc = { .track_resource_lifetimes = true };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            [
+                "probe.c3:3: forbidden RuntimeDesc field "
+                "'.track_resource_lifetimes'",
+            ],
+        )
+
     def test_sanitizer_preserves_offsets_and_newlines(self) -> None:
         source = '"}"\n`{}`\n/* } */\n<* { *>\n'
         sanitized = check_strict_api.sanitize_c3_structure(source)

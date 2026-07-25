@@ -351,7 +351,6 @@ fn void? run() {
 
     gpu::RuntimeDesc runtime_a_desc = {
         .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
         .application_name             = "pipeline_cache_timing",
     };
@@ -385,7 +384,6 @@ fn void? run() {
 
     gpu::RuntimeDesc runtime_b_desc = {
         .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
         .pipeline_cache_data          = blob[:written],
         .application_name             = "pipeline_cache_timing",

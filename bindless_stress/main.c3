@@ -173,7 +173,6 @@ fn void? check_results(gpu::Device* device, Fleet* fleet, gpu::GpuSpan out_span)
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
         .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
         .texture_heap_capacity        = TEXTURE_COUNT + CAPACITY_SLACK,
         .texture_capacity             = TEXTURE_COUNT + CAPACITY_SLACK,
