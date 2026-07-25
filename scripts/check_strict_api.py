@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SKIP_PARTS = {"build", "lib", ".git"}
 
 FORBIDDEN_SYMBOLS = (
+    "BackendKind",
+    "get_device_backend",
     "DeviceDesc",
     "create_device_from_desc",
     "BufferHandle",
@@ -76,7 +78,7 @@ SYMBOL_PATTERN = re.compile(
     r"\b(?:" + "|".join(re.escape(symbol) for symbol in FORBIDDEN_SYMBOLS) + r")\b"
 )
 RETIRED_FIELD_RULES = (
-    ("RuntimeDesc", ("enable_validation",)),
+    ("RuntimeDesc", ("enable_validation", "backend")),
     ("TextureDesc", ("dimension", "depth")),
     ("TextureViewDesc", ("format",)),
     ("TextureFormatSupport", ("dimensions",)),
