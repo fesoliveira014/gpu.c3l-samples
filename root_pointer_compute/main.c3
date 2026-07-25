@@ -70,7 +70,6 @@ fn void? dispatch_compute(
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
         .contract_validation          = gpu::ContractValidation.FULL,
-        .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
         .application_name             = "root_pointer_compute",
     };

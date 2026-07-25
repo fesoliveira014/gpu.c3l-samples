@@ -363,7 +363,6 @@ fn RunResult? run_on_device(bool validation) {
         .contract_validation          = validation
             ? gpu::ContractValidation.FULL
             : gpu::ContractValidation.TRUSTED,
-        .track_resource_lifetimes     = validation,
         .enable_vulkan_validation     = validation,
         .application_name             = "multithreaded_recording",
     };
