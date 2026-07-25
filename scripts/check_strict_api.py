@@ -56,6 +56,8 @@ FORBIDDEN_SYMBOLS = (
     "ShaderCode",
     "ShaderStage",
     "prepare_shader_code",
+    "create_compute_pipelines",
+    "create_graphics_pipelines",
     "poll_readback",
     "resolve_readback",
     "READBACK_NOT_READY",
