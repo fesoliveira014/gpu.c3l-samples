@@ -210,14 +210,14 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = OFFSCREEN_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::ColorTargetState[1] color_targets = {{
-        .format     = gpu::Format.RGBA8_UNORM,
-        .write_mask = gpu::COLOR_WRITE_ALL,
-    }};
+    gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
+    gpu::ColorTargetState[1] color_targets = {
+        gpu::color_blend_disabled(),
+    };
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .colors          = color_targets[..],
+        .color_formats   = color_formats[..],
         .debug_name      = "offscreen_triangle",
     };
     gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
@@ -320,6 +320,7 @@ fn void? run(sample_args::Options options) {
         gpu::full_render_graphics_state(pass.width, pass.height)!;
     graphics.viewport = viewports[0];
     graphics.scissor = scissors[0];
+    graphics.color.targets = color_targets[..];
     gpu::cmd_bind_pipeline(&cmd, pipeline)!;
     gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
     for (uint i = 0; i < viewports.len; i++) {

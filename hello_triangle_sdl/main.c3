@@ -145,6 +145,10 @@ fn void? render_frame(FrameWork* ctx) {
     };
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
+    gpu::ColorTargetState[1] color_targets = {
+        gpu::color_blend_disabled(),
+    };
+    graphics.color.targets = color_targets[..];
     gpu::cmd_bind_pipeline(&cmd, ctx.pipeline)!;
     gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
     gpu::cmd_draw(
@@ -299,14 +303,11 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = TRIANGLE_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::ColorTargetState[1] color_targets = {{
-        .format     = swapchain_info.format,
-        .write_mask = gpu::COLOR_WRITE_ALL,
-    }};
+    gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .colors          = color_targets[..],
+        .color_formats   = color_formats[..],
         .debug_name      = "hello_triangle",
     };
     gpu::PipelineHandle pipeline;
@@ -336,11 +337,11 @@ fn void? run(sample_args::Options options) {
             sample_window::throttle_dormant();
             continue;
         }
-        if (!pipeline_valid || color_targets[0].format != swapchain_info.format) {
+        if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
-            color_targets[0].format = swapchain_info.format;
+            color_formats[0] = swapchain_info.format;
             pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
             pipeline_valid = true;
         }

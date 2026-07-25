@@ -15,7 +15,7 @@ const uint SCALE_COUNT = 128;
 
 const gpu::Format[3] COLOR_FORMATS = { gpu::Format.RGBA8_UNORM, gpu::Format.BGRA8_UNORM, gpu::Format.RGBA16_FLOAT };
 const uint VARIANTS = 2 * 2 * 3 * 2;
-const uint IMMUTABLE_IDENTITIES = 2 * 3 * 2;
+const uint PIPELINE_IDENTITIES = 3 * 2;
 
 struct Shaders {
     gpu::ShaderCode vert;
@@ -35,33 +35,19 @@ fn Shaders? prepare_shaders() {
 }
 
 <* Variant v spreads over blend enable x command-time topology x color format
-   x depth format. Topology pairs intentionally alias one immutable pipeline. *>
-fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::ColorTargetState[] color_slot) {
-    bool blend_on  = (v & 1) != 0;
+   x depth format. Blend and topology dimensions intentionally alias one
+   format/depth pipeline identity. *>
+fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::Format[] color_slot) {
     uint fmt       = (v >> 2) % 3;
     bool has_depth = ((v >> 2) / 3) != 0;
-    color_slot[0] = {
-        .format     = COLOR_FORMATS[fmt],
-        .write_mask = gpu::COLOR_WRITE_ALL,
-    };
+    color_slot[0] = COLOR_FORMATS[fmt];
     gpu::GraphicsPipelineDesc desc = {
         .vertex_shader   = s.vert,
         .fragment_shader = s.frag,
-        .colors          = color_slot,
+        .color_formats   = color_slot,
     };
     if (has_depth) {
         desc.depth_format = gpu::Format.D32_FLOAT;
-    }
-    if (blend_on) {
-        color_slot[0].blend = {
-            .enable    = true,
-            .src_color = gpu::BlendFactor.SRC_ALPHA,
-            .dst_color = gpu::BlendFactor.ONE_MINUS_SRC_ALPHA,
-            .color_op  = gpu::BlendOp.ADD,
-            .src_alpha = gpu::BlendFactor.ONE,
-            .dst_alpha = gpu::BlendFactor.ZERO,
-            .alpha_op  = gpu::BlendOp.ADD,
-        };
     }
     return desc;
 }
@@ -76,7 +62,7 @@ struct TierResult {
    land in `graphics` (len VARIANTS) and `*compute`. *>
 fn TierResult? build_all(gpu::Device* device, Shaders* s, gpu::PipelineHandle[] graphics, gpu::PipelineHandle* compute) {
     TierResult r = { .min = (NanoDuration)long::max };
-    gpu::ColorTargetState[1] color_slot;
+    gpu::Format[1] color_slot;
     for (uint v = 0; v < VARIANTS; v++) {
         Clock clk = clock::now();
         gpu::GraphicsPipelineDesc desc = variant_desc(s, v, color_slot[..]);
@@ -196,6 +182,10 @@ fn void? smoke(
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = SMOKE_SIZE, .height = SMOKE_SIZE };
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
+    gpu::ColorTargetState[1] color_targets = {
+        gpu::color_blend_disabled(),
+    };
+    graphics.color.targets = color_targets[..];
     gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
     gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
     gpu::cmd_draw(
@@ -205,6 +195,13 @@ fn void? smoke(
         vertex_count:   6,
         instance_count: 1,
     )!;
+    gpu::ColorTargetState[1] blended_color_targets = {
+        gpu::alpha_blend(),
+    };
+    gpu::ColorState blended_color = {
+        .targets = blended_color_targets[..],
+    };
+    gpu::cmd_set_color_state(&cmd, &blended_color)!;
     gpu::DynamicRasterState line_raster = {
         .topology = gpu::PrimitiveTopology.LINES,
     };
@@ -407,9 +404,9 @@ fn void? run() {
     destroy_all(&device_b, graphics_b[..], compute);
 
     io::printfn(
-        "pipeline_cache_timing: %d graphics handles, %d immutable identities + 1 compute",
+        "pipeline_cache_timing: %d graphics handles, %d pipeline identities + 1 compute",
         VARIANTS,
-        IMMUTABLE_IDENTITIES,
+        PIPELINE_IDENTITIES,
     );
     print_tier("cold (device A) ", cold);
     print_tier("dedup (device A)", dedup);

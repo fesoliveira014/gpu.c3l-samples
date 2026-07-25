@@ -52,6 +52,10 @@ fn void? record_chunk(
     gpu::RenderPassDesc pass = { .colors = colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
     gpu::GraphicsState graphics =
         gpu::full_render_graphics_state(pass.width, pass.height)!;
+    gpu::ColorTargetState[1] color_targets = {
+        gpu::color_blend_disabled(),
+    };
+    graphics.color.targets = color_targets[..];
     gpu::cmd_bind_pipeline(list, pipeline)!;
     gpu::cmd_begin_render_pass_with_state(list, &pass, &graphics)!;
     for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
@@ -239,9 +243,7 @@ fn NanoDuration? run_once(
         .clear    = { .rgba = { 0, 0, 0, 1 } },
     }};
     gpu::RenderPassDesc clear_pass = { .colors = clear_colors[..], .width = TARGET_SIZE, .height = TARGET_SIZE };
-    gpu::GraphicsState clear_graphics =
-        gpu::full_render_graphics_state(clear_pass.width, clear_pass.height)!;
-    gpu::cmd_begin_render_pass_with_state(&preamble, &clear_pass, &clear_graphics)!;
+    gpu::cmd_begin_render_pass(&preamble, &clear_pass)!;
     gpu::cmd_end_render_pass(&preamble)!;
     gpu::ExecutableCommandList[1] preamble_lists = {
         gpu::end_commands(&preamble)!,
@@ -393,14 +395,11 @@ fn RunResult? run_on_device(bool validation) {
     gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = QUAD_FRAG_SPIRV[..], .entry_point = "main" };
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
-    gpu::ColorTargetState[1] color_targets = {{
-        .format     = gpu::Format.RGBA8_UNORM,
-        .write_mask = gpu::COLOR_WRITE_ALL,
-    }};
+    gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::GraphicsPipelineDesc pipe_desc = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .colors          = color_targets[..],
+        .color_formats   = color_formats[..],
         .debug_name      = "mtrec_quads",
     };
     gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
