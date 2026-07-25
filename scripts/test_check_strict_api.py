@@ -163,6 +163,22 @@ class StrictApiCheckTests(unittest.TestCase):
             ["probe.c3:3: forbidden RuntimeDesc field '.enable_validation'"],
         )
 
+    def test_retired_strict_profile_fields_are_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::AdapterInfo adapter = { .strict_supported = true };\n"
+            "    gpu::DeviceCaps caps = { .strict_enabled = true };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            [
+                "probe.c3:3: forbidden AdapterInfo field '.strict_supported'",
+                "probe.c3:4: forbidden DeviceCaps field '.strict_enabled'",
+            ],
+        )
+
     def test_retired_runtime_validation_member_assignment_is_reported(self) -> None:
         source = (
             "module probe;\n"
@@ -194,6 +210,21 @@ class StrictApiCheckTests(unittest.TestCase):
 
     def test_retired_backend_symbols_are_forbidden(self) -> None:
         for symbol in ("BackendKind", "get_device_backend"):
+            with self.subTest(symbol=symbol):
+                match = check_strict_api.SYMBOL_PATTERN.search(symbol)
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(0), symbol)
+
+    def test_removed_device_request_symbols_are_forbidden(self) -> None:
+        for symbol in (
+            "DeviceRequest",
+            "DeviceRequestSupport",
+            "DeviceCapability",
+            "strict_device_request",
+            "request_presentation",
+            "request_queues",
+            "supports_device_request",
+        ):
             with self.subTest(symbol=symbol):
                 match = check_strict_api.SYMBOL_PATTERN.search(symbol)
                 self.assertIsNotNone(match)
@@ -262,6 +293,13 @@ class StrictApiCheckTests(unittest.TestCase):
                 "probe.c3:3: forbidden GraphicsPipelineDesc field '.colors'",
                 "probe.c3:4: forbidden ColorTargetState field '.format'",
             ],
+        )
+
+    def test_device_desc_is_not_a_forbidden_symbol(self) -> None:
+        self.assertIsNone(
+            check_strict_api.SYMBOL_PATTERN.search(
+                "gpu::DeviceDesc desc = {};"
+            )
         )
 
     def test_sanitizer_preserves_offsets_and_newlines(self) -> None:

@@ -22,10 +22,12 @@ in [`testing.md`](lib/gpu.c3l/docs/testing.md) under “Prerequisites on windows
 Run `python3 scripts/copy_runtime_deps.py` after building to place `SDL3.dll`
 beside the executables.
 
-## Strict device setup
+## Device setup
 
-Samples create a runtime, enumerate adapters, test an immutable strict request,
-and create a device from a supported adapter:
+Samples create a runtime, enumerate adapters, test a plain description, and
+create a device from a supported adapter. Support checks and creation borrow
+the description without modifying it; the required device baseline and default
+queues are implicit:
 
 ```c3
 gpu::RuntimeDesc runtime_desc = gpu::full_validation_runtime_desc();
@@ -33,13 +35,13 @@ runtime_desc.application_name = "my_sample";
 gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
 defer (void)gpu::destroy_runtime(&runtime);
 
-gpu::DeviceRequest request = gpu::strict_device_request();
+gpu::DeviceDesc desc = {};
 gpu::AdapterList adapters = gpu::enumerate_adapters(&runtime)!;
 gpu::Device device = {};
 for (uint i = 0; i < adapters.count; i++) {
     gpu::Adapter adapter = adapters.get(i)!;
-    if (!gpu::supports_device_request(&adapter, &request)!.supported) continue;
-    device = gpu::create_device(&adapter, &request)!;
+    if (!gpu::supports_device_desc(&adapter, &desc)!.supported) continue;
+    device = gpu::create_device(&adapter, &desc)!;
     break;
 }
 if (!device.is_valid()) return gpu::UNSUPPORTED_FEATURE~;
@@ -51,7 +53,8 @@ and Vulkan validation layers are both disabled. The helper above enables full
 contract checks, lifetime tracking, and Vulkan validation layers for
 development; those three policies can also be selected independently.
 
-The reusable adapter-selection form lives in `shared/sample_device.c3`.
+The reusable default adapter-selection form lives in `shared/sample_device.c3`.
+Windowed samples use the same pattern with `DeviceDesc.surface` set.
 Allocations, upload reuse, readback, and completion policy remain sample-local.
 
 ## Build and run

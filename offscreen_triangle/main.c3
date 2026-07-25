@@ -140,7 +140,7 @@ fn void? run(sample_args::Options options) {
     };
     gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
     defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_strict_device(&runtime)!;
+    gpu::Device device = sample_device::create_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
 
     gpu::TextureDesc rt_desc = {
