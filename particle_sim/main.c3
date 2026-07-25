@@ -167,8 +167,8 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle sim_pipe = gpu::create_compute_pipeline(&device, &sim_pd)!;
     defer (void)gpu::destroy_pipeline(&device, sim_pipe);
 
+    gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::ColorTargetState[1] color_targets = {{
-        .format     = swapchain_info.format,
         .blend      = {
             .enable    = true,
             .src_color = gpu::BlendFactor.ONE,
@@ -183,7 +183,7 @@ fn void? run(sample_args::Options options) {
     gpu::GraphicsPipelineDesc draw_pd = {
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .colors          = color_targets[..],
+        .color_formats   = color_formats[..],
         .debug_name      = "particle_draw",
     };
     gpu::PipelineHandle draw_pipe;
@@ -215,11 +215,11 @@ fn void? run(sample_args::Options options) {
             sample_window::throttle_dormant();
             continue;
         }
-        if (!draw_pipeline_valid || color_targets[0].format != swapchain_info.format) {
+        if (!draw_pipeline_valid || color_formats[0] != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (draw_pipeline_valid) gpu::destroy_pipeline(&device, draw_pipe)!;
             draw_pipeline_valid = false;
-            color_targets[0].format = swapchain_info.format;
+            color_formats[0] = swapchain_info.format;
             draw_pipe = gpu::create_graphics_pipeline(&device, &draw_pd)!;
             draw_pipeline_valid = true;
         }
@@ -330,7 +330,8 @@ fn void? run(sample_args::Options options) {
             .height = swapchain_info.height,
         };
         gpu::GraphicsState graphics =
-            gpu::full_render_graphics_state(pass.width, pass.height)!;
+            gpu::render_geometry_state(pass.width, pass.height)!;
+        graphics.color.targets = color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, draw_pipe)!;
         gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(

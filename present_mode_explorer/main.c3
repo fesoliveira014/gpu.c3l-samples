@@ -25,6 +25,7 @@ struct ModeStats {
 struct TestcardPipeline {
     gpu::PipelineHandle handle;
     gpu::GraphicsPipelineDesc desc;
+    gpu::Format[1] color_formats;
     gpu::ColorTargetState[1] color_targets;
     bool valid;
 }
@@ -96,14 +97,11 @@ fn ModeStats? run_mode_window(
             continue;
         }
 
-        if (!pipeline.valid || pipeline.color_targets[0].format != swapchain_info.format) {
+        if (!pipeline.valid || pipeline.color_formats[0] != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
             if (pipeline.valid) gpu::destroy_pipeline(device, pipeline.handle)!;
             pipeline.valid = false;
-            pipeline.color_targets[0] = {
-                .format     = swapchain_info.format,
-                .write_mask = gpu::COLOR_WRITE_ALL,
-            };
+            pipeline.color_formats[0] = swapchain_info.format;
             pipeline.handle = gpu::create_graphics_pipeline(device, &pipeline.desc)!;
             pipeline.valid = true;
         }
@@ -166,7 +164,8 @@ fn ModeStats? run_mode_window(
         }};
         gpu::RenderPassDesc pass = { .colors = colors[..], .width = *width, .height = *height };
         gpu::GraphicsState graphics =
-            gpu::full_render_graphics_state(pass.width, pass.height)!;
+            gpu::render_geometry_state(pass.width, pass.height)!;
+        graphics.color.targets = pipeline.color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, pipeline.handle)!;
         gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
         gpu::cmd_draw(
@@ -282,10 +281,11 @@ fn void? run(sample_args::Options options) {
     gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     TestcardPipeline pipeline = {};
+    pipeline.color_targets[0] = gpu::color_blend_disabled();
     pipeline.desc = (gpu::GraphicsPipelineDesc){
         .vertex_shader   = vert,
         .fragment_shader = frag,
-        .colors          = pipeline.color_targets[..],
+        .color_formats   = pipeline.color_formats[..],
         .debug_name      = "testcard",
     };
     defer {
