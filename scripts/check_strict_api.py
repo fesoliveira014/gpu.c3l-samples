@@ -11,6 +11,7 @@ SKIP_PARTS = {"build", "lib", ".git"}
 FORBIDDEN_SYMBOLS = (
     "BackendKind",
     "get_device_backend",
+    "OBJECT_BOUNDARIES",
     "DeviceDesc",
     "create_device_from_desc",
     "BufferHandle",
@@ -78,7 +79,10 @@ SYMBOL_PATTERN = re.compile(
     r"\b(?:" + "|".join(re.escape(symbol) for symbol in FORBIDDEN_SYMBOLS) + r")\b"
 )
 RETIRED_FIELD_RULES = (
-    ("RuntimeDesc", ("enable_validation", "backend")),
+    (
+        "RuntimeDesc",
+        ("enable_validation", "backend", "track_resource_lifetimes"),
+    ),
     ("TextureDesc", ("dimension", "depth")),
     ("TextureViewDesc", ("format",)),
     ("TextureFormatSupport", ("dimensions",)),
