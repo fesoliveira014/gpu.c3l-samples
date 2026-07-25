@@ -39,7 +39,6 @@ fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_ta
 
 fn void? run(sample_args::Options options) {
     gpu::RuntimeDesc runtime_desc = {
-        .backend                      = gpu::BackendKind.VULKAN,
         .contract_validation          = gpu::ContractValidation.FULL,
         .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,

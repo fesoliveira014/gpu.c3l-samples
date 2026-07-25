@@ -192,6 +192,25 @@ class StrictApiCheckTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(0), "TextureDimensionSupport")
 
+    def test_retired_backend_symbols_are_forbidden(self) -> None:
+        for symbol in ("BackendKind", "get_device_backend"):
+            with self.subTest(symbol=symbol):
+                match = check_strict_api.SYMBOL_PATTERN.search(symbol)
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(0), symbol)
+
+    def test_retired_runtime_backend_field_is_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::RuntimeDesc desc = { .backend = gpu::BackendKind.VULKAN };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            ["probe.c3:3: forbidden RuntimeDesc field '.backend'"],
+        )
+
     def test_sanitizer_preserves_offsets_and_newlines(self) -> None:
         source = '"}"\n`{}`\n/* } */\n<* { *>\n'
         sanitized = check_strict_api.sanitize_c3_structure(source)

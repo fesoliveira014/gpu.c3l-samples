@@ -235,7 +235,6 @@ fn void? run(bool detailed) {
     defer print_debug_messages(&debug_messages);
 
     gpu::RuntimeDesc runtime_desc = {
-        .backend                      = gpu::BackendKind.VULKAN,
         .contract_validation          = gpu::ContractValidation.FULL,
         .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
