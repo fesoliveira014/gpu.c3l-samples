@@ -64,6 +64,13 @@ FORBIDDEN_SYMBOLS = (
     "ClearDepthStencil",
     "SAMPLER_INVALID",
     "publish_sampler",
+    "DynamicGraphicsPipelineDesc",
+    "ColorTargetFormat",
+    "ColorTargetBlendState",
+    "create_dynamic_graphics_pipeline",
+    "create_dynamic_graphics_pipelines",
+    "request_dynamic_color_state",
+    "dynamic_color_state",
 )
 
 FORBIDDEN_PATTERNS = (
@@ -83,6 +90,8 @@ RETIRED_FIELD_RULES = (
         "RuntimeDesc",
         ("enable_validation", "backend", "track_resource_lifetimes"),
     ),
+    ("GraphicsPipelineDesc", ("colors",)),
+    ("ColorTargetState", ("format",)),
     ("TextureDesc", ("dimension", "depth")),
     ("TextureViewDesc", ("format",)),
     ("TextureFormatSupport", ("dimensions",)),

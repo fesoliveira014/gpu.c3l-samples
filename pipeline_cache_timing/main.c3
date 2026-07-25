@@ -52,6 +52,20 @@ fn gpu::GraphicsPipelineDesc variant_desc(Shaders* s, uint v, gpu::Format[] colo
     return desc;
 }
 
+fn gpu::ColorTargetState variant_color_state(uint v) {
+    return (v & 1) == 0
+        ? gpu::color_blend_disabled()
+        : gpu::alpha_blend();
+}
+
+fn gpu::DynamicRasterState variant_raster_state(uint v) {
+    return {
+        .topology = (v & 2) == 0
+            ? gpu::PrimitiveTopology.TRIANGLES
+            : gpu::PrimitiveTopology.LINES,
+    };
+}
+
 struct TierResult {
     NanoDuration total;
     NanoDuration min;
@@ -89,7 +103,7 @@ fn void destroy_all(gpu::Device* device, gpu::PipelineHandle[] graphics, gpu::Pi
 fn void? smoke(
     gpu::Device* device,
     gpu::CommandAllocator* allocator,
-    gpu::PipelineHandle quad_pipe,
+    gpu::PipelineHandle[] quad_pipes,
     gpu::PipelineHandle compute,
 ) {
     gpu::TextureDesc target_desc = {
@@ -135,7 +149,7 @@ fn void? smoke(
     float* output_data = (float*)gpu::get_span_mapping(device, output_span)!.ptr;
 
     gpu::AllocationDesc roots_desc = {
-        .size         = QuadRoot::size + ScaleRoot::size,
+        .size         = QuadRoot::size * 2 + ScaleRoot::size,
         .alignment    = 16,
         .memory_class = gpu::MemoryClass.CPU_WRITE,
         .access       = { .graphics },
@@ -151,7 +165,21 @@ fn void? smoke(
     quad_root.color = { 0.0f, 1.0f, 0.0f, 1.0f };
     gpu::GpuAddress quad_address = gpu::get_span_address(device, quad_span)!;
 
-    gpu::GpuSpan scale_span = roots_span.checked_subspan(QuadRoot::size, ScaleRoot::size)!;
+    gpu::GpuSpan blended_quad_span = roots_span.checked_subspan(
+        QuadRoot::size,
+        QuadRoot::size,
+    )!;
+    QuadRoot* blended_quad_root =
+        (QuadRoot*)gpu::get_span_mapping(device, blended_quad_span)!.ptr;
+    blended_quad_root.rect = { -1.0f, -1.0f, 1.0f, 1.0f };
+    blended_quad_root.color = { 1.0f, 0.0f, 0.0f, 0.5f };
+    gpu::GpuAddress blended_quad_address =
+        gpu::get_span_address(device, blended_quad_span)!;
+
+    gpu::GpuSpan scale_span = roots_span.checked_subspan(
+        QuadRoot::size * 2,
+        ScaleRoot::size,
+    )!;
     ScaleRoot* scale_root = (ScaleRoot*)gpu::get_span_mapping(device, scale_span)!.ptr;
     scale_root.input_gpu  = gpu::get_span_address(device, input_span)!;
     scale_root.output_gpu = gpu::get_span_address(device, output_span)!;
@@ -183,10 +211,11 @@ fn void? smoke(
     gpu::GraphicsState graphics =
         gpu::render_geometry_state(pass.width, pass.height)!;
     gpu::ColorTargetState[1] color_targets = {
-        gpu::color_blend_disabled(),
+        variant_color_state(0),
     };
     graphics.color.targets = color_targets[..];
-    gpu::cmd_bind_pipeline(&cmd, quad_pipe)!;
+    graphics.raster = variant_raster_state(0);
+    gpu::cmd_bind_pipeline(&cmd, quad_pipes[0])!;
     gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
     gpu::cmd_draw(
         commands:       &cmd,
@@ -196,20 +225,19 @@ fn void? smoke(
         instance_count: 1,
     )!;
     gpu::ColorTargetState[1] blended_color_targets = {
-        gpu::alpha_blend(),
+        variant_color_state(3),
     };
     gpu::ColorState blended_color = {
         .targets = blended_color_targets[..],
     };
     gpu::cmd_set_color_state(&cmd, &blended_color)!;
-    gpu::DynamicRasterState line_raster = {
-        .topology = gpu::PrimitiveTopology.LINES,
-    };
+    gpu::DynamicRasterState line_raster = variant_raster_state(3);
+    gpu::cmd_bind_pipeline(&cmd, quad_pipes[3])!;
     gpu::cmd_set_raster_state(&cmd, &line_raster)!;
     gpu::cmd_draw(
         commands:       &cmd,
-        vertex_root:    quad_address,
-        fragment_root:  quad_address,
+        vertex_root:    blended_quad_address,
+        fragment_root:  blended_quad_address,
         vertex_count:   6,
         instance_count: 1,
     )!;
@@ -238,9 +266,13 @@ fn void? smoke(
         producer_completion: completion,
         out:                 pixels,
     )!;
-    // Full-target green quad: center pixel must be pure green.
+    // Variant 3 draws a half-alpha red diagonal over variant 0's green quad.
     usz center = ((usz)SMOKE_SIZE / 2 * SMOKE_SIZE + SMOKE_SIZE / 2) * 4;
-    if (pixels[center] != 0 || pixels[center + 1] != (char)255) {
+    char red = pixels[center];
+    char green = pixels[center + 1];
+    if ((red != (char)127 && red != (char)128)
+        || (green != (char)127 && green != (char)128)
+        || pixels[center + 2] != 0) {
         io::printn("pipeline_cache_timing: quad smoke failed");
         return gpu::INVALID_ARGUMENT~;
     }
@@ -364,7 +396,7 @@ fn void? run() {
     smoke(
         device:    &device_a,
         allocator: &allocator_a,
-        quad_pipe: graphics_a[0],
+        quad_pipes: graphics_a[..],
         compute:   compute,
     )!;
 
@@ -398,7 +430,7 @@ fn void? run() {
     smoke(
         device:    &device_b,
         allocator: &allocator_b,
-        quad_pipe: graphics_b[0],
+        quad_pipes: graphics_b[..],
         compute:   compute,
     )!;
     destroy_all(&device_b, graphics_b[..], compute);

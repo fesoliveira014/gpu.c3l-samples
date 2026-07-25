@@ -231,6 +231,39 @@ class StrictApiCheckTests(unittest.TestCase):
             ],
         )
 
+    def test_retired_command_color_symbols_are_forbidden(self) -> None:
+        for symbol in (
+            "DynamicGraphicsPipelineDesc",
+            "ColorTargetFormat",
+            "ColorTargetBlendState",
+            "create_dynamic_graphics_pipeline",
+            "create_dynamic_graphics_pipelines",
+            "request_dynamic_color_state",
+            "dynamic_color_state",
+        ):
+            with self.subTest(symbol=symbol):
+                match = check_strict_api.SYMBOL_PATTERN.search(
+                    f"gpu::{symbol}"
+                )
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(0), symbol)
+
+    def test_retired_command_color_fields_are_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::GraphicsPipelineDesc pipeline = { .colors = {} };\n"
+            "    gpu::ColorTargetState color = { .format = {} };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            [
+                "probe.c3:3: forbidden GraphicsPipelineDesc field '.colors'",
+                "probe.c3:4: forbidden ColorTargetState field '.format'",
+            ],
+        )
+
     def test_sanitizer_preserves_offsets_and_newlines(self) -> None:
         source = '"}"\n`{}`\n/* } */\n<* { *>\n'
         sanitized = check_strict_api.sanitize_c3_structure(source)
