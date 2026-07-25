@@ -164,7 +164,7 @@ fn ModeStats? run_mode_window(
         }};
         gpu::RenderPassDesc pass = { .colors = colors[..], .width = *width, .height = *height };
         gpu::GraphicsState graphics =
-            gpu::full_render_graphics_state(pass.width, pass.height)!;
+            gpu::render_geometry_state(pass.width, pass.height)!;
         graphics.color.targets = pipeline.color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, pipeline.handle)!;
         gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;

@@ -426,7 +426,7 @@ fn void? run(sample_args::Options options) {
             .height = swapchain_info.height,
         };
         gpu::GraphicsState graphics =
-            gpu::full_render_graphics_state(pass.width, pass.height)!;
+            gpu::render_geometry_state(pass.width, pass.height)!;
         graphics.depth = {
             .test_enable  = true,
             .write_enable = true,

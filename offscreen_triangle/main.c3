@@ -317,7 +317,7 @@ fn void? run(sample_args::Options options) {
         },
     };
     gpu::GraphicsState graphics =
-        gpu::full_render_graphics_state(pass.width, pass.height)!;
+        gpu::render_geometry_state(pass.width, pass.height)!;
     graphics.viewport = viewports[0];
     graphics.scissor = scissors[0];
     graphics.color.targets = color_targets[..];

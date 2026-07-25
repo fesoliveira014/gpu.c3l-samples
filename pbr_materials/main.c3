@@ -490,7 +490,7 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc pass = { .colors = colors[..], .depth = &depth_target, .width = width, .height = height };
         gpu::GraphicsState graphics =
-            gpu::full_render_graphics_state(pass.width, pass.height)!;
+            gpu::render_geometry_state(pass.width, pass.height)!;
         graphics.raster = {
             .cull_mode = gpu::CullMode.BACK,
         };

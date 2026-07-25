@@ -512,7 +512,7 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc geometry_pass = { .colors = gbuffer_colors[..], .depth = &gbuffer_depth, .width = width, .height = height };
         gpu::GraphicsState geometry_graphics =
-            gpu::full_render_graphics_state(geometry_pass.width, geometry_pass.height)!;
+            gpu::render_geometry_state(geometry_pass.width, geometry_pass.height)!;
         geometry_graphics.depth = {
             .test_enable  = true,
             .write_enable = true,
@@ -562,7 +562,7 @@ fn void? run(sample_args::Options options) {
         }};
         gpu::RenderPassDesc resolve_pass = { .colors = swap_colors[..], .width = width, .height = height };
         gpu::GraphicsState resolve_graphics =
-            gpu::full_render_graphics_state(resolve_pass.width, resolve_pass.height)!;
+            gpu::render_geometry_state(resolve_pass.width, resolve_pass.height)!;
         resolve_graphics.color.targets = swap_color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, resolve_pipe)!;
         gpu::cmd_begin_render_pass_with_state(&cmd, &resolve_pass, &resolve_graphics)!;

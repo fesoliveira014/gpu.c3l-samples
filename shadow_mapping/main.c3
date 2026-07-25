@@ -452,7 +452,7 @@ fn void? run(sample_args::Options options) {
             .compare      = gpu::CompareOp.LESS,
         };
         gpu::GraphicsState shadow_graphics =
-            gpu::full_render_graphics_state(shadow_pass.width, shadow_pass.height)!;
+            gpu::render_geometry_state(shadow_pass.width, shadow_pass.height)!;
         shadow_graphics.raster = shadow_raster;
         shadow_graphics.depth = depth_state;
         gpu::cmd_bind_pipeline(&cmd, shadow_pipe)!;
@@ -516,7 +516,7 @@ fn void? run(sample_args::Options options) {
         };
         gpu::RenderPassDesc scene_pass = { .colors = colors[..], .depth = &scene_depth_target, .width = width, .height = height };
         gpu::GraphicsState scene_graphics =
-            gpu::full_render_graphics_state(scene_pass.width, scene_pass.height)!;
+            gpu::render_geometry_state(scene_pass.width, scene_pass.height)!;
         scene_graphics.depth = depth_state;
         scene_graphics.color.targets = color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, scene_pipe)!;

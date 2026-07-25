@@ -330,7 +330,7 @@ fn void? run(sample_args::Options options) {
             .height = swapchain_info.height,
         };
         gpu::GraphicsState graphics =
-            gpu::full_render_graphics_state(pass.width, pass.height)!;
+            gpu::render_geometry_state(pass.width, pass.height)!;
         graphics.color.targets = color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, draw_pipe)!;
         gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
