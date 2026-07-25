@@ -29,7 +29,6 @@ and create a device from a supported adapter:
 
 ```c3
 gpu::RuntimeDesc runtime_desc = gpu::full_validation_runtime_desc();
-runtime_desc.backend = gpu::BackendKind.VULKAN;
 runtime_desc.application_name = "my_sample";
 gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
 defer (void)gpu::destroy_runtime(&runtime);

@@ -360,7 +360,6 @@ struct RunResult {
    readbacks are byte-identical. *>
 fn RunResult? run_on_device(bool validation) {
     gpu::RuntimeDesc runtime_desc = {
-        .backend                      = gpu::BackendKind.VULKAN,
         .contract_validation          = validation
             ? gpu::ContractValidation.FULL
             : gpu::ContractValidation.TRUSTED,

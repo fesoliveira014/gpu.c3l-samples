@@ -172,7 +172,6 @@ fn void? check_results(gpu::Device* device, Fleet* fleet, gpu::GpuSpan out_span)
 
 fn void? run() {
     gpu::RuntimeDesc runtime_desc = {
-        .backend                      = gpu::BackendKind.VULKAN,
         .contract_validation          = gpu::ContractValidation.FULL,
         .track_resource_lifetimes     = true,
         .enable_vulkan_validation     = true,
