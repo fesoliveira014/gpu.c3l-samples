@@ -108,13 +108,14 @@ fn void? run() {
     for (uint i = 0; i < COUNT; i++) in_data[i] = (float)i;
     gpu::flush_mapped_span(&device, input_span)!;
 
-    gpu::ShaderDesc shader_desc = {
-        .stage = gpu::ShaderStage.COMPUTE, .spirv = ROOT_POINTER_SPIRV[..],
-        .entry_point = "main", .debug_name = "root_pointer",
+    gpu::ComputePipelineDesc pipe_desc = {
+        .shader = {
+            .spirv       = ROOT_POINTER_SPIRV[..],
+            .entry_point = "main",
+            .debug_name  = "root_pointer",
+        },
+        .debug_name = "root_pointer",
     };
-    gpu::ShaderCode shader = gpu::prepare_shader_code(&shader_desc)!;
-
-    gpu::ComputePipelineDesc pipe_desc = { .shader = shader, .debug_name = "root_pointer" };
     gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
     defer gpu::destroy_pipeline(&device, pipeline)!!;
 

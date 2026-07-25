@@ -75,20 +75,31 @@ fn void? run(sample_args::Options options) {
     gpu::GpuSpan bins_span = gpu::get_allocation_span(&device, bins)!;
     uint* bin_counts = (uint*)gpu::get_span_mapping(&device, bins_span)!.ptr;
 
-    gpu::ShaderDesc gen_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = GENERATE_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode gen_shader = gpu::prepare_shader_code(&gen_sd)!;
-    gpu::ShaderDesc blur_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = BLUR_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode blur_shader = gpu::prepare_shader_code(&blur_sd)!;
-    gpu::ShaderDesc hist_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = HISTOGRAM_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode hist_shader = gpu::prepare_shader_code(&hist_sd)!;
-
-    gpu::ComputePipelineDesc gen_pd = { .shader = gen_shader, .debug_name = "generate" };
+    gpu::ComputePipelineDesc gen_pd = {
+        .shader = {
+            .spirv       = GENERATE_SPIRV[..],
+            .entry_point = "main",
+        },
+        .debug_name = "generate",
+    };
     gpu::PipelineHandle gen_pipe = gpu::create_compute_pipeline(&device, &gen_pd)!;
     defer (void)gpu::destroy_pipeline(&device, gen_pipe);
-    gpu::ComputePipelineDesc blur_pd = { .shader = blur_shader, .debug_name = "blur" };
+    gpu::ComputePipelineDesc blur_pd = {
+        .shader = {
+            .spirv       = BLUR_SPIRV[..],
+            .entry_point = "main",
+        },
+        .debug_name = "blur",
+    };
     gpu::PipelineHandle blur_pipe = gpu::create_compute_pipeline(&device, &blur_pd)!;
     defer (void)gpu::destroy_pipeline(&device, blur_pipe);
-    gpu::ComputePipelineDesc hist_pd = { .shader = hist_shader, .debug_name = "histogram" };
+    gpu::ComputePipelineDesc hist_pd = {
+        .shader = {
+            .spirv       = HISTOGRAM_SPIRV[..],
+            .entry_point = "main",
+        },
+        .debug_name = "histogram",
+    };
     gpu::PipelineHandle hist_pipe = gpu::create_compute_pipeline(&device, &hist_pd)!;
     defer (void)gpu::destroy_pipeline(&device, hist_pipe);
 

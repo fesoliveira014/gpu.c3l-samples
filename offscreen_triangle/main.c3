@@ -205,18 +205,19 @@ fn void? run(sample_args::Options options) {
     }
     gpu::flush_mapped_span(&device, staging_span)!;
 
-    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = OFFSCREEN_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
-    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = OFFSCREEN_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
-
     gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::ColorTargetState[1] color_targets = {
         gpu::color_blend_disabled(),
     };
     gpu::GraphicsPipelineDesc pipe_desc = {
-        .vertex_shader   = vert,
-        .fragment_shader = frag,
+        .vertex_shader   = {
+            .spirv       = OFFSCREEN_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = OFFSCREEN_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = color_formats[..],
         .debug_name      = "offscreen_triangle",
     };

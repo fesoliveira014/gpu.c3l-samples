@@ -245,18 +245,15 @@ fn void? run(sample_args::Options options) {
     gpu::flush_mapped_span(&device, instances_span)!;
     gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
-    gpu::ShaderDesc sh_vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = SHADOW_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode sh_vert = gpu::prepare_shader_code(&sh_vert_sd)!;
-    gpu::ShaderDesc sh_frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = SHADOW_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode sh_frag = gpu::prepare_shader_code(&sh_frag_sd)!;
-    gpu::ShaderDesc sc_vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = SCENE_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode sc_vert = gpu::prepare_shader_code(&sc_vert_sd)!;
-    gpu::ShaderDesc sc_frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = SCENE_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode sc_frag = gpu::prepare_shader_code(&sc_frag_sd)!;
-
     gpu::GraphicsPipelineDesc shadow_pd = {
-        .vertex_shader   = sh_vert,
-        .fragment_shader = sh_frag,
+        .vertex_shader   = {
+            .spirv       = SHADOW_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = SHADOW_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadow_pass",
     };
@@ -268,8 +265,14 @@ fn void? run(sample_args::Options options) {
         gpu::color_blend_disabled(),
     };
     gpu::GraphicsPipelineDesc scene_pd = {
-        .vertex_shader   = sc_vert,
-        .fragment_shader = sc_frag,
+        .vertex_shader   = {
+            .spirv       = SCENE_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = SCENE_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = color_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "shadowed_scene",

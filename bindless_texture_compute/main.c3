@@ -68,19 +68,21 @@ fn void? run() {
     defer (void)gpu::free_allocation(&device, &output);
     gpu::GpuSpan output_span = gpu::get_allocation_span(&device, output)!;
 
-    gpu::ShaderDesc write_shader_desc = {
-        .stage = gpu::ShaderStage.COMPUTE, .spirv = HEAP_WRITE_SPIRV[..], .entry_point = "main",
+    gpu::ComputePipelineDesc write_pipe_desc = {
+        .shader = {
+            .spirv       = HEAP_WRITE_SPIRV[..],
+            .entry_point = "main",
+        },
     };
-    gpu::ShaderCode write_shader = gpu::prepare_shader_code(&write_shader_desc)!;
-    gpu::ShaderDesc sample_shader_desc = {
-        .stage = gpu::ShaderStage.COMPUTE, .spirv = HEAP_SAMPLE_SPIRV[..], .entry_point = "main",
+    gpu::ComputePipelineDesc sample_pipe_desc = {
+        .shader = {
+            .spirv       = HEAP_SAMPLE_SPIRV[..],
+            .entry_point = "main",
+        },
     };
-    gpu::ShaderCode sample_shader = gpu::prepare_shader_code(&sample_shader_desc)!;
 
-    gpu::ComputePipelineDesc write_pipe_desc = { .shader = write_shader };
     gpu::PipelineHandle write_pipe = gpu::create_compute_pipeline(&device, &write_pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, write_pipe);
-    gpu::ComputePipelineDesc sample_pipe_desc = { .shader = sample_shader };
     gpu::PipelineHandle sample_pipe = gpu::create_compute_pipeline(&device, &sample_pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, sample_pipe);
 

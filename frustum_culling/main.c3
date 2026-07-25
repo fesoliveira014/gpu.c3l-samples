@@ -240,14 +240,13 @@ fn void? run(sample_args::Options options) {
     uint* visible_count = (uint*)gpu::get_span_mapping(&device, stats_span)!.ptr;
     gpu::GpuAddress stats_address = gpu::get_span_address(&device, stats_span)!;
 
-    gpu::ShaderDesc cull_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = CULL_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode cull_shader = gpu::prepare_shader_code(&cull_sd)!;
-    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
-    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
-
-    gpu::ComputePipelineDesc cull_pd = { .shader = cull_shader, .debug_name = "cull" };
+    gpu::ComputePipelineDesc cull_pd = {
+        .shader = {
+            .spirv       = CULL_SPIRV[..],
+            .entry_point = "main",
+        },
+        .debug_name = "cull",
+    };
     gpu::PipelineHandle cull_pipe = gpu::create_compute_pipeline(&device, &cull_pd)!;
     defer (void)gpu::destroy_pipeline(&device, cull_pipe);
 
@@ -256,8 +255,14 @@ fn void? run(sample_args::Options options) {
         gpu::color_blend_disabled(),
     };
     gpu::GraphicsPipelineDesc scene_pd = {
-        .vertex_shader   = vert,
-        .fragment_shader = frag,
+        .vertex_shader   = {
+            .spirv       = VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = color_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "culled_scene",
