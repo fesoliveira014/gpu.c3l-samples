@@ -344,6 +344,22 @@ class StrictApiCheckTests(unittest.TestCase):
                 self.assertIsNotNone(match)
                 self.assertEqual(match.group(0), symbol)
 
+    def test_retired_combined_render_pass_symbol_is_forbidden(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::CommandList* commands, "
+            "gpu::RenderPassDesc* pass, gpu::GraphicsState* state) {\n"
+            "    gpu::cmd_begin_render_pass_with_state(commands, pass, state)!;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "tokens"),
+            [
+                "probe.c3:3: forbidden strict API token "
+                "'cmd_begin_render_pass_with_state'"
+            ],
+        )
+
     def test_retired_command_color_fields_are_reported(self) -> None:
         source = (
             "module probe;\n"

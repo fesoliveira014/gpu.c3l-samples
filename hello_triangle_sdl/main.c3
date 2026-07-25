@@ -149,8 +149,9 @@ fn void? render_frame(FrameWork* ctx) {
         gpu::color_blend_disabled(),
     };
     graphics.color.targets = color_targets[..];
+    gpu::cmd_begin_render_pass(&cmd, &pass)!;
     gpu::cmd_bind_pipeline(&cmd, ctx.pipeline)!;
-    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+    gpu::cmd_set_graphics_state(&cmd, &graphics)!;
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    gpu::get_span_address(ctx.device, verts_span)!,

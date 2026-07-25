@@ -430,8 +430,9 @@ fn void? run(sample_args::Options options) {
         gpu::GraphicsState graphics =
             gpu::render_geometry_state(pass.width, pass.height)!;
         graphics.color.targets = color_targets[..];
+        gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_set_graphics_state(&cmd, &graphics)!;
         if (use_generated) {
             gpu::cmd_draw_indexed_generated(
                 commands:      &cmd,

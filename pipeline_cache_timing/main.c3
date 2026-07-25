@@ -215,8 +215,9 @@ fn void? smoke(
     };
     graphics.color.targets = color_targets[..];
     graphics.raster = variant_raster_state(0);
+    gpu::cmd_begin_render_pass(&cmd, &pass)!;
     gpu::cmd_bind_pipeline(&cmd, quad_pipes[0])!;
-    gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+    gpu::cmd_set_graphics_state(&cmd, &graphics)!;
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    quad_address,
