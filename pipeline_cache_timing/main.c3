@@ -231,16 +231,10 @@ fn void? smoke(
         vertex_count:   6,
         instance_count: 1,
     )!;
-    gpu::ColorTargetState[1] blended_color_targets = {
-        variant_color_state(3),
-    };
-    gpu::ColorState blended_color = {
-        .targets = blended_color_targets[..],
-    };
-    gpu::cmd_set_color_state(&cmd, &blended_color)!;
-    gpu::DynamicRasterState line_raster = variant_raster_state(3);
+    color_targets[0] = variant_color_state(3);
+    graphics.raster = variant_raster_state(3);
     gpu::cmd_bind_pipeline(&cmd, quad_pipes[3])!;
-    gpu::cmd_set_raster_state(&cmd, &line_raster)!;
+    gpu::cmd_set_graphics_state(&cmd, &graphics)!;
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    blended_quad_address,
