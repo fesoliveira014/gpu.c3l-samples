@@ -94,16 +94,12 @@ fn gpu::Device? create_presentation_device(
     gpu::Runtime* runtime,
     gpu::Surface* surface,
 ) {
-    gpu::DeviceRequest request = gpu::request_presentation(
-        gpu::strict_device_request(),
-        surface,
-    )!;
+    gpu::DeviceDesc desc = { .surface = *surface };
     gpu::AdapterList adapters = gpu::enumerate_adapters(runtime)!;
     for (uint i = 0; i < adapters.count; i++) {
         gpu::Adapter adapter = adapters.get(i)!;
-        if (!gpu::supports_presentation(&adapter, surface)!) continue;
-        if (!gpu::supports_device_request(&adapter, &request)!.supported) continue;
-        return gpu::create_device(&adapter, &request);
+        if (!gpu::supports_device_desc(&adapter, &desc)!.supported) continue;
+        return gpu::create_device(&adapter, &desc);
     }
     return gpu::UNSUPPORTED_FEATURE~;
 }

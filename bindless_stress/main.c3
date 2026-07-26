@@ -180,7 +180,7 @@ fn void? run() {
     };
     gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
     defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_strict_device(&runtime)!;
+    gpu::Device device = sample_device::create_device(&runtime)!;
     defer (void)gpu::destroy_device(&device);
     gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
     gpu::CommandAllocator compute_allocator =

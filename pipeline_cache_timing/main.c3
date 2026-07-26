@@ -385,7 +385,7 @@ fn void? run() {
     };
     gpu::Runtime runtime_a = gpu::create_runtime(&runtime_a_desc)!;
     defer (void)gpu::destroy_runtime(&runtime_a);
-    gpu::Device device_a = sample_device::create_strict_device(&runtime_a)!;
+    gpu::Device device_a = sample_device::create_device(&runtime_a)!;
     defer (void)gpu::destroy_device(&device_a);
     gpu::Queue graphics_queue_a =
         gpu::get_queue(&device_a, gpu::QueueKind.GRAPHICS)!;
@@ -419,7 +419,7 @@ fn void? run() {
     };
     gpu::Runtime runtime_b = gpu::create_runtime(&runtime_b_desc)!;
     defer (void)gpu::destroy_runtime(&runtime_b);
-    gpu::Device device_b = sample_device::create_strict_device(&runtime_b)!;
+    gpu::Device device_b = sample_device::create_device(&runtime_b)!;
     defer (void)gpu::destroy_device(&device_b);
     gpu::Queue graphics_queue_b =
         gpu::get_queue(&device_b, gpu::QueueKind.GRAPHICS)!;

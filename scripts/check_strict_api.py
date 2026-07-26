@@ -12,7 +12,13 @@ FORBIDDEN_SYMBOLS = (
     "BackendKind",
     "get_device_backend",
     "OBJECT_BOUNDARIES",
-    "DeviceDesc",
+    "DeviceRequest",
+    "DeviceRequestSupport",
+    "DeviceCapability",
+    "strict_device_request",
+    "request_presentation",
+    "request_queues",
+    "supports_device_request",
     "create_device_from_desc",
     "BufferHandle",
     "ShaderHandle",
@@ -86,6 +92,8 @@ SYMBOL_PATTERN = re.compile(
     r"\b(?:" + "|".join(re.escape(symbol) for symbol in FORBIDDEN_SYMBOLS) + r")\b"
 )
 RETIRED_FIELD_RULES = (
+    ("AdapterInfo", ("strict_supported",)),
+    ("DeviceCaps", ("strict_enabled",)),
     (
         "RuntimeDesc",
         ("enable_validation", "backend", "track_resource_lifetimes"),
