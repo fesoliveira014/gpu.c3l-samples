@@ -19,6 +19,9 @@ FORBIDDEN_SYMBOLS = (
     "request_presentation",
     "request_queues",
     "supports_device_request",
+    "QueueRequirements",
+    "QueueCounts",
+    "get_queue_counts",
     "create_device_from_desc",
     "BufferHandle",
     "ShaderHandle",
@@ -240,6 +243,46 @@ def find_forbidden_strict_api_tokens(path: Path, text: str) -> list[str]:
                 )
             )
     return [message for _, message in sorted(findings)]
+
+
+def find_forbidden_indexed_get_queue_calls(path: Path, text: str) -> list[str]:
+    structural_text = sanitize_c3_structure(text)
+    findings: list[str] = []
+    call_pattern = re.compile(r"\bgpu::get_queue\s*\(")
+
+    for call in call_pattern.finditer(structural_text):
+        index = call.end()
+        nesting = 0
+        argument_count = 0
+        has_argument = False
+        while index < len(structural_text):
+            character = structural_text[index]
+            if character in "([{":
+                nesting += 1
+                has_argument = True
+            elif character in ")]}":
+                if character == ")" and nesting == 0:
+                    if has_argument:
+                        argument_count += 1
+                    break
+                nesting -= 1
+                has_argument = True
+            elif character == "," and nesting == 0:
+                argument_count += 1
+                has_argument = False
+            elif not character.isspace():
+                has_argument = True
+            index += 1
+
+        if argument_count <= 2:
+            continue
+        findings.append(
+            f"{path.relative_to(ROOT)}:"
+            f"{text.count(chr(10), 0, call.start()) + 1}: "
+            "forbidden indexed get_queue call"
+        )
+
+    return findings
 
 
 def find_command_allocator_policy(path: Path, text: str) -> list[str]:
@@ -698,6 +741,7 @@ def main() -> int:
             continue
         text = path.read_text(encoding="utf-8")
         findings.extend(find_forbidden_strict_api_tokens(path, text))
+        findings.extend(find_forbidden_indexed_get_queue_calls(path, text))
         findings.extend(find_command_allocator_policy(path, text))
         findings.extend(find_forbidden_retired_fields(path, text))
 
