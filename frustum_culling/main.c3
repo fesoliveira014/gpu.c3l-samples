@@ -434,8 +434,10 @@ fn void? run(sample_args::Options options) {
 
         gpu::Barrier args_ready = {
             .before = { .compute = true },
-            .after = { .compute = true },
-            .hazards = { .draw_arguments = true },
+            .after = {
+                .compute  = true,
+                .indirect = true,
+            },
         };
         gpu::cmd_barrier(&cmd, &args_ready)!;
         if (sample_stats) {
