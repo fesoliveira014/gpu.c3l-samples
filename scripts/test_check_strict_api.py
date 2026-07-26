@@ -378,6 +378,24 @@ class StrictApiCheckTests(unittest.TestCase):
             ],
         )
 
+    def test_retired_pipeline_batches_are_forbidden(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::Device* device) {\n"
+            "    gpu::create_compute_pipelines(device, {}, {})!;\n"
+            "    gpu::create_graphics_pipelines(device, {}, {})!;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "tokens"),
+            [
+                "probe.c3:3: forbidden strict API token "
+                "'create_compute_pipelines'",
+                "probe.c3:4: forbidden strict API token "
+                "'create_graphics_pipelines'",
+            ],
+        )
+
     def test_retired_shader_descriptor_stage_is_reported(self) -> None:
         source = (
             "module probe;\n"
