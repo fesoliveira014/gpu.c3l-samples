@@ -255,9 +255,12 @@ fn void? run() {
     defer (void)gpu::free_allocation(&device, &root_allocation);
     gpu::GpuSpan root_span = gpu::get_allocation_span(&device, root_allocation)!;
 
-    gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = VERIFY_COMP_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode shader = gpu::prepare_shader_code(&comp_sd)!;
-    gpu::ComputePipelineDesc pipe_desc = { .shader = shader };
+    gpu::ComputePipelineDesc pipe_desc = {
+        .shader = {
+            .spirv       = VERIFY_COMP_SPIRV[..],
+            .entry_point = "main",
+        },
+    };
     gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
     defer (void)gpu::destroy_pipeline(&device, pipeline);
 

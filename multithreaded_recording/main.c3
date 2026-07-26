@@ -391,15 +391,16 @@ fn RunResult? run_on_device(bool validation) {
     )!;
     defer (void)gpu::destroy_attachment_view(&device, target_view);
 
-    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = QUAD_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
-    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = QUAD_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
-
     gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::GraphicsPipelineDesc pipe_desc = {
-        .vertex_shader   = vert,
-        .fragment_shader = frag,
+        .vertex_shader   = {
+            .spirv       = QUAD_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = QUAD_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = color_formats[..],
         .debug_name      = "mtrec_quads",
     };

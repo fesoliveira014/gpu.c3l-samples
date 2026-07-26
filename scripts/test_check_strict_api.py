@@ -360,6 +360,36 @@ class StrictApiCheckTests(unittest.TestCase):
             ],
         )
 
+    def test_retired_shader_preparation_surface_is_forbidden(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void? probe(gpu::ShaderDesc* desc) {\n"
+            "    gpu::ShaderCode code = gpu::prepare_shader_code(desc)!;\n"
+            "    gpu::ShaderStage stage = gpu::ShaderStage.COMPUTE;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "tokens"),
+            [
+                "probe.c3:3: forbidden strict API token 'ShaderCode'",
+                "probe.c3:3: forbidden strict API token 'prepare_shader_code'",
+                "probe.c3:4: forbidden strict API token 'ShaderStage'",
+                "probe.c3:4: forbidden strict API token 'ShaderStage'",
+            ],
+        )
+
+    def test_retired_shader_descriptor_stage_is_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::ShaderDesc desc = { .stage = {} };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            ["probe.c3:3: forbidden ShaderDesc field '.stage'"],
+        )
+
     def test_retired_command_color_fields_are_reported(self) -> None:
         source = (
             "module probe;\n"

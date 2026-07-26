@@ -276,16 +276,17 @@ fn void? run(sample_args::Options options) {
     uint height;
     sample_window::pixel_size(&window, &width, &height);
 
-    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = CARD_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
-    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = CARD_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
-
     TestcardPipeline pipeline = {};
     pipeline.color_targets[0] = gpu::color_blend_disabled();
     pipeline.desc = (gpu::GraphicsPipelineDesc){
-        .vertex_shader   = vert,
-        .fragment_shader = frag,
+        .vertex_shader   = {
+            .spirv       = CARD_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = CARD_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = pipeline.color_formats[..],
         .debug_name      = "testcard",
     };

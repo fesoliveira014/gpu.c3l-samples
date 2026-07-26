@@ -128,24 +128,32 @@ fn void? run(sample_args::Options options) {
     gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
     defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
 
-    gpu::ShaderDesc build_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = BUILD_SPIRV[..], .entry_point = "main", .debug_name = "build_draws" };
-    gpu::ShaderCode build_shader = gpu::prepare_shader_code(&build_sd)!;
-    gpu::ComputePipelineDesc build_desc = { .shader = build_shader, .debug_name = "build_draws" };
+    gpu::ComputePipelineDesc build_desc = {
+        .shader = {
+            .spirv       = BUILD_SPIRV[..],
+            .entry_point = "main",
+            .debug_name  = "build_draws",
+        },
+        .debug_name = "build_draws",
+    };
     gpu::PipelineHandle build_pipeline = gpu::create_compute_pipeline(&device, &build_desc)!;
     defer (void)gpu::destroy_pipeline(&device, build_pipeline);
-
-    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = VERT_SPIRV[..], .entry_point = "main", .debug_name = "gpu_driven_vert" };
-    gpu::ShaderCode vert = gpu::prepare_shader_code(&vert_sd)!;
-    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = FRAG_SPIRV[..], .entry_point = "main", .debug_name = "gpu_driven_frag" };
-    gpu::ShaderCode frag = gpu::prepare_shader_code(&frag_sd)!;
 
     gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::ColorTargetState[1] color_targets = {
         gpu::color_blend_disabled(),
     };
     gpu::GraphicsPipelineDesc pipe_desc = {
-        .vertex_shader   = vert,
-        .fragment_shader = frag,
+        .vertex_shader   = {
+            .spirv       = VERT_SPIRV[..],
+            .entry_point = "main",
+            .debug_name  = "gpu_driven_vert",
+        },
+        .fragment_shader = {
+            .spirv       = FRAG_SPIRV[..],
+            .entry_point = "main",
+            .debug_name  = "gpu_driven_frag",
+        },
         .color_formats   = color_formats[..],
         .debug_name      = "gpu_driven_draw",
     };

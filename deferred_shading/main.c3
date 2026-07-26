@@ -295,15 +295,6 @@ fn void? run(sample_args::Options options) {
     gpu::flush_mapped_span(&device, instances_span)!;
     gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
 
-    gpu::ShaderDesc gv_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = GEOM_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode geom_vert = gpu::prepare_shader_code(&gv_sd)!;
-    gpu::ShaderDesc gf_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = GEOM_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode geom_frag = gpu::prepare_shader_code(&gf_sd)!;
-    gpu::ShaderDesc rv_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = RESOLVE_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode resolve_vert = gpu::prepare_shader_code(&rv_sd)!;
-    gpu::ShaderDesc rf_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = RESOLVE_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderCode resolve_frag = gpu::prepare_shader_code(&rf_sd)!;
-
     gpu::Format[3] gbuffer_formats = {
         gpu::Format.RGBA8_UNORM,
         gpu::Format.RGBA16_FLOAT,
@@ -315,8 +306,14 @@ fn void? run(sample_args::Options options) {
         gpu::color_blend_disabled(),
     };
     gpu::GraphicsPipelineDesc geom_pd = {
-        .vertex_shader   = geom_vert,
-        .fragment_shader = geom_frag,
+        .vertex_shader   = {
+            .spirv       = GEOM_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = GEOM_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = gbuffer_formats[..],
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "gbuffer_pass",
@@ -329,8 +326,14 @@ fn void? run(sample_args::Options options) {
         gpu::color_blend_disabled(),
     };
     gpu::GraphicsPipelineDesc resolve_pd = {
-        .vertex_shader   = resolve_vert,
-        .fragment_shader = resolve_frag,
+        .vertex_shader   = {
+            .spirv       = RESOLVE_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .fragment_shader = {
+            .spirv       = RESOLVE_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
         .color_formats   = swap_formats[..],
         .debug_name      = "resolve_pass",
     };

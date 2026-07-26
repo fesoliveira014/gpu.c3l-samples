@@ -18,20 +18,26 @@ const uint VARIANTS = 2 * 2 * 3 * 2;
 const uint PIPELINE_IDENTITIES = 3 * 2;
 
 struct Shaders {
-    gpu::ShaderCode vert;
-    gpu::ShaderCode frag;
-    gpu::ShaderCode comp;
+    gpu::ShaderDesc vert;
+    gpu::ShaderDesc frag;
+    gpu::ShaderDesc comp;
 }
 
-fn Shaders? prepare_shaders() {
-    gpu::ShaderDesc vert_sd = { .stage = gpu::ShaderStage.VERTEX, .spirv = QUAD_VERT_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderDesc frag_sd = { .stage = gpu::ShaderStage.FRAGMENT, .spirv = QUAD_FRAG_SPIRV[..], .entry_point = "main" };
-    gpu::ShaderDesc comp_sd = { .stage = gpu::ShaderStage.COMPUTE, .spirv = SCALE_COMP_SPIRV[..], .entry_point = "main" };
-    Shaders s;
-    s.vert = gpu::prepare_shader_code(&vert_sd)!;
-    s.frag = gpu::prepare_shader_code(&frag_sd)!;
-    s.comp = gpu::prepare_shader_code(&comp_sd)!;
-    return s;
+fn Shaders make_shaders() {
+    return {
+        .vert = {
+            .spirv       = QUAD_VERT_SPIRV[..],
+            .entry_point = "main",
+        },
+        .frag = {
+            .spirv       = QUAD_FRAG_SPIRV[..],
+            .entry_point = "main",
+        },
+        .comp = {
+            .spirv       = SCALE_COMP_SPIRV[..],
+            .entry_point = "main",
+        },
+    };
 }
 
 <* Variant v spreads over blend enable x command-time topology x color format
@@ -377,7 +383,7 @@ fn void? run() {
     gpu::PipelineHandle[VARIANTS] graphics_a;
     gpu::PipelineHandle[VARIANTS] graphics_b;
     gpu::PipelineHandle compute;
-    Shaders shaders = prepare_shaders()!;
+    Shaders shaders = make_shaders();
 
     gpu::RuntimeDesc runtime_a_desc = {
         .contract_validation          = gpu::ContractValidation.FULL,
