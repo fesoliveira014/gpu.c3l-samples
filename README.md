@@ -63,8 +63,6 @@ role is retrieved with `get_queue(device, kind)` and has no public queue index.
 ## Build and run
 
 ```sh
-python3 -m unittest scripts.test_check_strict_api
-python3 scripts/check_strict_api.py
 python3 scripts/gen_abi.py --check
 python3 scripts/build_shaders.py
 c3c build root_pointer_compute
