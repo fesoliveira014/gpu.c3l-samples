@@ -433,8 +433,9 @@ fn void? run(sample_args::Options options) {
             .compare      = gpu::CompareOp.LESS,
         };
         graphics.color.targets = color_targets[..];
+        gpu::cmd_begin_render_pass(&cmd, &pass)!;
         gpu::cmd_bind_pipeline(&cmd, pipeline)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &pass, &graphics)!;
+        gpu::cmd_set_graphics_state(&cmd, &graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    root_address,

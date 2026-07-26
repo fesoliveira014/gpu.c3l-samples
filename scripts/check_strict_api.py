@@ -80,6 +80,7 @@ FORBIDDEN_SYMBOLS = (
     "create_dynamic_graphics_pipelines",
     "request_dynamic_color_state",
     "dynamic_color_state",
+    "cmd_begin_render_pass_with_state",
 )
 
 FORBIDDEN_PATTERNS = (

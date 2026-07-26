@@ -56,8 +56,9 @@ fn void? record_chunk(
         gpu::color_blend_disabled(),
     };
     graphics.color.targets = color_targets[..];
+    gpu::cmd_begin_render_pass(list, &pass)!;
     gpu::cmd_bind_pipeline(list, pipeline)!;
-    gpu::cmd_begin_render_pass_with_state(list, &pass, &graphics)!;
+    gpu::cmd_set_graphics_state(list, &graphics)!;
     for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
         ulong index = (ulong)chunk * DRAWS_PER_CHUNK + draw;
         gpu::GpuAddress root = (gpu::GpuAddress)((ulong)roots_base + index * QuadRoot::size);

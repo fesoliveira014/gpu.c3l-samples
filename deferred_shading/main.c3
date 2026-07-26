@@ -519,8 +519,9 @@ fn void? run(sample_args::Options options) {
             .compare      = gpu::CompareOp.LESS,
         };
         geometry_graphics.color.targets = gbuffer_color_targets[..];
+        gpu::cmd_begin_render_pass(&cmd, &geometry_pass)!;
         gpu::cmd_bind_pipeline(&cmd, geom_pipe)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &geometry_pass, &geometry_graphics)!;
+        gpu::cmd_set_graphics_state(&cmd, &geometry_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    geometry_root_address,
@@ -565,7 +566,8 @@ fn void? run(sample_args::Options options) {
             gpu::render_geometry_state(resolve_pass.width, resolve_pass.height)!;
         resolve_graphics.color.targets = swap_color_targets[..];
         gpu::cmd_bind_pipeline(&cmd, resolve_pipe)!;
-        gpu::cmd_begin_render_pass_with_state(&cmd, &resolve_pass, &resolve_graphics)!;
+        gpu::cmd_begin_render_pass(&cmd, &resolve_pass)!;
+        gpu::cmd_set_graphics_state(&cmd, &resolve_graphics)!;
         gpu::cmd_draw(
             commands:       &cmd,
             vertex_root:    resolve_root_address,
