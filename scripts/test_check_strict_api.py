@@ -396,6 +396,50 @@ class StrictApiCheckTests(unittest.TestCase):
             ],
         )
 
+    def test_retired_synchronization_types_are_forbidden(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::CompletionConsumerFlags consumers = {};\n"
+            "    gpu::HazardFlags hazards = {};\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source, "tokens"),
+            [
+                "probe.c3:3: forbidden strict API token "
+                "'CompletionConsumerFlags'",
+                "probe.c3:4: forbidden strict API token 'HazardFlags'",
+            ],
+        )
+
+    def test_retired_synchronization_fields_are_reported(self) -> None:
+        source = (
+            "module probe;\n"
+            "fn void probe() {\n"
+            "    gpu::CompletionWait wait = { .consumers = {} };\n"
+            "    gpu::Barrier barrier = { .hazards = {} };\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.findings_for(source),
+            [
+                "probe.c3:3: forbidden CompletionWait field '.consumers'",
+                "probe.c3:4: forbidden Barrier field '.hazards'",
+            ],
+        )
+
+    def test_draw_arguments_identifier_is_not_globally_forbidden(self) -> None:
+        source = (
+            "module probe;\n"
+            "struct DrawStats { uint draw_arguments; }\n"
+            "fn void probe() {\n"
+            "    DrawStats stats = { .draw_arguments = 1 };\n"
+            "}\n"
+        )
+        self.assertEqual(self.findings_for(source, "tokens"), [])
+        self.assertEqual(self.findings_for(source), [])
+
     def test_retired_shader_descriptor_stage_is_reported(self) -> None:
         source = (
             "module probe;\n"

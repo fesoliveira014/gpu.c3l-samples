@@ -408,8 +408,8 @@ fn void? run(sample_args::Options options) {
             .after = {
                 .vertex_shader   = true,
                 .fragment_shader = true,
+                .indirect        = true,
             },
-            .hazards = { .draw_arguments = true },
         };
         gpu::cmd_barrier(&cmd, &indirect_ready)!;
 
