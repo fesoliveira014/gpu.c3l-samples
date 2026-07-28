@@ -13,3 +13,4 @@ out/
 # Local agent config
 .claude/
 openspec/
+.worktrees/
