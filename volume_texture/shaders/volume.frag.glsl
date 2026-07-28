@@ -27,6 +27,11 @@ vec2 intersect_box(vec3 origin, vec3 direction) {
         min(min(far_axis.x, far_axis.y), far_axis.z));
 }
 
+vec4 encode_output(vec3 color) {
+    color = color / (1.0 + color);
+    return vec4(pow(color, vec3(1.0 / 2.2)), 1.0);
+}
+
 void main() {
     VolumeRoot root = VolumeRoot(pc.fragment_root_gpu);
     float angle = root.time * 0.35;
@@ -43,7 +48,7 @@ void main() {
     vec2 hit = intersect_box(origin, direction);
 
     if (hit.x >= hit.y || hit.y <= 0.0) {
-        o_color = vec4(BACKGROUND, 1.0);
+        o_color = encode_output(BACKGROUND);
         return;
     }
 
@@ -66,6 +71,5 @@ void main() {
     }
 
     vec3 color = accumulated.rgb + BACKGROUND * (1.0 - accumulated.a);
-    color = color / (1.0 + color);
-    o_color = vec4(pow(color, vec3(1.0 / 2.2)), 1.0);
+    o_color = encode_output(color);
 }
