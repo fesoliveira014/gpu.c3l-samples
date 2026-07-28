@@ -1,0 +1,8 @@
+abi volume_texture;
+
+root VolumeRoot {
+    TextureIndex volume_texture;
+    SamplerIndex volume_sampler;
+    float        time;
+    float        aspect;
+}
