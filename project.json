@@ -55,6 +55,15 @@
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
+    "volume_texture": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "volume_texture/main.c3", "volume_texture/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3",
+        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
     "bindless_stress": {
       "type": "executable",
       "sources": [ "bindless_stress/main.c3", "bindless_stress/shader_abi.c3", "shared/sample_device.c3" ]

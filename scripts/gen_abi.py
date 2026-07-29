@@ -20,6 +20,7 @@ JOBS = [
     ("bindless_texture_compute", "bindless_texture_compute", "bindless_abi.glsl", "bindless.abi"),
     ("textured_cube", "textured_cube", "textured_cube_abi.glsl", "scene.abi"),
     ("texture_filtering", "texture_filtering", "texture_filtering_abi.glsl", "filtering.abi"),
+    ("volume_texture", "volume_texture", "volume_texture_abi.glsl", "volume.abi"),
     ("image_processing", "image_processing", "image_processing_abi.glsl", "processing.abi"),
     ("particle_sim", "particle_sim", "particle_sim_abi.glsl", "particles.abi"),
     ("frustum_culling", "frustum_culling", "frustum_culling_abi.glsl", "culling.abi"),
