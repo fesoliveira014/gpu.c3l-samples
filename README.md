@@ -18,7 +18,7 @@ Requirements:
 - SDL3 and a window system for windowed samples
 
 On Windows, build the VMA 3.3.0 static library using the pinned-header commands
-in [`testing.md`](lib/gpu.c3l/docs/testing.md) under “Prerequisites on windows-x64”.
+in [`testing.md`](lib/gpu.c3l/docs/contributing/testing.md) under “Prerequisites on windows-x64”.
 Run `python3 scripts/copy_runtime_deps.py` after building to place `SDL3.dll`
 beside the executables.
 
