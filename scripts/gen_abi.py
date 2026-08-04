@@ -32,6 +32,7 @@ JOBS = [
     ("pipeline_cache_timing", "pipeline_cache_timing", "pipeline_cache_timing_abi.glsl", "cachetime.abi"),
     ("present_mode_explorer", "present_mode_explorer", "present_mode_explorer_abi.glsl", "explorer.abi"),
     ("offscreen_triangle", "offscreen_triangle", "offscreen_abi.glsl", "offscreen.abi"),
+    ("cornell_box", "cornell_box", "cornell_box_abi.glsl", "cornell.abi"),
 ]
 
 

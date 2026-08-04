@@ -117,6 +117,10 @@ fn ZString debug_resource_name(gpu::DebugResourceKind kind) {
         case gpu::DebugResourceKind.ALLOCATION: return "allocation";
         case gpu::DebugResourceKind.ATTACHMENT_VIEW: return "attachment_view";
         case gpu::DebugResourceKind.TIMESTAMP_POOL: return "timestamp_pool";
+        case gpu::DebugResourceKind.ACCELERATION_STRUCTURE:
+            return "acceleration_structure";
+        case gpu::DebugResourceKind.ACCELERATION_STRUCTURE_VIEW:
+            return "acceleration_structure_view";
     }
 }
 
