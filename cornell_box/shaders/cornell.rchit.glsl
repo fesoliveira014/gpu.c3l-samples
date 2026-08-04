@@ -16,7 +16,7 @@ void main() {
     uint primitive = uint(gl_PrimitiveID);
     uint material = CornellMaterials(root.material_gpu).values[primitive];
     if (material == 3u) {
-        payload.color = vec3(15.0, 12.0, 8.0);
+        payload.color = root.light_radiance.rgb;
         return;
     }
 
@@ -35,10 +35,8 @@ void main() {
     vec2 light_uv = vec2(
         cornell_random(random_state),
         cornell_random(random_state));
-    vec3 light = vec3(
-        mix(213.0, 343.0, light_uv.x),
-        548.3,
-        mix(227.0, 332.0, light_uv.y));
+    vec3 light = mix(root.light_min.xyz, root.light_max.xyz,
+        vec3(light_uv.x, 0.0, light_uv.y));
     vec3 to_light = light - hit;
     float distance_squared = dot(to_light, to_light);
     float distance_to_light = sqrt(distance_squared);
@@ -62,9 +60,10 @@ void main() {
 
     float surface_cosine = max(dot(normal, light_direction), 0.0);
     float light_cosine = max(light_direction.y, 0.0);
-    float light_area = 130.0 * 105.0;
-    float irradiance = 15.0 * light_area * surface_cosine * light_cosine
-        / max(distance_squared, 1.0);
+    vec2 light_extent = root.light_max.xz - root.light_min.xz;
+    float light_area = light_extent.x * light_extent.y;
+    vec3 irradiance = root.light_radiance.rgb * light_area
+        * surface_cosine * light_cosine / max(distance_squared, 1.0);
     vec3 ambient = cornell_albedo(material) * 0.015;
     vec3 direct = cornell_albedo(material)
         * irradiance * float(shadow_visible) / 3.14159265;

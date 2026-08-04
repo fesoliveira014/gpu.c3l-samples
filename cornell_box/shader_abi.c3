@@ -8,6 +8,9 @@ struct CornellRoot {
     Vec4f                      camera_forward;
     Vec4f                      camera_right;
     Vec4f                      camera_up;
+    Vec4f                      light_min;
+    Vec4f                      light_max;
+    Vec4f                      light_radiance;
     GpuAddress                 vertex_gpu;
     GpuAddress                 material_gpu;
     TextureIndex               output_texture;
@@ -19,21 +22,24 @@ struct CornellRoot {
     uint                       _pad0;
     uint                       _pad1;
 }
-$assert CornellRoot::size == 112;
+$assert CornellRoot::size == 160;
 $assert $reflect(CornellRoot.camera_position).offset == 0;
 $assert $reflect(CornellRoot.camera_forward).offset == 16;
 $assert $reflect(CornellRoot.camera_right).offset == 32;
 $assert $reflect(CornellRoot.camera_up).offset == 48;
-$assert $reflect(CornellRoot.vertex_gpu).offset == 64;
-$assert $reflect(CornellRoot.material_gpu).offset == 72;
-$assert $reflect(CornellRoot.output_texture).offset == 80;
-$assert $reflect(CornellRoot.tlas).offset == 84;
-$assert $reflect(CornellRoot.width).offset == 88;
-$assert $reflect(CornellRoot.height).offset == 92;
-$assert $reflect(CornellRoot.sample_index).offset == 96;
-$assert $reflect(CornellRoot.seed).offset == 100;
-$assert $reflect(CornellRoot._pad0).offset == 104;
-$assert $reflect(CornellRoot._pad1).offset == 108;
+$assert $reflect(CornellRoot.light_min).offset == 64;
+$assert $reflect(CornellRoot.light_max).offset == 80;
+$assert $reflect(CornellRoot.light_radiance).offset == 96;
+$assert $reflect(CornellRoot.vertex_gpu).offset == 112;
+$assert $reflect(CornellRoot.material_gpu).offset == 120;
+$assert $reflect(CornellRoot.output_texture).offset == 128;
+$assert $reflect(CornellRoot.tlas).offset == 132;
+$assert $reflect(CornellRoot.width).offset == 136;
+$assert $reflect(CornellRoot.height).offset == 140;
+$assert $reflect(CornellRoot.sample_index).offset == 144;
+$assert $reflect(CornellRoot.seed).offset == 148;
+$assert $reflect(CornellRoot._pad0).offset == 152;
+$assert $reflect(CornellRoot._pad1).offset == 156;
 
 struct DisplayRoot {
     TextureIndex output_texture;

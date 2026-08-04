@@ -3,13 +3,8 @@
 #include "ray_tracing.glsl"
 #include "include/cornell_common.glsl"
 
-layout(push_constant) uniform Push {
-    uint64_t root_gpu;
-} pc;
-
 layout(location = 0) rayPayloadInEXT RadiancePayload payload;
 
 void main() {
-    if (pc.root_gpu == 0ul) return;
     payload.color = vec3(0.0);
 }

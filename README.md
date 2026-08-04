@@ -14,7 +14,6 @@ Requirements:
 
 - `c3c` 0.8.0
 - `glslc` from the Vulkan SDK or shaderc
-- `glslangValidator` for ray-tracing shader stages
 - A Vulkan 1.3 loader and driver; lavapipe works for headless samples
 - SDL3 and a window system for windowed samples
 

@@ -11,6 +11,9 @@ layout(buffer_reference, std430, buffer_reference_align = 16) buffer CornellRoot
     vec4 camera_forward;
     vec4 camera_right;
     vec4 camera_up;
+    vec4 light_min;
+    vec4 light_max;
+    vec4 light_radiance;
     uint64_t vertex_gpu;
     uint64_t material_gpu;
     uint output_texture;

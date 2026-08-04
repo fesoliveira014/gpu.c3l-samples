@@ -39,7 +39,7 @@ jobs:
       - name: Install glslc, lavapipe, xvfb
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y glslang-tools glslc mesa-vulkan-drivers vulkan-validationlayers xvfb
+          sudo apt-get install -y glslc mesa-vulkan-drivers vulkan-validationlayers xvfb
 
       - name: ABI drift gate
         run: python3 scripts/gen_abi.py --check

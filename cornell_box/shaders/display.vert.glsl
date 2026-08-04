@@ -1,11 +1,4 @@
 #version 460
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-
-layout(push_constant) uniform Push {
-    uint64_t vertex_root_gpu;
-    uint64_t fragment_root_gpu;
-} pc;
-
 layout(location = 0) out vec2 uv;
 
 void main() {
@@ -16,5 +9,4 @@ void main() {
     vec2 position = positions[gl_VertexIndex];
     gl_Position = vec4(position, 0.0, 1.0);
     uv = position * 0.5 + 0.5;
-    if (pc.vertex_root_gpu == 0ul) uv += vec2(0.0);
 }

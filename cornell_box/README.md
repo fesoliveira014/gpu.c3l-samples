@@ -32,7 +32,8 @@ c3c build cornell_box
 
 The fixed-seed validation mode locks the published default camera, renders one
 deterministic frame unless `--frames N` is supplied, and checks representative
-green-wall, center-scene, and red-wall pixels with an 18-code-value tolerance:
+red-wall, center-scene, green-wall, floor-shadow, and short-block pixels with
+an 18-code-value tolerance:
 
 ```sh
 ./build/cornell_box --validate --frames 1

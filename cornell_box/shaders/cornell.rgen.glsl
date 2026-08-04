@@ -10,6 +10,8 @@ layout(push_constant) uniform Push {
 
 layout(location = 0) rayPayloadEXT RadiancePayload payload;
 
+const float CAMERA_HALF_HEIGHT = 0.357142857;
+
 void main() {
     CornellRoot root = CornellRoot(pc.root_gpu);
     uvec2 pixel = gl_LaunchIDEXT.xy;
@@ -23,8 +25,8 @@ void main() {
     film.x *= float(root.width) / float(root.height);
     vec3 direction = normalize(
         root.camera_forward.xyz
-        + film.x * root.camera_right.xyz * 0.357142857
-        - film.y * root.camera_up.xyz * 0.357142857);
+        + film.x * root.camera_right.xyz * CAMERA_HALF_HEIGHT
+        - film.y * root.camera_up.xyz * CAMERA_HALF_HEIGHT);
 
     payload.color = vec3(0.0);
     traceRayEXT(

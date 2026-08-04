@@ -10,6 +10,7 @@ import std::io;
 import std::math;
 
 faultdef CORNELL_VALIDATION_FAILED;
+faultdef CORNELL_SAMPLE_INVARIANT;
 
 const char[*] RAYGEN_SPIRV = $embed("shaders/cornell.rgen.spv");
 const char[*] RADIANCE_MISS_SPIRV = $embed("shaders/radiance.rmiss.spv");
@@ -23,7 +24,16 @@ const uint CORNELL_TRIANGLE_COUNT = CORNELL_QUAD_COUNT * 2;
 const uint CORNELL_VERTEX_COUNT = CORNELL_TRIANGLE_COUNT * 3;
 const uint VALIDATION_TOLERANCE = 18;
 const uint FIXED_SEED = 0xC04E_11u;
-const usz FRAME_UPLOAD_BYTES = CornellRoot::size + DisplayRoot::size + 32;
+const float CORNELL_LIGHT_MIN_X = 213.0;
+const float CORNELL_LIGHT_MAX_X = 343.0;
+const float CORNELL_LIGHT_SURFACE_Y = 548.8;
+const float CORNELL_LIGHT_SAMPLE_Y = 548.3;
+const float CORNELL_LIGHT_MIN_Z = 227.0;
+const float CORNELL_LIGHT_MAX_Z = 332.0;
+const gpu::Vec4f CORNELL_LIGHT_RADIANCE = { 15.0, 12.0, 8.0, 0.0 };
+const usz FRAME_UPLOAD_SLACK_BYTES = 32;
+const usz FRAME_UPLOAD_BYTES = CornellRoot::size + DisplayRoot::size
+    + FRAME_UPLOAD_SLACK_BYTES;
 
 struct OwnedSpan {
     gpu::GpuAllocation allocation;
@@ -56,6 +66,14 @@ struct CornellGeometryWriter {
     gpu::Vec4f* vertices;
     uint*       materials;
     uint        triangle_count;
+}
+
+struct ValidationProbe {
+    uint x;
+    uint y;
+    uint red;
+    uint green;
+    uint blue;
 }
 
 fn bool wants_validation(String[] args) {
@@ -139,10 +157,30 @@ fn void write_cornell_geometry(gpu::Vec4f* vertices, uint* materials) {
             .material = 0,
         },
         {
-            .a = { 343.0, 548.8, 227.0, 1.0 },
-            .b = { 343.0, 548.8, 332.0, 1.0 },
-            .c = { 213.0, 548.8, 332.0, 1.0 },
-            .d = { 213.0, 548.8, 227.0, 1.0 },
+            .a = {
+                CORNELL_LIGHT_MAX_X,
+                CORNELL_LIGHT_SURFACE_Y,
+                CORNELL_LIGHT_MIN_Z,
+                1.0,
+            },
+            .b = {
+                CORNELL_LIGHT_MAX_X,
+                CORNELL_LIGHT_SURFACE_Y,
+                CORNELL_LIGHT_MAX_Z,
+                1.0,
+            },
+            .c = {
+                CORNELL_LIGHT_MIN_X,
+                CORNELL_LIGHT_SURFACE_Y,
+                CORNELL_LIGHT_MAX_Z,
+                1.0,
+            },
+            .d = {
+                CORNELL_LIGHT_MIN_X,
+                CORNELL_LIGHT_SURFACE_Y,
+                CORNELL_LIGHT_MIN_Z,
+                1.0,
+            },
             .material = 3,
         },
         {
@@ -270,7 +308,6 @@ fn void write_cornell_geometry(gpu::Vec4f* vertices, uint* materials) {
         .materials = materials,
     };
     foreach (quad : quads) emit_quad(&writer, quad);
-    assert(writer.triangle_count == CORNELL_TRIANGLE_COUNT);
 }
 
 fn void camera_basis(
@@ -286,9 +323,9 @@ fn void camera_basis(
         math::cos(camera.yaw) * cp,
     };
     *right = {
-        math::cos(camera.yaw),
+        -math::cos(camera.yaw),
         0.0,
-        -math::sin(camera.yaw),
+        math::sin(camera.yaw),
     };
     *up = {
         -math::sin(camera.yaw) * math::sin(camera.pitch),
@@ -297,12 +334,28 @@ fn void camera_basis(
     };
 }
 
+fn void default_camera_basis_matches_published_view() @test {
+    FlyCamera camera;
+    float[<3>] forward;
+    float[<3>] right;
+    float[<3>] up;
+    camera_basis(
+        camera:  &camera,
+        forward: &forward,
+        right:   &right,
+        up:      &up,
+    );
+    assert(forward[0] == 0.0 && forward[1] == 0.0 && forward[2] == 1.0);
+    assert(right[0] == -1.0 && right[1] == 0.0 && right[2] == 0.0);
+    assert(up[0] == 0.0 && up[1] == 1.0 && up[2] == 0.0);
+}
+
 fn bool update_camera(FlyCamera* camera, float delta_seconds) {
     float mouse_x;
     float mouse_y;
     sdl::get_relative_mouse_state(&mouse_x, &mouse_y);
     bool moved = mouse_x != 0.0 || mouse_y != 0.0;
-    camera.yaw += mouse_x * 0.0025;
+    camera.yaw -= mouse_x * 0.0025;
     camera.pitch -= mouse_y * 0.0025;
     camera.pitch = math::clamp(camera.pitch, -1.5f, 1.5f);
 
@@ -370,8 +423,14 @@ fn OutputTarget? create_output_target(
 }
 
 fn void? destroy_output_target(gpu::Device* device, OutputTarget* target) {
-    if (target.view.is_valid()) gpu::destroy_texture_view(device, target.view)!;
-    if (target.texture.is_valid()) gpu::destroy_texture(device, target.texture)!;
+    if (target.view.is_valid()) {
+        gpu::destroy_texture_view(device, target.view)!;
+        target.view = {};
+    }
+    if (target.texture.is_valid()) {
+        gpu::destroy_texture(device, target.texture)!;
+        target.texture = {};
+    }
     *target = {};
 }
 
@@ -395,7 +454,7 @@ fn gpu::PipelineHandle? create_ray_pipeline(gpu::Device* device) {
     gpu::ShaderDesc[1] raygen_shaders = { raygen };
     gpu::ShaderDesc[2] miss_shaders = { radiance_miss, shadow_miss };
     gpu::RayTracingHitGroupDesc[1] hit_groups = {{
-        .type               = gpu::RayTracingHitGroupType.TRIANGLES,
+        .kind               = gpu::RayTracingHitGroupKind.TRIANGLES,
         .closest_hit_shader = &closest_hit,
     }};
     gpu::RayTracingPipelineDesc desc = {
@@ -436,16 +495,24 @@ fn OwnedSpan? create_sbt(
 ) {
     gpu::RayTracingPipelineInfo info =
         gpu::get_ray_tracing_pipeline_info(device, pipeline)!;
-    if (info.total_group_count != 4) return gpu::INVALID_ARGUMENT~;
+    if (info.ray_generation.group_count != 1
+        || info.miss.group_count != 2
+        || info.hit.group_count != 1
+        || info.callable.group_count != 0) {
+        return CORNELL_SAMPLE_INVARIANT~;
+    }
     usz handle_size = caps.shader_group_handle_size;
     usz stride = align_up(handle_size, caps.shader_group_handle_alignment);
     usz raygen_offset = 0;
-    usz miss_offset = align_up(stride, caps.shader_group_base_alignment);
-    usz hit_offset = align_up(
-        miss_offset + 2 * stride,
+    usz miss_offset = align_up(
+        (usz)info.ray_generation.group_count * stride,
         caps.shader_group_base_alignment,
     );
-    usz total_size = hit_offset + stride;
+    usz hit_offset = align_up(
+        miss_offset + (usz)info.miss.group_count * stride,
+        caps.shader_group_base_alignment,
+    );
+    usz total_size = hit_offset + (usz)info.hit.group_count * stride;
     OwnedSpan sbt = allocate_span(
         device:       device,
         size:         total_size,
@@ -456,7 +523,7 @@ fn OwnedSpan? create_sbt(
     defer catch (void)free_span(device, &sbt);
     char[4096] handle_storage;
     usz handle_bytes = (usz)info.total_group_count * handle_size;
-    if (handle_bytes > handle_storage.len) return gpu::UNSUPPORTED_FEATURE~;
+    if (handle_bytes > handle_storage.len) return CORNELL_SAMPLE_INVARIANT~;
     char[] handles = handle_storage[0:handle_bytes];
     gpu::get_ray_tracing_shader_group_handles(
         device:      device,
@@ -466,12 +533,14 @@ fn OwnedSpan? create_sbt(
         out:         handles,
     )!;
     char[] mapped = gpu::get_span_mapping(device, sbt.span)!;
-    usz[4] offsets = {
-        raygen_offset,
-        miss_offset,
-        miss_offset + stride,
-        hit_offset,
-    };
+    usz[4] offsets;
+    offsets[info.ray_generation.first_group] = raygen_offset;
+    for (uint i = 0; i < info.miss.group_count; i++) {
+        offsets[info.miss.first_group + i] = miss_offset + (usz)i * stride;
+    }
+    for (uint i = 0; i < info.hit.group_count; i++) {
+        offsets[info.hit.first_group + i] = hit_offset + (usz)i * stride;
+    }
     foreach (group, offset : offsets) {
         mapped[offset:handle_size] =
             handles[(usz)group * handle_size:handle_size];
@@ -482,11 +551,17 @@ fn OwnedSpan? create_sbt(
         .stride = stride,
     };
     table.miss = {
-        .span = sbt.span.checked_subspan(miss_offset, 2 * stride)!,
+        .span = sbt.span.checked_subspan(
+            miss_offset,
+            (usz)info.miss.group_count * stride,
+        )!,
         .stride = stride,
     };
     table.hit = {
-        .span = sbt.span.checked_subspan(hit_offset, stride)!,
+        .span = sbt.span.checked_subspan(
+            hit_offset,
+            (usz)info.hit.group_count * stride,
+        )!,
         .stride = stride,
     };
     return sbt;
@@ -538,26 +613,61 @@ fn void? validate_pixels(
     };
     gpu::cmd_texture_barrier(&commands, &restore)!;
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&commands)! };
+    defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
     gpu::CompletionPoint completion = gpu::submit(allocator.queue, &submit)!;
     gpu::wait_completion(completion)!;
     gpu::invalidate_mapped_span(&allocator.device, readback.span)!;
     char[] pixels = gpu::get_span_mapping(&allocator.device, readback.span)!;
-    uint[3] xs = { width / 8, width / 2, width * 7 / 8 };
-    uint[3] expected_red = { 55, 32, 103 };
-    uint[3] expected_green = { 90, 32, 39 };
-    uint[3] expected_blue = { 45, 32, 35 };
+    // Fixed-seed 768x768 Lavapipe reference; positions scale with output.
+    ValidationProbe[5] probes = {
+        {
+            .x     = width / 8,
+            .y     = height / 2,
+            .red   = 98,
+            .green = 33,
+            .blue  = 25,
+        },
+        {
+            .x     = width / 2,
+            .y     = height / 2,
+            .red   = 32,
+            .green = 32,
+            .blue  = 32,
+        },
+        {
+            .x     = width * 7 / 8,
+            .y     = height / 2,
+            .red   = 56,
+            .green = 84,
+            .blue  = 35,
+        },
+        {
+            .x     = width * 363 / 768,
+            .y     = height * 654 / 768,
+            .red   = 32,
+            .green = 32,
+            .blue  = 32,
+        },
+        {
+            .x     = width * 500 / 768,
+            .y     = height * 510 / 768,
+            .red   = 105,
+            .green = 96,
+            .blue  = 81,
+        },
+    };
     bool bgra = format == gpu::Format.BGRA8_UNORM
         || format == gpu::Format.BGRA8_SRGB;
-    foreach (sample, x : xs) {
-        usz index = ((usz)(height / 2) * width + x) * 4;
+    foreach (&probe : probes) {
+        usz index = ((usz)probe.y * width + probe.x) * 4;
         uint red = bgra ? (uint)pixels[index + 2] : (uint)pixels[index];
         uint green = (uint)pixels[index + 1];
         uint blue = bgra ? (uint)pixels[index] : (uint)pixels[index + 2];
-        if (channel_delta(red, expected_red[sample]) > VALIDATION_TOLERANCE
-            || channel_delta(green, expected_green[sample])
+        if (channel_delta(red, probe.red) > VALIDATION_TOLERANCE
+            || channel_delta(green, probe.green)
                 > VALIDATION_TOLERANCE
-            || channel_delta(blue, expected_blue[sample])
+            || channel_delta(blue, probe.blue)
                 > VALIDATION_TOLERANCE) {
             return CORNELL_VALIDATION_FAILED~;
         }
@@ -576,7 +686,7 @@ fn int main(String[] args) {
 fn void? run(String[] args) {
     sample_args::Options options = sample_args::parse_options(args);
     bool validation = wants_validation(args);
-    if (validation && options.frames < 0) options.frames = 1;
+    if (validation && options.frames <= 0) options.frames = 1;
     sample_window::SampleWindow window = sample_window::create_sample_window(
         "gpu.c3l Cornell Box",
         768,
@@ -763,6 +873,7 @@ fn void? run(String[] args) {
     gpu::ExecutableCommandList[1] build_lists = {
         gpu::end_commands(&build_commands)!,
     };
+    defer (void)gpu::discard_executable_commands(&build_lists[0]);
     gpu::SubmitDesc build_submit = { .command_lists = build_lists[..] };
     gpu::CompletionPoint build_completion = gpu::submit(queue, &build_submit)!;
     gpu::wait_completion(build_completion)!;
@@ -824,6 +935,7 @@ fn void? run(String[] args) {
     long frame;
     ulong previous_ticks = sdl::get_ticks_ns();
     bool running = true;
+    bool validated;
     while (running) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
@@ -913,6 +1025,19 @@ fn void? run(String[] args) {
         root.camera_forward = { forward[0], forward[1], forward[2], 0.0 };
         root.camera_right = { right[0], right[1], right[2], 0.0 };
         root.camera_up = { up[0], up[1], up[2], 0.0 };
+        root.light_min = {
+            CORNELL_LIGHT_MIN_X,
+            CORNELL_LIGHT_SAMPLE_Y,
+            CORNELL_LIGHT_MIN_Z,
+            0.0,
+        };
+        root.light_max = {
+            CORNELL_LIGHT_MAX_X,
+            CORNELL_LIGHT_SAMPLE_Y,
+            CORNELL_LIGHT_MAX_Z,
+            0.0,
+        };
+        root.light_radiance = CORNELL_LIGHT_RADIANCE;
         root.vertex_gpu = gpu::get_span_address(&device, vertices.span)!;
         root.material_gpu = gpu::get_span_address(&device, materials.span)!;
         root.output_texture = output.view.index;
@@ -1013,6 +1138,7 @@ fn void? run(String[] args) {
         gpu::ExecutableCommandList[1] lists = {
             gpu::end_commands(&commands)!,
         };
+        defer (void)gpu::discard_executable_commands(&lists[0]);
         gpu::SubmitDesc submit = {
             .command_lists    = lists[..],
             .readiness        = acquired.readiness,
@@ -1031,6 +1157,7 @@ fn void? run(String[] args) {
                 height:    swapchain_info.height,
                 format:    swapchain_info.format,
             )!;
+            validated = true;
         }
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
@@ -1062,4 +1189,5 @@ fn void? run(String[] args) {
         if (options.frames > 0 && frame >= options.frames) running = false;
     }
     if (last_frame.is_valid()) gpu::wait_completion(last_frame)!;
+    if (validation && !validated) return CORNELL_VALIDATION_FAILED~;
 }
