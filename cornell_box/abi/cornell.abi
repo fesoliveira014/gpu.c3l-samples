@@ -1,0 +1,25 @@
+abi cornell_box;
+
+root CornellRoot {
+    vec4                       camera_position;
+    vec4                       camera_forward;
+    vec4                       camera_right;
+    vec4                       camera_up;
+    GpuAddress                 vertex_gpu;
+    GpuAddress                 material_gpu;
+    TextureIndex               output_texture;
+    AccelerationStructureIndex tlas;
+    uint                       width;
+    uint                       height;
+    uint                       sample_index;
+    uint                       seed;
+    uint                       _pad0;
+    uint                       _pad1;
+}
+
+root DisplayRoot {
+    TextureIndex output_texture;
+    SamplerIndex heap_sampler;
+    uint         _pad0;
+    uint         _pad1;
+}

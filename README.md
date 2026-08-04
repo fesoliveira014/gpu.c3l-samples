@@ -1,6 +1,6 @@
 # gpu.c3l samples
 
-Nineteen standalone consumers of [`gpu.c3l`](https://github.com/fesoliveira014/gpu.c3l),
+Standalone consumers of [`gpu.c3l`](https://github.com/fesoliveira014/gpu.c3l),
 vendored as a pinned submodule. Each sample owns its shaders and ABI schemas.
 
 ## Setup
@@ -14,6 +14,7 @@ Requirements:
 
 - `c3c` 0.8.0
 - `glslc` from the Vulkan SDK or shaderc
+- `glslangValidator` for ray-tracing shader stages
 - A Vulkan 1.3 loader and driver; lavapipe works for headless samples
 - SDL3 and a window system for windowed samples
 
@@ -111,6 +112,7 @@ before commands that request screenshots.
 | `deferred_shading` | windowed | three color attachments, RGBA16F | `--frames 30 --screenshot out/deferred_shading.png` |
 | `pbr_materials` | windowed | instancing, sampled textures | `--frames 30 --screenshot out/pbr_materials.png` |
 | `present_mode_explorer` | windowed | FIFO; MAILBOX and IMMEDIATE optional | `--frames 30 --screenshot out/present_mode_explorer.png` |
+| `cornell_box` | windowed | direct ray-tracing pipelines, acceleration structures | `--validate --frames 1 --screenshot out/cornell_box.png` |
 
 Each sample README describes its output and optional flags. CI runs this full
 matrix on lavapipe; windowed targets use xvfb and the listed frame bound.

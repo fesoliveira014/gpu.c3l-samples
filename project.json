@@ -153,6 +153,15 @@
       "type": "executable",
       "dependencies": [ "sdl3" ],
       "sources": [ "gpu_driven_draw_sdl/main.c3", "gpu_driven_draw_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+    },
+    "cornell_box": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "cornell_box/main.c3", "cornell_box/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3",
+        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
     }
   }
 }
