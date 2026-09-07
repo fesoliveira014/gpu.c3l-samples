@@ -4,12 +4,7 @@ const uint INSTANCE_COUNT = 4096;
 const uint CULL_TILE = 256;
 
 root CullRoot {
-    vec4       plane0;
-    vec4       plane1;
-    vec4       plane2;
-    vec4       plane3;
-    vec4       plane4;
-    vec4       plane5;
+    vec4[6]    planes;
     GpuAddress instances_gpu;
     GpuAddress args_gpu;
     GpuAddress stats_gpu;
@@ -18,10 +13,7 @@ root CullRoot {
 }
 
 root SceneDrawRoot {
-    vec4       view_proj_c0;
-    vec4       view_proj_c1;
-    vec4       view_proj_c2;
-    vec4       view_proj_c3;
+    mat4       view_proj;
     GpuAddress instances_gpu;
     GpuAddress vertex_gpu;
 }

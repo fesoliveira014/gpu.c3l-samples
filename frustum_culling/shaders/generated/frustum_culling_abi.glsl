@@ -10,12 +10,7 @@ const uint INSTANCE_COUNT = 4096u;
 const uint CULL_TILE = 256u;
 
 layout(buffer_reference, std430, buffer_reference_align = 16) buffer CullRoot {
-    vec4 plane0;
-    vec4 plane1;
-    vec4 plane2;
-    vec4 plane3;
-    vec4 plane4;
-    vec4 plane5;
+    vec4 planes[6];
     uint64_t instances_gpu;
     uint64_t args_gpu;
     uint64_t stats_gpu;
@@ -24,10 +19,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) buffer CullRoot {
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) buffer SceneDrawRoot {
-    vec4 view_proj_c0;
-    vec4 view_proj_c1;
-    vec4 view_proj_c2;
-    vec4 view_proj_c3;
+    mat4 view_proj;
     uint64_t instances_gpu;
     uint64_t vertex_gpu;
 };

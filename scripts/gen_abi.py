@@ -33,6 +33,12 @@ JOBS = [
     ("present_mode_explorer", "present_mode_explorer", "present_mode_explorer_abi.glsl", "explorer.abi"),
     ("offscreen_triangle", "offscreen_triangle", "offscreen_abi.glsl", "offscreen.abi"),
     ("cornell_box", "cornell_box", "cornell_box_abi.glsl", "cornell.abi"),
+    ("hello_triangle_sdl", "hello_triangle_sdl", "hello_triangle_abi.glsl", "triangle.abi"),
+    ("mesh_shading", "mesh_shading", "mesh_shading_abi.glsl", "mesh.abi"),
+    ("stencil_mask", "stencil_mask", "stencil_mask_abi.glsl", "stencil.abi"),
+    ("skybox", "skybox", "skybox_abi.glsl", "skybox.abi"),
+    ("compressed_textures", "compressed_textures", "compressed_textures_abi.glsl", "compressed.abi"),
+    ("texture_streaming", "texture_streaming", "texture_streaming_abi.glsl", "streaming.abi"),
 ]
 
 
@@ -73,14 +79,6 @@ def main():
             sample_dir / "shader_abi.c3",
             sample_dir / "shaders" / "generated" / glsl_name,
             [sample_dir / "abi" / schema])
-
-    # hello_triangle_sdl reuses offscreen_triangle's schema and GLSL output;
-    # only its C3 twin is its own.
-    offscreen = ROOT / "offscreen_triangle"
-    gen(gen_bin, check, "hello_triangle_sdl",
-        ROOT / "hello_triangle_sdl" / "shader_abi.c3",
-        offscreen / "shaders" / "generated" / "offscreen_abi.glsl",
-        [offscreen / "abi" / "offscreen.abi"])
 
 
 if __name__ == "__main__":

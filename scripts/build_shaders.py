@@ -17,6 +17,8 @@ STAGES = {
     ".comp": "compute",
     ".vert": "vertex",
     ".frag": "fragment",
+    ".task": "task",
+    ".mesh": "mesh",
     ".rgen": "rgen",
     ".rmiss": "rmiss",
     ".rchit": "rchit",

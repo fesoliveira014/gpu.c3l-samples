@@ -1,6 +1,7 @@
 module deferred_shading;
 
 import gpu;
+import gpu::util;
 import sample_args;
 import sample_camera;
 import sample_capture;
@@ -201,61 +202,45 @@ fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l deferred shading", 1024, 600)!;
     defer sample_window::destroy_sample_window(&window);
 
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "deferred_shading",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-
-    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
-    defer (void)gpu::destroy_surface(&surface);
-
-    gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator graphics_allocator =
-        gpu::create_command_allocator(&device, graphics_queue)!;
-    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "deferred_shading";
+    desc.create_surface = &sample_window::surface_factory;
+    desc.surface_user_data = &window;
+    sample_window::pixel_size(&window, &desc.swapchain.width, &desc.swapchain.height);
+    desc.swapchain.present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX;
+    desc.swapchain.debug_name = "deferred_swapchain";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
+    gpu::Device* device = &context.device;
+    gpu::SwapchainHandle swapchain = context.swapchain;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    uint width = swapchain_info.width;
+    uint height = swapchain_info.height;
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
         sample_frame_upload::create_frame_upload_ring(
-            device:        &device,
+            device:        device,
             slot_capacity: UPLOAD_BYTES_PER_SLOT,
             access:        upload_access,
             debug_name:    "deferred_root_upload",
         )!;
     defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
-    uint width;
-    uint height;
-    sample_window::pixel_size(&window, &width, &height);
-    gpu::SwapchainDesc swapchain_desc = {
-        .width            = width,
-        .height           = height,
-        .preferred_format = gpu::Format.BGRA8_UNORM,
-        .present_mode     = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
-        .srgb             = false,
-        .debug_name       = "deferred_swapchain",
-    };
-    gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
-
     GBuffer gbuffer;
     uint gbuffer_width;
     uint gbuffer_height;
     bool gbuffer_valid = false;
     if (!swapchain_info.dormant) {
-        gbuffer = create_gbuffer(&device, swapchain_info.width, swapchain_info.height)!;
+        gbuffer = create_gbuffer(device, swapchain_info.width, swapchain_info.height)!;
         gbuffer_width = swapchain_info.width;
         gbuffer_height = swapchain_info.height;
         gbuffer_valid = true;
     }
     defer {
-        if (gbuffer_valid) destroy_gbuffer(&device, &gbuffer);
+        if (gbuffer_valid) destroy_gbuffer(device, &gbuffer);
     }
 
     gpu::SamplerDesc sampler_desc = {
@@ -265,7 +250,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex gbuffer_sampler = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex gbuffer_sampler = gpu::intern_sampler(device, &sampler_desc)!;
 
     gpu::AllocationDesc vertex_desc = {
         .size         = CUBE_VERTEX_COUNT * 32,
@@ -274,12 +259,12 @@ fn void? run(sample_args::Options options) {
         .access       = { .graphics },
         .debug_name   = "cube_vertices",
     };
-    gpu::GpuAllocation vertex_allocation = gpu::allocate_memory(&device, &vertex_desc)!;
-    defer (void)gpu::free_allocation(&device, &vertex_allocation);
-    gpu::GpuSpan vertex_span = gpu::get_allocation_span(&device, vertex_allocation)!;
-    write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
-    gpu::flush_mapped_span(&device, vertex_span)!;
-    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
+    gpu::GpuAllocation vertex_allocation = gpu::allocate_memory(device, &vertex_desc)!;
+    defer (void)gpu::free_allocation(device, &vertex_allocation);
+    gpu::GpuSpan vertex_span = gpu::get_allocation_span(device, vertex_allocation)!;
+    write_cube_vertices((float*)gpu::get_span_mapping(device, vertex_span)!.ptr);
+    gpu::flush_mapped_span(device, vertex_span)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(device, vertex_span)!;
 
     gpu::AllocationDesc instances_desc = {
         .size         = INSTANCE_COUNT * 48,
@@ -288,12 +273,12 @@ fn void? run(sample_args::Options options) {
         .access       = { .graphics },
         .debug_name   = "instances",
     };
-    gpu::GpuAllocation instances_allocation = gpu::allocate_memory(&device, &instances_desc)!;
-    defer (void)gpu::free_allocation(&device, &instances_allocation);
-    gpu::GpuSpan instances_span = gpu::get_allocation_span(&device, instances_allocation)!;
-    write_instances((float*)gpu::get_span_mapping(&device, instances_span)!.ptr);
-    gpu::flush_mapped_span(&device, instances_span)!;
-    gpu::GpuAddress instances_address = gpu::get_span_address(&device, instances_span)!;
+    gpu::GpuAllocation instances_allocation = gpu::allocate_memory(device, &instances_desc)!;
+    defer (void)gpu::free_allocation(device, &instances_allocation);
+    gpu::GpuSpan instances_span = gpu::get_allocation_span(device, instances_allocation)!;
+    write_instances((float*)gpu::get_span_mapping(device, instances_span)!.ptr);
+    gpu::flush_mapped_span(device, instances_span)!;
+    gpu::GpuAddress instances_address = gpu::get_span_address(device, instances_span)!;
 
     gpu::Format[3] gbuffer_formats = {
         gpu::Format.RGBA8_UNORM,
@@ -318,8 +303,8 @@ fn void? run(sample_args::Options options) {
         .depth_format    = gpu::Format.D32_FLOAT,
         .debug_name      = "gbuffer_pass",
     };
-    gpu::PipelineHandle geom_pipe = gpu::create_graphics_pipeline(&device, &geom_pd)!;
-    defer (void)gpu::destroy_pipeline(&device, geom_pipe);
+    gpu::PipelineHandle geom_pipe = gpu::create_graphics_pipeline(device, &geom_pd)!;
+    defer (void)gpu::destroy_pipeline(device, geom_pipe);
 
     gpu::Format[1] swap_formats = { swapchain_info.format };
     gpu::ColorTargetState[1] swap_color_targets = {
@@ -340,11 +325,11 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle resolve_pipe;
     bool resolve_pipe_valid = false;
     if (!swapchain_info.dormant) {
-        resolve_pipe = gpu::create_graphics_pipeline(&device, &resolve_pd)!;
+        resolve_pipe = gpu::create_graphics_pipeline(device, &resolve_pd)!;
         resolve_pipe_valid = true;
     }
     defer {
-        if (resolve_pipe_valid) (void)gpu::destroy_pipeline(&device, resolve_pipe);
+        if (resolve_pipe_valid) (void)gpu::destroy_pipeline(device, resolve_pipe);
     }
 
     sample_camera::OrbitCamera camera = { .yaw = 0.7f, .pitch = 0.5f, .radius = 14.0f, .target = { 0, 0.8f, 0 } };
@@ -360,7 +345,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -375,16 +360,16 @@ fn void? run(sample_args::Options options) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
         }
         if (pipeline_changed) {
-            if (resolve_pipe_valid) gpu::destroy_pipeline(&device, resolve_pipe)!;
+            if (resolve_pipe_valid) gpu::destroy_pipeline(device, resolve_pipe)!;
             resolve_pipe_valid = false;
             swap_formats[0] = swapchain_info.format;
-            resolve_pipe = gpu::create_graphics_pipeline(&device, &resolve_pd)!;
+            resolve_pipe = gpu::create_graphics_pipeline(device, &resolve_pd)!;
             resolve_pipe_valid = true;
         }
         if (gbuffer_changed) {
-            if (gbuffer_valid) destroy_gbuffer(&device, &gbuffer);
+            if (gbuffer_valid) destroy_gbuffer(device, &gbuffer);
             gbuffer_valid = false;
-            gbuffer = create_gbuffer(&device, swapchain_info.width, swapchain_info.height)!;
+            gbuffer = create_gbuffer(device, swapchain_info.width, swapchain_info.height)!;
             gbuffer_width = swapchain_info.width;
             gbuffer_height = swapchain_info.height;
             gbuffer_valid = true;
@@ -396,13 +381,13 @@ fn void? run(sample_args::Options options) {
             camera.view());
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(
-            device:     &device,
+            device:     device,
             swapchain:  swapchain,
             timeout_ns: sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
         );
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
             continue;
         }
 
@@ -420,19 +405,19 @@ fn void? run(sample_args::Options options) {
             size:      LIGHT_COUNT * 32,
             alignment: 16,
         )!;
-        write_lights((float*)gpu::get_span_mapping(&device, lights_span)!.ptr, (float)frame / 60.0f);
-        gpu::GpuAddress lights_address = gpu::get_span_address(&device, lights_span)!;
+        write_lights((float*)gpu::get_span_mapping(device, lights_span)!.ptr, (float)frame / 60.0f);
+        gpu::GpuAddress lights_address = gpu::get_span_address(device, lights_span)!;
 
         gpu::GpuSpan geom_span = sample_frame_upload::alloc_frame_upload(
             batch:     &upload_batch,
             size:      GeometryRoot::size,
             alignment: 16,
         )!;
-        GeometryRoot* geom_root = (GeometryRoot*)gpu::get_span_mapping(&device, geom_span)!.ptr;
+        GeometryRoot* geom_root = (GeometryRoot*)gpu::get_span_mapping(device, geom_span)!.ptr;
         write_matrix(&geom_root.view_proj_c0, view_proj);
         geom_root.vertex_gpu    = vertex_address;
         geom_root.instances_gpu = instances_address;
-        gpu::GpuAddress geometry_root_address = gpu::get_span_address(&device, geom_span)!;
+        gpu::GpuAddress geometry_root_address = gpu::get_span_address(device, geom_span)!;
 
         float[<3>] cam_pos = camera.position();
         gpu::GpuSpan resolve_span = sample_frame_upload::alloc_frame_upload(
@@ -440,7 +425,7 @@ fn void? run(sample_args::Options options) {
             size:      ResolveRoot::size,
             alignment: 16,
         )!;
-        ResolveRoot* resolve_root = (ResolveRoot*)gpu::get_span_mapping(&device, resolve_span)!.ptr;
+        ResolveRoot* resolve_root = (ResolveRoot*)gpu::get_span_mapping(device, resolve_span)!.ptr;
         resolve_root.camera_pos      = { cam_pos[0], cam_pos[1], cam_pos[2], 1.0f };
         resolve_root.lights_gpu      = lights_address;
         resolve_root.albedo_target   = gbuffer.albedo_index;
@@ -448,10 +433,10 @@ fn void? run(sample_args::Options options) {
         resolve_root.position_target = gbuffer.position_index;
         resolve_root.gbuffer_sampler = gbuffer_sampler;
         resolve_root.light_count     = LIGHT_COUNT;
-        gpu::GpuAddress resolve_root_address = gpu::get_span_address(&device, resolve_span)!;
+        gpu::GpuAddress resolve_root_address = gpu::get_span_address(device, resolve_span)!;
         sample_frame_upload::flush_frame_upload(&upload_batch)!;
 
-        gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
+        gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
 
         gpu::TextureHandle[3] color_targets = { gbuffer.albedo, gbuffer.normal, gbuffer.position };
@@ -599,12 +584,12 @@ fn void? run(sample_args::Options options) {
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
-        last_graphics = gpu::submit(graphics_queue, &submit)!;
+        last_graphics = gpu::submit(context.queue, &submit)!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                allocator:           &graphics_allocator,
+                allocator:           &context.command_allocator,
                 producer_completion: last_graphics,
                 src:         acquired.texture,
                 width:       width,
@@ -617,9 +602,9 @@ fn void? run(sample_args::Options options) {
             )!;
         }
 
-        if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
+        if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
 
         frame++;

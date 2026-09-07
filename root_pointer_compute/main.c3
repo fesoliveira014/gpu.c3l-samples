@@ -1,7 +1,7 @@
 module root_pointer_compute;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import std::io;
 
 const char[*] ROOT_POINTER_SPIRV = $embed("shaders/root_pointer.comp.spv");
@@ -68,19 +68,14 @@ fn void? dispatch_compute(
 }
 
 fn void? run() {
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "root_pointer_compute",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer gpu::destroy_device(&device)!!;
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
-    gpu::CommandAllocator compute_allocator =
-        gpu::create_command_allocator(&device, compute_queue)!;
-    defer gpu::destroy_command_allocator(&compute_allocator)!!;
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "root_pointer_compute";
+    desc.device.queues.required = { .compute };
+    desc.command_queue = gpu::QueueKind.COMPUTE;
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
     gpu::AllocationDesc input_desc = {
         .size         = COUNT * float::size,
@@ -89,9 +84,9 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "input",
     };
-    gpu::GpuAllocation input = gpu::allocate_memory(&device, &input_desc)!;
-    defer gpu::free_allocation(&device, &input)!!;
-    gpu::GpuSpan input_span = gpu::get_allocation_span(&device, input)!;
+    gpu::GpuAllocation input = gpu::allocate_memory(device, &input_desc)!;
+    defer gpu::free_allocation(device, &input)!!;
+    gpu::GpuSpan input_span = gpu::get_allocation_span(device, input)!;
 
     gpu::AllocationDesc output_desc = {
         .size         = COUNT * float::size,
@@ -100,13 +95,13 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "output",
     };
-    gpu::GpuAllocation output = gpu::allocate_memory(&device, &output_desc)!;
-    defer gpu::free_allocation(&device, &output)!!;
-    gpu::GpuSpan output_span = gpu::get_allocation_span(&device, output)!;
+    gpu::GpuAllocation output = gpu::allocate_memory(device, &output_desc)!;
+    defer gpu::free_allocation(device, &output)!!;
+    gpu::GpuSpan output_span = gpu::get_allocation_span(device, output)!;
 
-    float* in_data = (float*)gpu::get_span_mapping(&device, input_span)!.ptr;
+    float* in_data = (float*)gpu::get_span_mapping(device, input_span)!.ptr;
     for (uint i = 0; i < COUNT; i++) in_data[i] = (float)i;
-    gpu::flush_mapped_span(&device, input_span)!;
+    gpu::flush_mapped_span(device, input_span)!;
 
     gpu::ComputePipelineDesc pipe_desc = {
         .shader = {
@@ -116,12 +111,12 @@ fn void? run() {
         },
         .debug_name = "root_pointer",
     };
-    gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
-    defer gpu::destroy_pipeline(&device, pipeline)!!;
+    gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(device, &pipe_desc)!;
+    defer gpu::destroy_pipeline(device, pipeline)!!;
 
     dispatch_compute(
-        device:            &device,
-        command_allocator: &compute_allocator,
+        device:            device,
+        command_allocator: &context.command_allocator,
         input:             input_span,
         output:            output_span,
         pipeline:          pipeline,

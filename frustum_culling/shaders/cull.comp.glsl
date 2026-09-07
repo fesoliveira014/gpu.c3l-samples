@@ -22,10 +22,9 @@ void main() {
     if (id >= root.count) return;
 
     vec4 sphere = Instances(root.instances_gpu).items[id].center_radius;
-    vec4 planes[6] = vec4[](root.plane0, root.plane1, root.plane2, root.plane3, root.plane4, root.plane5);
     bool visible = true;
     for (int i = 0; i < 6; i++) {
-        if (dot(planes[i].xyz, sphere.xyz) + planes[i].w < -sphere.w) visible = false;
+        if (dot(root.planes[i].xyz, sphere.xyz) + root.planes[i].w < -sphere.w) visible = false;
     }
 
     Args(root.args_gpu).cmds[id] = DrawIndirectCommand(36u, visible ? 1u : 0u, 0u, id);

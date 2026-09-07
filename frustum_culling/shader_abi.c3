@@ -7,12 +7,7 @@ const uint INSTANCE_COUNT = 4096;
 const uint CULL_TILE = 256;
 
 struct CullRoot {
-    Vec4f      plane0;
-    Vec4f      plane1;
-    Vec4f      plane2;
-    Vec4f      plane3;
-    Vec4f      plane4;
-    Vec4f      plane5;
+    Vec4f[6]   planes;
     GpuAddress instances_gpu;
     GpuAddress args_gpu;
     GpuAddress stats_gpu;
@@ -20,12 +15,7 @@ struct CullRoot {
     uint       _pad0;
 }
 $assert CullRoot::size == 128;
-$assert $reflect(CullRoot.plane0).offset == 0;
-$assert $reflect(CullRoot.plane1).offset == 16;
-$assert $reflect(CullRoot.plane2).offset == 32;
-$assert $reflect(CullRoot.plane3).offset == 48;
-$assert $reflect(CullRoot.plane4).offset == 64;
-$assert $reflect(CullRoot.plane5).offset == 80;
+$assert $reflect(CullRoot.planes).offset == 0;
 $assert $reflect(CullRoot.instances_gpu).offset == 96;
 $assert $reflect(CullRoot.args_gpu).offset == 104;
 $assert $reflect(CullRoot.stats_gpu).offset == 112;
@@ -33,17 +23,11 @@ $assert $reflect(CullRoot.count).offset == 120;
 $assert $reflect(CullRoot._pad0).offset == 124;
 
 struct SceneDrawRoot {
-    Vec4f      view_proj_c0;
-    Vec4f      view_proj_c1;
-    Vec4f      view_proj_c2;
-    Vec4f      view_proj_c3;
+    Mat4f      view_proj;
     GpuAddress instances_gpu;
     GpuAddress vertex_gpu;
 }
 $assert SceneDrawRoot::size == 80;
-$assert $reflect(SceneDrawRoot.view_proj_c0).offset == 0;
-$assert $reflect(SceneDrawRoot.view_proj_c1).offset == 16;
-$assert $reflect(SceneDrawRoot.view_proj_c2).offset == 32;
-$assert $reflect(SceneDrawRoot.view_proj_c3).offset == 48;
+$assert $reflect(SceneDrawRoot.view_proj).offset == 0;
 $assert $reflect(SceneDrawRoot.instances_gpu).offset == 64;
 $assert $reflect(SceneDrawRoot.vertex_gpu).offset == 72;

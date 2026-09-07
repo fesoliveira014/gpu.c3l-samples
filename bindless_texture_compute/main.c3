@@ -1,7 +1,7 @@
 module bindless_texture_compute;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import std::io;
 
 const char[*] HEAP_WRITE_SPIRV  = $embed("shaders/heap_write.comp.spv");
@@ -19,19 +19,14 @@ fn int main() {
 }
 
 fn void? run() {
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "bindless_texture_compute",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
-    gpu::CommandAllocator compute_allocator =
-        gpu::create_command_allocator(&device, compute_queue)!;
-    defer (void)gpu::destroy_command_allocator(&compute_allocator);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "bindless_texture_compute";
+    desc.device.queues.required = { .compute };
+    desc.command_queue = gpu::QueueKind.COMPUTE;
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
     gpu::TextureDesc tex_desc = {
         .width      = TEX_SIZE,
@@ -41,11 +36,11 @@ fn void? run() {
         .access     = { .compute },
         .debug_name = "heap_target",
     };
-    gpu::TextureHandle texture = gpu::create_texture(&device, &tex_desc)!;
-    defer (void)gpu::destroy_texture(&device, texture);
+    gpu::TextureHandle texture = gpu::create_texture(device, &tex_desc)!;
+    defer (void)gpu::destroy_texture(device, texture);
 
-    gpu::TextureView tex_view = gpu::create_texture_view(&device, texture, null)!;
-    defer (void)gpu::destroy_texture_view(&device, tex_view);
+    gpu::TextureView tex_view = gpu::create_texture_view(device, texture, null)!;
+    defer (void)gpu::destroy_texture_view(device, tex_view);
     gpu::TextureIndex tex_index = tex_view.index;
 
     gpu::SamplerDesc sampler_desc = {
@@ -55,7 +50,7 @@ fn void? run() {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex smp_index = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex smp_index = gpu::intern_sampler(device, &sampler_desc)!;
 
     gpu::AllocationDesc out_desc = {
         .size         = TEX_SIZE * TEX_SIZE * 16,
@@ -64,9 +59,9 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "sample_output",
     };
-    gpu::GpuAllocation output = gpu::allocate_memory(&device, &out_desc)!;
-    defer (void)gpu::free_allocation(&device, &output);
-    gpu::GpuSpan output_span = gpu::get_allocation_span(&device, output)!;
+    gpu::GpuAllocation output = gpu::allocate_memory(device, &out_desc)!;
+    defer (void)gpu::free_allocation(device, &output);
+    gpu::GpuSpan output_span = gpu::get_allocation_span(device, output)!;
 
     gpu::ComputePipelineDesc write_pipe_desc = {
         .shader = {
@@ -81,10 +76,10 @@ fn void? run() {
         },
     };
 
-    gpu::PipelineHandle write_pipe = gpu::create_compute_pipeline(&device, &write_pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, write_pipe);
-    gpu::PipelineHandle sample_pipe = gpu::create_compute_pipeline(&device, &sample_pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, sample_pipe);
+    gpu::PipelineHandle write_pipe = gpu::create_compute_pipeline(device, &write_pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(device, write_pipe);
+    gpu::PipelineHandle sample_pipe = gpu::create_compute_pipeline(device, &sample_pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(device, sample_pipe);
 
     gpu::AllocationDesc roots_desc = {
         .size         = WriteRoot::size + SampleRoot::size,
@@ -93,26 +88,26 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "bindless_roots",
     };
-    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
-    defer (void)gpu::free_allocation(&device, &roots_allocation);
-    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(device, &roots_desc)!;
+    defer (void)gpu::free_allocation(device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(device, roots_allocation)!;
 
     gpu::GpuSpan write_root_span = roots_span.checked_subspan(0, WriteRoot::size)!;
-    WriteRoot* write_root = (WriteRoot*)gpu::get_span_mapping(&device, write_root_span)!.ptr;
+    WriteRoot* write_root = (WriteRoot*)gpu::get_span_mapping(device, write_root_span)!.ptr;
     write_root.texture_index = tex_index;
     write_root.width         = TEX_SIZE;
     write_root.height        = TEX_SIZE;
 
     gpu::GpuSpan sample_root_span = roots_span.checked_subspan(WriteRoot::size, SampleRoot::size)!;
-    SampleRoot* sample_root = (SampleRoot*)gpu::get_span_mapping(&device, sample_root_span)!.ptr;
-    sample_root.output_gpu    = gpu::get_span_address(&device, output_span)!;
+    SampleRoot* sample_root = (SampleRoot*)gpu::get_span_mapping(device, sample_root_span)!.ptr;
+    sample_root.output_gpu    = gpu::get_span_address(device, output_span)!;
     sample_root.texture_index = tex_index;
     sample_root.sampler_index = smp_index;
     sample_root.width         = TEX_SIZE;
     sample_root.height        = TEX_SIZE;
-    gpu::flush_mapped_span(&device, roots_span)!;
+    gpu::flush_mapped_span(device, roots_span)!;
 
-    gpu::CommandList cmd = gpu::begin_commands(&compute_allocator)!;
+    gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier to_general = {
@@ -126,7 +121,7 @@ fn void? run() {
     gpu::cmd_bind_pipeline(&cmd, write_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        root:     gpu::get_span_address(&device, write_root_span)!,
+        root:     gpu::get_span_address(device, write_root_span)!,
         groups:   { GROUPS, GROUPS, 1 },
     )!;
 
@@ -140,7 +135,7 @@ fn void? run() {
     gpu::cmd_bind_pipeline(&cmd, sample_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        root:     gpu::get_span_address(&device, sample_root_span)!,
+        root:     gpu::get_span_address(device, sample_root_span)!,
         groups:   { GROUPS, GROUPS, 1 },
     )!;
 
@@ -153,12 +148,12 @@ fn void? run() {
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(context.queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
-    gpu::invalidate_mapped_span(&device, output_span)!;
+    gpu::invalidate_mapped_span(device, output_span)!;
 
-    float* texels = (float*)gpu::get_span_mapping(&device, output_span)!.ptr;
+    float* texels = (float*)gpu::get_span_mapping(device, output_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             float* texel = &texels[(y * TEX_SIZE + x) * 4];

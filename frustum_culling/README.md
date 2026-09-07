@@ -6,7 +6,7 @@ Compute-culls 4,096 cubes and feeds one indirect multi-draw.
 
 It demonstrates:
 
-- CPU frustum-plane extraction passed through a culling root.
+- CPU frustum-plane extraction passed through a culling root as a `vec4[6]` array; the draw root carries a `mat4`.
 - GPU-written indirect commands in a `GPU_PRIVATE` span.
 - A compute-to-indirect barrier before drawing.
 - Periodic `CPU_READ` statistics with host invalidation and bounds checks.

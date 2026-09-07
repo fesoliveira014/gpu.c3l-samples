@@ -1,7 +1,7 @@
 module pipeline_cache_timing;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import std::io;
 import std::time;
 import std::core::mem;
@@ -379,62 +379,44 @@ fn void? run() {
     gpu::PipelineHandle compute;
     Shaders shaders = make_shaders();
 
-    gpu::RuntimeDesc runtime_a_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "pipeline_cache_timing",
-    };
-    gpu::Runtime runtime_a = gpu::create_runtime(&runtime_a_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime_a);
-    gpu::Device device_a = sample_device::create_device(&runtime_a)!;
-    defer (void)gpu::destroy_device(&device_a);
-    gpu::Queue graphics_queue_a =
-        gpu::get_queue(&device_a, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator allocator_a =
-        gpu::create_command_allocator(&device_a, graphics_queue_a)!;
-    defer (void)gpu::destroy_command_allocator(&allocator_a);
-    TierResult cold = build_all(&device_a, &shaders, graphics_a[..], &compute)!;
+    util::DeviceContextDesc desc_a = util::default_device_context_desc();
+    desc_a.runtime.enable_vulkan_validation = true;
+    desc_a.runtime.application_name = "pipeline_cache_timing";
+    util::DeviceContext context_a = util::create_device_context(&desc_a)!;
+    defer util::destroy_device_context(&context_a);
+    gpu::Device* device_a = &context_a.device;
+    TierResult cold = build_all(device_a, &shaders, graphics_a[..], &compute)!;
     smoke(
-        device:    &device_a,
-        allocator: &allocator_a,
+        device:    device_a,
+        allocator: &context_a.command_allocator,
         quad_pipes: graphics_a[..],
         compute:   compute,
     )!;
 
     gpu::PipelineHandle[VARIANTS] graphics_dedup;
     gpu::PipelineHandle compute_dedup;
-    TierResult dedup = build_all(&device_a, &shaders, graphics_dedup[..], &compute_dedup)!;
-    destroy_all(&device_a, graphics_dedup[..], compute_dedup);
+    TierResult dedup = build_all(device_a, &shaders, graphics_dedup[..], &compute_dedup)!;
+    destroy_all(device_a, graphics_dedup[..], compute_dedup);
 
-    usz blob_size = gpu::get_pipeline_cache_size(&device_a)!;
+    usz blob_size = gpu::get_pipeline_cache_size(device_a)!;
     char[] blob = mem::new_array(char, (sz)blob_size);
     defer mem::free(blob.ptr);
-    usz written = gpu::get_pipeline_cache_data(&device_a, blob)!;
-    destroy_all(&device_a, graphics_a[..], compute);
+    usz written = gpu::get_pipeline_cache_data(device_a, blob)!;
+    destroy_all(device_a, graphics_a[..], compute);
 
-    gpu::RuntimeDesc runtime_b_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .pipeline_cache_data          = blob[:written],
-        .application_name             = "pipeline_cache_timing",
-    };
-    gpu::Runtime runtime_b = gpu::create_runtime(&runtime_b_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime_b);
-    gpu::Device device_b = sample_device::create_device(&runtime_b)!;
-    defer (void)gpu::destroy_device(&device_b);
-    gpu::Queue graphics_queue_b =
-        gpu::get_queue(&device_b, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator allocator_b =
-        gpu::create_command_allocator(&device_b, graphics_queue_b)!;
-    defer (void)gpu::destroy_command_allocator(&allocator_b);
-    TierResult warm = build_all(&device_b, &shaders, graphics_b[..], &compute)!;
+    util::DeviceContextDesc desc_b = desc_a;
+    desc_b.runtime.pipeline_cache_data = blob[:written];
+    util::DeviceContext context_b = util::create_device_context(&desc_b)!;
+    defer util::destroy_device_context(&context_b);
+    gpu::Device* device_b = &context_b.device;
+    TierResult warm = build_all(device_b, &shaders, graphics_b[..], &compute)!;
     smoke(
-        device:    &device_b,
-        allocator: &allocator_b,
+        device:    device_b,
+        allocator: &context_b.command_allocator,
         quad_pipes: graphics_b[..],
         compute:   compute,
     )!;
-    destroy_all(&device_b, graphics_b[..], compute);
+    destroy_all(device_b, graphics_b[..], compute);
 
     io::printfn(
         "pipeline_cache_timing: %d graphics handles, %d pipeline identities + 1 compute",

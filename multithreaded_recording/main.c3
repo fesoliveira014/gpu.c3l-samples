@@ -1,7 +1,7 @@
 module multithreaded_recording;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import std::io;
 import std::thread;
 import std::time;
@@ -200,7 +200,7 @@ fn int main(String[] args) {
    `workers` == 0 records everything on the calling thread. Returns record
    wall time; the image lands in `out`. *>
 fn NanoDuration? run_once(
-    gpu::Device* device,
+    gpu::CommandAllocator* primary_allocator,
     gpu::TextureHandle target,
     gpu::AttachmentViewHandle target_view,
     gpu::PipelineHandle pipeline,
@@ -209,19 +209,10 @@ fn NanoDuration? run_once(
     char[] out,
     bool* target_seen,
 ) {
-    gpu::Queue queue = gpu::get_queue(device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocatorDesc primary_allocator_desc = {
-        .command_buffer_capacity = CHUNKS + 1,
-        .debug_name              = "mtrec_primary",
-    };
-    gpu::CommandAllocator primary_allocator = gpu::create_command_allocator(
-        device,
-        queue,
-        &primary_allocator_desc,
-    )!;
-    defer (void)gpu::destroy_command_allocator(&primary_allocator);
+    gpu::Device* device = &primary_allocator.device;
+    gpu::Queue queue = primary_allocator.queue;
 
-    gpu::CommandList preamble = gpu::begin_commands(&primary_allocator)!;
+    gpu::CommandList preamble = gpu::begin_commands(primary_allocator)!;
     defer (void)gpu::discard_commands(&preamble);
     // Readback restores COLOR_ATTACHMENT, so only the
     // first run needs a transition out of UNDEFINED.
@@ -286,7 +277,7 @@ fn NanoDuration? run_once(
     NanoDuration record_time;
     if (workers == 0) {
         for (uint chunk = 0; chunk < CHUNKS; chunk++) {
-            gpu::CommandList list = gpu::begin_commands(&primary_allocator)!;
+            gpu::CommandList list = gpu::begin_commands(primary_allocator)!;
             defer (void)gpu::discard_commands(&list);
             record_chunk(
                 list:        &list,
@@ -346,7 +337,7 @@ fn NanoDuration? run_once(
     gpu::CompletionPoint completion = gpu::submit(queue, &submit)!;
 
     read_color_target(
-        allocator:           &primary_allocator,
+        allocator:           primary_allocator,
         target:              target,
         producer_completion: completion,
         out:                 out,
@@ -362,17 +353,17 @@ struct RunResult {
 <* Full serial + threaded pass on one device; faults unless the two
    readbacks are byte-identical. *>
 fn RunResult? run_on_device(bool validation) {
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = validation
-            ? gpu::ContractValidation.FULL
-            : gpu::ContractValidation.TRUSTED,
-        .enable_vulkan_validation     = validation,
-        .application_name             = "multithreaded_recording",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer (void)gpu::destroy_device(&device);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.contract_validation = validation
+        ? gpu::ContractValidation.FULL
+        : gpu::ContractValidation.TRUSTED;
+    desc.runtime.enable_vulkan_validation = validation;
+    desc.runtime.application_name = "multithreaded_recording";
+    desc.command_allocator.command_buffer_capacity = CHUNKS + 1;
+    desc.command_allocator.debug_name = "mtrec_primary";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
     gpu::TextureDesc target_desc = {
         .width      = TARGET_SIZE,
@@ -382,14 +373,14 @@ fn RunResult? run_on_device(bool validation) {
         .access     = { .graphics },
         .debug_name = "mtrec_target",
     };
-    gpu::TextureHandle target = gpu::create_texture(&device, &target_desc)!;
-    defer (void)gpu::destroy_texture(&device, target);
+    gpu::TextureHandle target = gpu::create_texture(device, &target_desc)!;
+    defer (void)gpu::destroy_texture(device, target);
     gpu::AttachmentViewDesc target_view_desc = { .texture = target };
     gpu::AttachmentViewHandle target_view = gpu::create_attachment_view(
-        &device,
+        device,
         &target_view_desc,
     )!;
-    defer (void)gpu::destroy_attachment_view(&device, target_view);
+    defer (void)gpu::destroy_attachment_view(device, target_view);
 
     gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::GraphicsPipelineDesc pipe_desc = {
@@ -404,8 +395,8 @@ fn RunResult? run_on_device(bool validation) {
         .color_formats   = color_formats[..],
         .debug_name      = "mtrec_quads",
     };
-    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, pipeline);
+    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(device, &pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(device, pipeline);
 
     uint workers = MAX_WORKERS;
 
@@ -416,10 +407,10 @@ fn RunResult? run_on_device(bool validation) {
         .access       = { .graphics },
         .debug_name   = "mtrec_roots",
     };
-    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
-    defer (void)gpu::free_allocation(&device, &roots_allocation);
-    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
-    QuadRoot* roots = (QuadRoot*)gpu::get_span_mapping(&device, roots_span)!.ptr;
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(device, &roots_desc)!;
+    defer (void)gpu::free_allocation(device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(device, roots_allocation)!;
+    QuadRoot* roots = (QuadRoot*)gpu::get_span_mapping(device, roots_span)!.ptr;
     for (uint chunk = 0; chunk < CHUNKS; chunk++) {
         for (uint draw = 0; draw < DRAWS_PER_CHUNK; draw++) {
             QuadRoot* root = &roots[(usz)chunk * DRAWS_PER_CHUNK + draw];
@@ -427,8 +418,8 @@ fn RunResult? run_on_device(bool validation) {
             root.color = color_for(chunk, draw);
         }
     }
-    gpu::flush_mapped_span(&device, roots_span)!;
-    gpu::GpuAddress roots_address = gpu::get_span_address(&device, roots_span)!;
+    gpu::flush_mapped_span(device, roots_span)!;
+    gpu::GpuAddress roots_address = gpu::get_span_address(device, roots_span)!;
 
     char[] serial_image = mem::new_array(char, READBACK_BYTES);
     defer mem::free(serial_image.ptr);
@@ -437,7 +428,7 @@ fn RunResult? run_on_device(bool validation) {
 
     bool target_seen = false;
     NanoDuration serial_time = run_once(
-        device:      &device,
+        primary_allocator: &context.command_allocator,
         target:      target,
         target_view: target_view,
         pipeline:    pipeline,
@@ -447,7 +438,7 @@ fn RunResult? run_on_device(bool validation) {
         target_seen: &target_seen,
     )!;
     NanoDuration threaded_time = run_once(
-        device:      &device,
+        primary_allocator: &context.command_allocator,
         target:      target,
         target_view: target_view,
         pipeline:    pipeline,

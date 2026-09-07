@@ -1,7 +1,7 @@
 module memory_report;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import std::atomic;
 import std::io;
 
@@ -142,7 +142,8 @@ fn void? print_independent_allocation(
     if (info.mapped) {
         char[] mapping = gpu::get_span_mapping(device, span)!;
         if (mapping.len != info.size) return gpu::INVALID_RESOURCE_STATE~;
-        if (info.memory_class == gpu::MemoryClass.CPU_WRITE) {
+        if (info.memory_class == gpu::MemoryClass.CPU_WRITE
+            || info.memory_class == gpu::MemoryClass.CPU_WRITE_GPU_LOCAL) {
             mapping[0] = (char)0x2A;
         }
     } else {
@@ -155,12 +156,13 @@ fn void? print_independent_allocation(
         if (mapping_fault != gpu::INVALID_ARGUMENT) return mapping_fault~;
     }
     io::printfn(
-        "  %s: %d bytes, alignment %d, mapped=%s, coherent=%s, address=%d",
+        "  %s: %d bytes, alignment %d, mapped=%s, coherent=%s, device_local=%s, address=%d",
         name,
         info.size,
         info.alignment,
         info.mapped ? "yes" : "no",
         info.coherent ? "yes" : "no",
+        info.device_local ? "yes" : "no",
         (ulong)address,
     );
 }
@@ -239,18 +241,15 @@ fn void? run(bool detailed) {
     // Registered first so LIFO prints after device teardown stops callbacks.
     defer print_debug_messages(&debug_messages);
 
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .enable_debug_names           = true,
-        .application_name             = "memory_report",
-        .debug_callback               = &capture_debug_message,
-        .debug_user_data              = &debug_messages,
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer (void)gpu::destroy_device(&device);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.enable_debug_names = true;
+    desc.runtime.application_name = "memory_report";
+    desc.runtime.debug_callback = &capture_debug_message;
+    desc.runtime.debug_user_data = &debug_messages;
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
     gpu::AllocationDesc rejected_desc = {
         .size         = 0,
@@ -259,30 +258,32 @@ fn void? run(bool detailed) {
         .access       = { .graphics },
         .debug_name   = "report_rejected_allocation",
     };
-    gpu::GpuAllocation? maybe_rejected = gpu::allocate_memory(&device, &rejected_desc);
+    gpu::GpuAllocation? maybe_rejected = gpu::allocate_memory(device, &rejected_desc);
     if (try unexpected = maybe_rejected) {
-        gpu::free_allocation(&device, &unexpected)!;
+        gpu::free_allocation(device, &unexpected)!;
         return EXPECTED_REJECTION_MISSING~;
     }
     fault rejected = @catch(maybe_rejected);
     if (rejected != gpu::INVALID_ARGUMENT) return rejected~;
 
-    gpu::MemoryClass[3] allocation_classes = {
+    gpu::MemoryClass[4] allocation_classes = {
         gpu::MemoryClass.CPU_WRITE,
+        gpu::MemoryClass.CPU_WRITE_GPU_LOCAL,
         gpu::MemoryClass.GPU_PRIVATE,
         gpu::MemoryClass.CPU_READ,
     };
-    ZString[3] allocation_names = {
+    ZString[4] allocation_names = {
         "report_cpu_write",
+        "report_cpu_write_gpu_local",
         "report_gpu_private",
         "report_cpu_read",
     };
-    gpu::GpuAllocation[3] allocations = {};
+    gpu::GpuAllocation[4] allocations = {};
     uint allocation_count = 0;
     defer {
         for (uint i = 0; i < allocation_count; i++) {
             if (allocations[i].is_valid()) {
-                (void)gpu::free_allocation(&device, &allocations[i]);
+                (void)gpu::free_allocation(device, &allocations[i]);
             }
         }
     }
@@ -295,9 +296,9 @@ fn void? run(bool detailed) {
             .access       = { .graphics },
             .debug_name   = allocation_names[i],
         };
-        allocations[i] = gpu::allocate_memory(&device, &allocation_desc)!;
+        allocations[i] = gpu::allocate_memory(device, &allocation_desc)!;
         allocation_count++;
-        print_independent_allocation(&device, allocations[i], allocation_names[i])!;
+        print_independent_allocation(device, allocations[i], allocation_names[i])!;
     }
 
     gpu::TextureDesc sampled_desc = {
@@ -309,8 +310,8 @@ fn void? run(bool detailed) {
         .access     = { .graphics },
         .debug_name = "report_sampled_texture",
     };
-    gpu::TextureHandle sampled = gpu::create_texture(&device, &sampled_desc)!;
-    defer (void)gpu::destroy_texture(&device, sampled);
+    gpu::TextureHandle sampled = gpu::create_texture(device, &sampled_desc)!;
+    defer (void)gpu::destroy_texture(device, sampled);
 
     gpu::TextureDesc depth_desc = {
         .width     = 512,
@@ -320,10 +321,10 @@ fn void? run(bool detailed) {
         .access     = { .graphics },
         .debug_name = "report_depth_texture",
     };
-    gpu::TextureHandle depth = gpu::create_texture(&device, &depth_desc)!;
-    defer (void)gpu::destroy_texture(&device, depth);
+    gpu::TextureHandle depth = gpu::create_texture(device, &depth_desc)!;
+    defer (void)gpu::destroy_texture(device, depth);
 
-    gpu::MemoryStats stats = gpu::get_memory_stats(&device)!;
+    gpu::MemoryStats stats = gpu::get_memory_stats(device)!;
     io::printfn("live textures: %d", stats.texture_count);
     io::printfn("live allocations: %d", stats.live_allocation_count);
     for (uint i = 0; i < stats.heap_count; i++) {
@@ -331,7 +332,7 @@ fn void? run(bool detailed) {
             i, stats.heaps[i].usage, stats.heaps[i].budget, stats.heaps[i].block_bytes);
     }
 
-    String report = gpu::build_memory_report(&device, detailed)!;
+    String report = gpu::build_memory_report(device, detailed)!;
     defer free(report);
     io::printfn("--- allocator report (%s) ---", detailed ? "detailed" : "summary");
     io::printn(report);

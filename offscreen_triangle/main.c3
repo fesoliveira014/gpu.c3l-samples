@@ -1,7 +1,7 @@
 module offscreen_triangle;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import sample_args;
 import sample_png;
 import std::io;
@@ -133,15 +133,12 @@ fn int main(String[] args) {
 }
 
 fn void? run(sample_args::Options options) {
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "offscreen_triangle",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer (void)gpu::destroy_device(&device);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "offscreen_triangle";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
     gpu::TextureDesc rt_desc = {
         .width      = RT_SIZE,
@@ -151,14 +148,14 @@ fn void? run(sample_args::Options options) {
         .access     = { .graphics },
         .debug_name = "render_target",
     };
-    gpu::TextureHandle target = gpu::create_texture(&device, &rt_desc)!;
-    defer (void)gpu::destroy_texture(&device, target);
+    gpu::TextureHandle target = gpu::create_texture(device, &rt_desc)!;
+    defer (void)gpu::destroy_texture(device, target);
     gpu::AttachmentViewDesc target_view_desc = { .texture = target };
     gpu::AttachmentViewHandle target_view = gpu::create_attachment_view(
-        &device,
+        device,
         &target_view_desc,
     )!;
-    defer (void)gpu::destroy_attachment_view(&device, target_view);
+    defer (void)gpu::destroy_attachment_view(device, target_view);
 
     gpu::TextureDesc tex_desc = {
         .width      = TEX_SIZE,
@@ -168,10 +165,10 @@ fn void? run(sample_args::Options options) {
         .access     = { .graphics },
         .debug_name = "checker",
     };
-    gpu::TextureHandle checker = gpu::create_texture(&device, &tex_desc)!;
-    defer (void)gpu::destroy_texture(&device, checker);
-    gpu::TextureView tex_view = gpu::create_texture_view(&device, checker, null)!;
-    defer (void)gpu::destroy_texture_view(&device, tex_view);
+    gpu::TextureHandle checker = gpu::create_texture(device, &tex_desc)!;
+    defer (void)gpu::destroy_texture(device, checker);
+    gpu::TextureView tex_view = gpu::create_texture_view(device, checker, null)!;
+    defer (void)gpu::destroy_texture_view(device, tex_view);
     gpu::TextureIndex tex_index = tex_view.index;
 
     gpu::SamplerDesc sampler_desc = {
@@ -181,7 +178,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex smp_index = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex smp_index = gpu::intern_sampler(device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = TEX_SIZE * TEX_SIZE * 4,
@@ -189,10 +186,10 @@ fn void? run(sample_args::Options options) {
         .memory_class = gpu::MemoryClass.CPU_WRITE,
         .access       = { .graphics },
     };
-    gpu::GpuAllocation staging = gpu::allocate_memory(&device, &staging_desc)!;
-    defer (void)gpu::free_allocation(&device, &staging);
-    gpu::GpuSpan staging_span = gpu::get_allocation_span(&device, staging)!;
-    char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
+    gpu::GpuAllocation staging = gpu::allocate_memory(device, &staging_desc)!;
+    defer (void)gpu::free_allocation(device, &staging);
+    gpu::GpuSpan staging_span = gpu::get_allocation_span(device, staging)!;
+    char* texels = (char*)gpu::get_span_mapping(device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             bool checkered = ((x / 4) + (y / 4)) % 2 == 0;
@@ -203,7 +200,7 @@ fn void? run(sample_args::Options options) {
             texel[3] = (char)255;
         }
     }
-    gpu::flush_mapped_span(&device, staging_span)!;
+    gpu::flush_mapped_span(device, staging_span)!;
 
     gpu::Format[1] color_formats = { gpu::Format.RGBA8_UNORM };
     gpu::ColorTargetState[1] color_targets = {
@@ -221,8 +218,8 @@ fn void? run(sample_args::Options options) {
         .color_formats   = color_formats[..],
         .debug_name      = "offscreen_triangle",
     };
-    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, pipeline);
+    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(device, &pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(device, pipeline);
 
     gpu::AllocationDesc roots_desc = {
         .size         = 3 * 16 + FragRoot::size,
@@ -231,9 +228,9 @@ fn void? run(sample_args::Options options) {
         .access       = { .graphics },
         .debug_name   = "offscreen_roots",
     };
-    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
-    defer (void)gpu::free_allocation(&device, &roots_allocation);
-    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(device, &roots_desc)!;
+    defer (void)gpu::free_allocation(device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(device, roots_allocation)!;
 
     gpu::GpuSpan verts_span = roots_span.checked_subspan(0, 3 * 16)!;
     float[12] vertex_data = {
@@ -241,22 +238,17 @@ fn void? run(sample_args::Options options) {
          0.8f, -0.8f, 1.0f, 0.0f,
          0.0f,  0.8f, 0.5f, 1.0f,
     };
-    mem::copy(gpu::get_span_mapping(&device, verts_span)!.ptr, &vertex_data, vertex_data.len * float::size);
-    gpu::GpuAddress verts_address = gpu::get_span_address(&device, verts_span)!;
+    mem::copy(gpu::get_span_mapping(device, verts_span)!.ptr, &vertex_data, vertex_data.len * float::size);
+    gpu::GpuAddress verts_address = gpu::get_span_address(device, verts_span)!;
 
     gpu::GpuSpan frag_span = roots_span.checked_subspan(3 * 16, FragRoot::size)!;
-    FragRoot* frag_root = (FragRoot*)gpu::get_span_mapping(&device, frag_span)!.ptr;
+    FragRoot* frag_root = (FragRoot*)gpu::get_span_mapping(device, frag_span)!.ptr;
     frag_root.texture_index = tex_index;
     frag_root.sampler_index = smp_index;
-    gpu::GpuAddress frag_address = gpu::get_span_address(&device, frag_span)!;
-    gpu::flush_mapped_span(&device, roots_span)!;
+    gpu::GpuAddress frag_address = gpu::get_span_address(device, frag_span)!;
+    gpu::flush_mapped_span(device, roots_span)!;
 
-    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator allocator =
-        gpu::create_command_allocator(&device, graphics_queue)!;
-    defer (void)gpu::destroy_command_allocator(&allocator);
-
-    gpu::CommandList cmd = gpu::begin_commands(&allocator)!;
+    gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::TextureBarrier checker_to_dst = {
@@ -362,12 +354,12 @@ fn void? run(sample_args::Options options) {
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(graphics_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(context.queue, &submit)!;
 
     char[] pixels = mem::new_array(char, RT_BYTES);
     defer mem::free(pixels.ptr);
     read_color_target(
-        allocator:           &allocator,
+        allocator:           &context.command_allocator,
         target:              target,
         producer_completion: completion,
         out:                 pixels,

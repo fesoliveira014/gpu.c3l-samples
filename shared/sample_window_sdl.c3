@@ -90,11 +90,20 @@ fn gpu::Surface? create_surface(gpu::Runtime* runtime, SampleWindow* sample) {
     return UNSUPPORTED_VIDEO_DRIVER~;
 }
 
+<* gpu::util::SurfaceFactory adapter; `user_data` is the SampleWindow*. *>
+fn gpu::Surface? surface_factory(gpu::Runtime* runtime, void* user_data) {
+    return create_surface(runtime, (SampleWindow*)user_data);
+}
+
+<* Manual device selection for samples that own their swapchains outright;
+   the rest go through gpu::util::create_device_context. *>
 fn gpu::Device? create_presentation_device(
     gpu::Runtime* runtime,
     gpu::Surface* surface,
+    gpu::DeviceDesc features = {},
 ) {
-    gpu::DeviceDesc desc = { .surface = *surface };
+    gpu::DeviceDesc desc = features;
+    desc.surface = *surface;
     gpu::AdapterList adapters = gpu::enumerate_adapters(runtime)!;
     for (uint i = 0; i < adapters.count; i++) {
         gpu::Adapter adapter = adapters.get(i)!;
