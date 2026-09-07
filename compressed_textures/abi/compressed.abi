@@ -1,0 +1,12 @@
+abi compressed_textures;
+
+root SceneRoot {
+    mat4         view_proj;
+    GpuAddress   vertex_gpu;
+    TextureIndex color_tex;
+    TextureIndex gray_tex;
+    SamplerIndex trilinear;
+    uint         _pad0;
+    uint         _pad1;
+    uint         _pad2;
+}

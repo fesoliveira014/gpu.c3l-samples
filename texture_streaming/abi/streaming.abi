@@ -1,0 +1,11 @@
+abi streaming;
+
+const uint SLOT_COUNT = 4;
+
+root StreamRoot {
+    GpuAddress   output_gpu;
+    TextureIndex base;
+    SamplerIndex sampler_index;
+    uint         count;
+    uint         _pad0;
+}

@@ -142,7 +142,8 @@ fn void? print_independent_allocation(
     if (info.mapped) {
         char[] mapping = gpu::get_span_mapping(device, span)!;
         if (mapping.len != info.size) return gpu::INVALID_RESOURCE_STATE~;
-        if (info.memory_class == gpu::MemoryClass.CPU_WRITE) {
+        if (info.memory_class == gpu::MemoryClass.CPU_WRITE
+            || info.memory_class == gpu::MemoryClass.CPU_WRITE_GPU_LOCAL) {
             mapping[0] = (char)0x2A;
         }
     } else {
@@ -155,12 +156,13 @@ fn void? print_independent_allocation(
         if (mapping_fault != gpu::INVALID_ARGUMENT) return mapping_fault~;
     }
     io::printfn(
-        "  %s: %d bytes, alignment %d, mapped=%s, coherent=%s, address=%d",
+        "  %s: %d bytes, alignment %d, mapped=%s, coherent=%s, device_local=%s, address=%d",
         name,
         info.size,
         info.alignment,
         info.mapped ? "yes" : "no",
         info.coherent ? "yes" : "no",
+        info.device_local ? "yes" : "no",
         (ulong)address,
     );
 }
@@ -267,17 +269,19 @@ fn void? run(bool detailed) {
     fault rejected = @catch(maybe_rejected);
     if (rejected != gpu::INVALID_ARGUMENT) return rejected~;
 
-    gpu::MemoryClass[3] allocation_classes = {
+    gpu::MemoryClass[4] allocation_classes = {
         gpu::MemoryClass.CPU_WRITE,
+        gpu::MemoryClass.CPU_WRITE_GPU_LOCAL,
         gpu::MemoryClass.GPU_PRIVATE,
         gpu::MemoryClass.CPU_READ,
     };
-    ZString[3] allocation_names = {
+    ZString[4] allocation_names = {
         "report_cpu_write",
+        "report_cpu_write_gpu_local",
         "report_gpu_private",
         "report_cpu_read",
     };
-    gpu::GpuAllocation[3] allocations = {};
+    gpu::GpuAllocation[4] allocations = {};
     uint allocation_count = 0;
     defer {
         for (uint i = 0; i < allocation_count; i++) {

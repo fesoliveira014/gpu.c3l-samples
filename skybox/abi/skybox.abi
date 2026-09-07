@@ -1,0 +1,17 @@
+abi skybox;
+
+const uint FACE_COUNT = 6;
+
+root SkyRoot {
+    vec4            camera_pos;
+    vec4            camera_right;
+    vec4            camera_up;
+    vec4            camera_forward;
+    TextureIndex    cube;
+    SamplerIndex    cube_sampler;
+    SamplerIndex    face_sampler;
+    uint            mip_count;
+    TextureIndex[6] faces;
+    float           time;
+    uint            _pad0;
+}

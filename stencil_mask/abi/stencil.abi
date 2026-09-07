@@ -1,0 +1,17 @@
+abi stencil_mask;
+
+const uint FILL_INSIDE  = 0;
+const uint FILL_OUTSIDE = 1;
+const uint STAR_SEGMENTS = 96;
+const uint STAR_VERTEX_COUNT = 288;
+
+root MaskRoot {
+    float        time;
+    float        aspect;
+    uint         fill_mode;
+    TextureIndex stencil_texture;
+    uint         width;
+    uint         height;
+    uint         _pad0;
+    uint         _pad1;
+}

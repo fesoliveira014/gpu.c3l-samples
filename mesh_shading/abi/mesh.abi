@@ -1,0 +1,18 @@
+abi mesh;
+
+const uint COLUMNS = 8;
+const uint ROWS = 6;
+const uint MESHLETS_PER_TASK = 4;
+const uint HEX_VERTICES = 7;
+const uint HEX_TRIANGLES = 6;
+
+root MeshRoot {
+    uint  first_meshlet;
+    uint  meshlet_count;
+    float time;
+    float aspect;
+}
+
+root FragRoot {
+    vec4 tint;
+}

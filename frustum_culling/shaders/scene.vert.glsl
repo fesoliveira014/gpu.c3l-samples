@@ -22,7 +22,7 @@ const float CUBE_HALF = 0.35;
 
 void main() {
     SceneDrawRoot root = SceneDrawRoot(pc.vertex_root_gpu);
-    mat4 view_proj = mat4(root.view_proj_c0, root.view_proj_c1, root.view_proj_c2, root.view_proj_c3);
+    mat4 view_proj = root.view_proj;
 
     Instance inst = Instances(root.instances_gpu).items[gl_DrawID];
     vec4 v = Vertices(root.vertex_gpu).data[gl_VertexIndex];

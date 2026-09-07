@@ -367,7 +367,7 @@ fn void? run(sample_args::Options options) {
             alignment: 16,
         )!;
         CullRoot* cull_root = (CullRoot*)gpu::get_span_mapping(&device, cull_span)!.ptr;
-        extract_planes(&cull_root.plane0, view_proj);
+        extract_planes(&cull_root.planes[0], view_proj);
         cull_root.instances_gpu = instances_address;
         cull_root.args_gpu      = args_address;
         cull_root.stats_gpu     = stats_address;
@@ -381,8 +381,7 @@ fn void? run(sample_args::Options options) {
         )!;
         SceneDrawRoot* draw_root = (SceneDrawRoot*)gpu::get_span_mapping(&device, draw_span)!.ptr;
         for (uint c = 0; c < 4; c++) {
-            gpu::Vec4f* cols = &draw_root.view_proj_c0;
-            cols[c] = { view_proj[c * 4], view_proj[c * 4 + 1], view_proj[c * 4 + 2], view_proj[c * 4 + 3] };
+            draw_root.view_proj[c] = { view_proj[c * 4], view_proj[c * 4 + 1], view_proj[c * 4 + 2], view_proj[c * 4 + 3] };
         }
         draw_root.instances_gpu = instances_address;
         draw_root.vertex_gpu    = vertex_address;
