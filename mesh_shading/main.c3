@@ -1,6 +1,7 @@
 module mesh_shading;
 
 import gpu;
+import gpu::util;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -223,35 +224,28 @@ fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l mesh shading", 800, 600)!;
     defer sample_window::destroy_sample_window(&window);
 
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation      = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation = true,
-        .application_name         = "mesh_shading",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-
-    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
-    defer (void)gpu::destroy_surface(&surface);
-
-    gpu::Device device = sample_window::create_presentation_device(
-        &runtime,
-        &surface,
-        { .enable_mesh_shaders = true },
-    )!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "mesh_shading";
+    desc.device.enable_mesh_shaders = true;
+    desc.create_surface = &sample_window::surface_factory;
+    desc.surface_user_data = &window;
+    sample_window::pixel_size(&window, &desc.swapchain.width, &desc.swapchain.height);
+    desc.swapchain.present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX;
+    desc.swapchain.debug_name = "mesh_shading_swapchain";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
+    gpu::Device* device = &context.device;
+    gpu::SwapchainHandle swapchain = context.swapchain;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    gpu::DeviceCaps caps = gpu::get_device_caps(device)!;
     check_mesh_caps(&caps.mesh_shaders)!;
-
-    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator graphics_allocator =
-        gpu::create_command_allocator(&device, graphics_queue)!;
-    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
         sample_frame_upload::create_frame_upload_ring(
-            device:        &device,
+            device:        device,
             slot_capacity: UPLOAD_BYTES_PER_SLOT,
             access:        upload_access,
             debug_name:    "mesh_shading_frame_upload",
@@ -264,13 +258,13 @@ fn void? run(sample_args::Options options) {
         .access       = upload_access,
         .debug_name   = "mesh_shading_indirect_args",
     };
-    gpu::MappedGpuSpan args = gpu::allocate_mapped_memory(&device, &args_desc)!;
+    gpu::MappedGpuSpan args = gpu::allocate_mapped_memory(device, &args_desc)!;
     gpu::GpuAllocation args_allocation = args.span.allocation();
-    defer (void)gpu::free_allocation(&device, &args_allocation);
+    defer (void)gpu::free_allocation(device, &args_allocation);
     gpu::DrawMeshTasksIndirectCommand* args_record = (gpu::DrawMeshTasksIndirectCommand*)args.bytes.ptr;
     *args_record = { .x = INDIRECT_TASKS, .y = 1, .z = 1 };
-    gpu::flush_mapped_span(&device, args.span)!;
-    gpu::AllocationInfo args_info = gpu::get_allocation_info(&device, args_allocation)!;
+    gpu::flush_mapped_span(device, args.span)!;
+    gpu::AllocationInfo args_info = gpu::get_allocation_info(device, args_allocation)!;
     io::printfn(
         "mesh_shading: %d meshlets, %d direct task groups + %d indirect (args device_local %s)",
         MESHLET_COUNT,
@@ -278,21 +272,6 @@ fn void? run(sample_args::Options options) {
         INDIRECT_TASKS,
         args_info.device_local ? "yes" : "no",
     );
-
-    uint width;
-    uint height;
-    sample_window::pixel_size(&window, &width, &height);
-    gpu::SwapchainDesc swapchain_desc = {
-        .width            = width,
-        .height           = height,
-        .preferred_format = gpu::Format.BGRA8_UNORM,
-        .present_mode     = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
-        .srgb             = false,
-        .debug_name       = "mesh_shading_swapchain",
-    };
-    gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
 
     gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::MeshPipelineDesc pipe_desc = {
@@ -305,11 +284,11 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle pipeline;
     bool pipeline_valid = false;
     if (!swapchain_info.dormant) {
-        pipeline = gpu::create_mesh_pipeline(&device, &pipe_desc)!;
+        pipeline = gpu::create_mesh_pipeline(device, &pipe_desc)!;
         pipeline_valid = true;
     }
     defer {
-        if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
+        if (pipeline_valid) (void)gpu::destroy_pipeline(device, pipeline);
     }
 
     long frame = 0;
@@ -322,7 +301,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -330,16 +309,16 @@ fn void? run(sample_args::Options options) {
         }
         if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
-            if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
+            if (pipeline_valid) gpu::destroy_pipeline(device, pipeline)!;
             pipeline_valid = false;
             color_formats[0] = swapchain_info.format;
-            pipeline = gpu::create_mesh_pipeline(&device, &pipe_desc)!;
+            pipeline = gpu::create_mesh_pipeline(device, &pipe_desc)!;
             pipeline_valid = true;
         }
 
         FrameWork work = {
-            .device            = &device,
-            .command_allocator = &graphics_allocator,
+            .device            = device,
+            .command_allocator = &context.command_allocator,
             .window            = &window,
             .swapchain         = swapchain,
             .swapchain_info    = &swapchain_info,

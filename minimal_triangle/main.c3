@@ -1,6 +1,7 @@
 module minimal_triangle;
 
 import gpu;
+import gpu::util;
 import sample_args;
 import sample_capture;
 import sample_window;
@@ -24,38 +25,26 @@ fn int main(String[] args) {
 fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l triangle", WIDTH, HEIGHT)!;
     defer sample_window::destroy_sample_window(&window);
-    gpu::RuntimeDesc runtime_desc = gpu::full_validation_runtime_desc();
-    runtime_desc.application_name = "minimal_triangle";
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
-    defer (void)gpu::destroy_surface(&surface);
 
-    gpu::DeviceDesc device_desc = { .surface = surface, .unified_layouts = true };
-    gpu::AdapterList adapters = gpu::enumerate_adapters(&runtime)!;
-    gpu::Device device;
-    for (uint i = 0; i < adapters.count && !device.is_valid(); i++) {
-        gpu::Adapter adapter = adapters.get(i)!;
-        if (!gpu::supports_device_desc(&adapter, &device_desc)!.supported) continue;
-        device = gpu::create_device(&adapter, &device_desc)!;
-        io::printfn("Using %s", gpu::get_adapter_info(&adapter)!.name);
-    }
-    if (!device.is_valid()) return gpu::UNSUPPORTED_FEATURE~;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Queue queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator allocator = gpu::create_command_allocator(&device, queue)!;
-    defer (void)gpu::destroy_command_allocator(&allocator);
-
-    gpu::SwapchainDesc swapchain_desc = {
-        .width            = WIDTH,
-        .height           = HEIGHT,
-        .preferred_format = gpu::Format.BGRA8_UNORM,
-        .present_mode     = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
-        .srgb             = true,
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "minimal_triangle";
+    desc.device.unified_layouts = true;
+    desc.create_surface = &sample_window::surface_factory;
+    desc.surface_user_data = &window;
+    desc.swapchain = {
+        .width        = WIDTH,
+        .height       = HEIGHT,
+        .present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
+        .srgb         = true,
     };
-    gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
+    io::printfn("Using %s", gpu::get_adapter_info(&context.adapter)!.name);
+    gpu::Device* device = &context.device;
+    gpu::SwapchainHandle swapchain = context.swapchain;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
 
     gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::GraphicsPipelineDesc pipe_desc = {
@@ -63,28 +52,28 @@ fn void? run(sample_args::Options options) {
         .fragment_shader = { .spirv = TRIANGLE_FRAG_SPIRV[..] },
         .color_formats   = color_formats[..],
     };
-    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, pipeline);
+    gpu::PipelineHandle pipeline = gpu::create_graphics_pipeline(device, &pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(device, pipeline);
 
     gpu::CompletionPoint latest_completion;
     defer if (latest_completion.is_valid()) (void)gpu::wait_completion(latest_completion, ulong::max);
     for (long frame = 0; options.frames < 0 || frame < options.frames;) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
-        if (events.resized) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+        if (events.resized) swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
             continue;
         }
-        gpu::AcquiredImage? acquired = gpu::acquire_next_image(&device, swapchain, sample_window::FRAME_ACQUIRE_TIMEOUT_NS);
+        gpu::AcquiredImage? acquired = gpu::acquire_next_image(device, swapchain, sample_window::FRAME_ACQUIRE_TIMEOUT_NS);
         if (catch err = acquired) {
             if (err == gpu::WAIT_TIMEOUT) continue;
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
             continue;
         }
 
-        gpu::CommandList cmd = gpu::begin_commands(&allocator)!;
+        gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
         gpu::ColorTargetDesc[1] colors = {{
             .view     = acquired.attachment_view,
@@ -110,7 +99,7 @@ fn void? run(sample_args::Options options) {
         sample_capture::Capture capture;
         if (options.capture_frame(frame)) {
             capture = sample_capture::record_capture(
-                device:     &device,
+                device:     device,
                 commands:   &cmd,
                 src:        acquired.texture,
                 width:      swapchain_info.width,
@@ -128,11 +117,11 @@ fn void? run(sample_args::Options options) {
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
-        latest_completion = gpu::submit(queue, &submit)!;
+        latest_completion = gpu::submit(context.queue, &submit)!;
         if (capture.is_valid()) sample_capture::finish_capture(&capture, latest_completion, options.screenshot_path)!;
-        if (catch err = sample_window::present_when_ready(&device, &acquired, latest_completion)) {
+        if (catch err = sample_window::present_when_ready(device, &acquired, latest_completion)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         frame++;
     }

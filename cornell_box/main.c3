@@ -1,6 +1,7 @@
 module cornell_box;
 
 import gpu;
+import gpu::util;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -115,23 +116,6 @@ fn void? free_span(gpu::Device* device, OwnedSpan* span) {
     if (span == null || !span.allocation.is_valid()) return;
     gpu::free_allocation(device, &span.allocation)!;
     span.span = {};
-}
-
-fn gpu::Device? create_cornell_device(
-    gpu::Runtime* runtime,
-    gpu::Surface surface,
-) {
-    gpu::DeviceDesc desc = {
-        .surface                      = surface,
-        .enable_ray_tracing_pipelines = true,
-    };
-    gpu::AdapterList adapters = gpu::enumerate_adapters(runtime)!;
-    for (uint i = 0; i < adapters.count; i++) {
-        gpu::Adapter adapter = adapters.get(i)!;
-        if (!gpu::supports_device_desc(&adapter, &desc)!.supported) continue;
-        return gpu::create_device(&adapter, &desc);
-    }
-    return gpu::UNSUPPORTED_FEATURE~;
 }
 
 fn void emit_quad(CornellGeometryWriter* writer, CornellQuad quad) {
@@ -702,36 +686,29 @@ fn void? run(String[] args) {
         (void)sdl::set_window_relative_mouse_mode(window.window, false);
     };
 
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation = true,
-        .application_name = "cornell_box",
-        .acceleration_structure_heap_capacity = 8,
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
-    defer (void)gpu::destroy_surface(&surface);
-    gpu::Device device = create_cornell_device(&runtime, surface)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::DeviceCaps caps = gpu::get_device_caps(&device)!;
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "cornell_box";
+    desc.runtime.acceleration_structure_heap_capacity = 8;
+    desc.device.enable_ray_tracing_pipelines = true;
+    desc.command_allocator.max_acceleration_structure_geometries_per_build = 1;
+    desc.create_surface = &sample_window::surface_factory;
+    desc.surface_user_data = &window;
+    sample_window::pixel_size(&window, &desc.swapchain.width, &desc.swapchain.height);
+    desc.swapchain.present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX;
+    desc.swapchain.debug_name = "cornell_swapchain";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
+    gpu::Device* device = &context.device;
+    gpu::DeviceCaps caps = gpu::get_device_caps(device)!;
     if (caps.ray_tracing_pipelines.max_recursion_depth < 2) {
         return gpu::UNSUPPORTED_FEATURE~;
     }
-    gpu::Queue queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocatorDesc allocator_desc = {
-        .max_acceleration_structure_geometries_per_build = 1,
-    };
-    gpu::CommandAllocator allocator = gpu::create_command_allocator(
-        device: &device,
-        queue:  queue,
-        desc:   &allocator_desc,
-    )!;
-    defer (void)gpu::destroy_command_allocator(&allocator);
 
     sample_frame_upload::FrameUploadRing upload_ring =
         sample_frame_upload::create_frame_upload_ring(
-            device:        &device,
+            device:        device,
             slot_capacity: FRAME_UPLOAD_BYTES,
             access:        { .graphics },
             debug_name:    "cornell_frame_upload",
@@ -739,27 +716,27 @@ fn void? run(String[] args) {
     defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
     OwnedSpan vertices = allocate_span(
-        device:       &device,
+        device:       device,
         size:         CORNELL_VERTEX_COUNT * gpu::Vec4f::size,
         alignment:    16,
         memory_class: gpu::MemoryClass.CPU_WRITE,
         debug_name:   "cornell_vertices",
     )!;
-    defer (void)free_span(&device, &vertices);
+    defer (void)free_span(device, &vertices);
     OwnedSpan materials = allocate_span(
-        device:       &device,
+        device:       device,
         size:         CORNELL_TRIANGLE_COUNT * uint::size,
         alignment:    16,
         memory_class: gpu::MemoryClass.CPU_WRITE,
         debug_name:   "cornell_materials",
     )!;
-    defer (void)free_span(&device, &materials);
+    defer (void)free_span(device, &materials);
     write_cornell_geometry(
-        (gpu::Vec4f*)gpu::get_span_mapping(&device, vertices.span)!.ptr,
-        (uint*)gpu::get_span_mapping(&device, materials.span)!.ptr,
+        (gpu::Vec4f*)gpu::get_span_mapping(device, vertices.span)!.ptr,
+        (uint*)gpu::get_span_mapping(device, materials.span)!.ptr,
     );
-    gpu::flush_mapped_span(&device, vertices.span)!;
-    gpu::flush_mapped_span(&device, materials.span)!;
+    gpu::flush_mapped_span(device, vertices.span)!;
+    gpu::flush_mapped_span(device, materials.span)!;
 
     gpu::AccelerationStructureGeometryDesc[1] geometries = {{
         .kind = gpu::AccelerationStructureGeometryKind.TRIANGLES,
@@ -777,18 +754,18 @@ fn void? run(String[] args) {
         .debug_name = "cornell_blas",
     };
     gpu::AccelerationStructureRequirements blas_requirements =
-        gpu::get_acceleration_structure_requirements(&device, &blas_desc)!;
+        gpu::get_acceleration_structure_requirements(device, &blas_desc)!;
     gpu::AccelerationStructureHandle blas =
-        gpu::create_acceleration_structure(&device, &blas_desc)!;
-    defer (void)gpu::destroy_acceleration_structure(&device, blas);
+        gpu::create_acceleration_structure(device, &blas_desc)!;
+    defer (void)gpu::destroy_acceleration_structure(device, blas);
     OwnedSpan blas_scratch = allocate_span(
-        device:       &device,
+        device:       device,
         size:         blas_requirements.build_scratch_size,
         alignment:    blas_requirements.scratch_alignment,
         memory_class: gpu::MemoryClass.GPU_PRIVATE,
         debug_name:   "cornell_blas_scratch",
     )!;
-    defer (void)free_span(&device, &blas_scratch);
+    defer (void)free_span(device, &blas_scratch);
 
     gpu::AccelerationStructureInstanceDesc instance_desc = {
         .transform_row_0 = { 1.0, 0.0, 0.0, 0.0 },
@@ -798,20 +775,20 @@ fn void? run(String[] args) {
         .mask = 0xff,
     };
     gpu::AccelerationStructureInstance instance =
-        gpu::make_acceleration_structure_instance(&device, &instance_desc)!;
+        gpu::make_acceleration_structure_instance(device, &instance_desc)!;
     OwnedSpan instances = allocate_span(
-        device:       &device,
+        device:       device,
         size:         gpu::AccelerationStructureInstance::size,
         alignment:    16,
         memory_class: gpu::MemoryClass.CPU_WRITE,
         debug_name:   "cornell_instance",
     )!;
-    defer (void)free_span(&device, &instances);
+    defer (void)free_span(device, &instances);
     *(gpu::AccelerationStructureInstance*)gpu::get_span_mapping(
-        &device,
+        device,
         instances.span,
     )!.ptr = instance;
-    gpu::flush_mapped_span(&device, instances.span)!;
+    gpu::flush_mapped_span(device, instances.span)!;
 
     gpu::AccelerationStructureDesc tlas_desc = {
         .kind = gpu::AccelerationStructureKind.TOP_LEVEL,
@@ -820,23 +797,23 @@ fn void? run(String[] args) {
         .debug_name = "cornell_tlas",
     };
     gpu::AccelerationStructureRequirements tlas_requirements =
-        gpu::get_acceleration_structure_requirements(&device, &tlas_desc)!;
+        gpu::get_acceleration_structure_requirements(device, &tlas_desc)!;
     gpu::AccelerationStructureHandle tlas =
-        gpu::create_acceleration_structure(&device, &tlas_desc)!;
-    defer (void)gpu::destroy_acceleration_structure(&device, tlas);
+        gpu::create_acceleration_structure(device, &tlas_desc)!;
+    defer (void)gpu::destroy_acceleration_structure(device, tlas);
     OwnedSpan tlas_scratch = allocate_span(
-        device:       &device,
+        device:       device,
         size:         tlas_requirements.build_scratch_size,
         alignment:    tlas_requirements.scratch_alignment,
         memory_class: gpu::MemoryClass.GPU_PRIVATE,
         debug_name:   "cornell_tlas_scratch",
     )!;
-    defer (void)free_span(&device, &tlas_scratch);
+    defer (void)free_span(device, &tlas_scratch);
     gpu::AccelerationStructureView tlas_view =
-        gpu::create_acceleration_structure_view(&device, tlas)!;
-    defer (void)gpu::destroy_acceleration_structure_view(&device, tlas_view);
+        gpu::create_acceleration_structure_view(device, tlas)!;
+    defer (void)gpu::destroy_acceleration_structure_view(device, tlas_view);
 
-    gpu::CommandList build_commands = gpu::begin_commands(&allocator)!;
+    gpu::CommandList build_commands = gpu::begin_commands(&context.command_allocator)!;
     defer (void)gpu::discard_commands(&build_commands);
     gpu::AccelerationStructureGeometryBuildDesc[1] build_geometries = {{
         .kind = gpu::AccelerationStructureGeometryKind.TRIANGLES,
@@ -875,19 +852,19 @@ fn void? run(String[] args) {
     };
     defer (void)gpu::discard_executable_commands(&build_lists[0]);
     gpu::SubmitDesc build_submit = { .command_lists = build_lists[..] };
-    gpu::CompletionPoint build_completion = gpu::submit(queue, &build_submit)!;
+    gpu::CompletionPoint build_completion = gpu::submit(context.queue, &build_submit)!;
     gpu::wait_completion(build_completion)!;
 
-    gpu::PipelineHandle ray_pipeline = create_ray_pipeline(&device)!;
-    defer (void)gpu::destroy_pipeline(&device, ray_pipeline);
+    gpu::PipelineHandle ray_pipeline = create_ray_pipeline(device)!;
+    defer (void)gpu::destroy_pipeline(device, ray_pipeline);
     gpu::RayTracingShaderBindingTable sbt_table;
     OwnedSpan sbt = create_sbt(
-        device:   &device,
+        device:   device,
         pipeline: ray_pipeline,
         caps:     &caps.ray_tracing_pipelines,
         table:    &sbt_table,
     )!;
-    defer (void)free_span(&device, &sbt);
+    defer (void)free_span(device, &sbt);
     gpu::SamplerDesc sampler_desc = {
         .min_filter = gpu::Filter.LINEAR,
         .mag_filter = gpu::Filter.LINEAR,
@@ -897,35 +874,20 @@ fn void? run(String[] args) {
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
     gpu::SamplerIndex display_sampler =
-        gpu::intern_sampler(&device, &sampler_desc)!;
+        gpu::intern_sampler(device, &sampler_desc)!;
 
-    uint width;
-    uint height;
-    sample_window::pixel_size(&window, &width, &height);
-    gpu::SwapchainDesc swapchain_desc = {
-        .width = width,
-        .height = height,
-        .preferred_format = gpu::Format.BGRA8_UNORM,
-        .present_mode = options.vsync
-            ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
-        .srgb = false,
-        .debug_name = "cornell_swapchain",
-    };
-    gpu::SwapchainHandle swapchain =
-        gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
-    gpu::SwapchainInfo swapchain_info =
-        gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
+    gpu::SwapchainHandle swapchain = context.swapchain;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
     OutputTarget output = create_output_target(
-        &device,
+        device,
         swapchain_info.width,
         swapchain_info.height,
     )!;
-    defer (void)destroy_output_target(&device, &output);
+    defer (void)destroy_output_target(device, &output);
     gpu::PipelineHandle display_pipeline =
-        create_display_pipeline(&device, swapchain_info.format)!;
+        create_display_pipeline(device, swapchain_info.format)!;
     gpu::Format display_format = swapchain_info.format;
-    defer (void)gpu::destroy_pipeline(&device, display_pipeline);
+    defer (void)gpu::destroy_pipeline(device, display_pipeline);
 
     FlyCamera camera = {
         .position = { 278.0, 273.0, -800.0 },
@@ -946,7 +908,7 @@ fn void? run(String[] args) {
         if (!validation && update_camera(&camera, delta_seconds)) sample_index = 0;
         if (events.resized) {
             swapchain_info = sample_window::recover_swapchain(
-                &device,
+                device,
                 swapchain,
                 &window,
             )!;
@@ -959,9 +921,9 @@ fn void? run(String[] args) {
         if (output.width != swapchain_info.width
             || output.height != swapchain_info.height) {
             if (last_frame.is_valid()) gpu::wait_completion(last_frame)!;
-            destroy_output_target(&device, &output)!;
+            destroy_output_target(device, &output)!;
             output = create_output_target(
-                &device,
+                device,
                 swapchain_info.width,
                 swapchain_info.height,
             )!;
@@ -969,16 +931,16 @@ fn void? run(String[] args) {
         }
         if (display_format != swapchain_info.format) {
             if (last_frame.is_valid()) gpu::wait_completion(last_frame)!;
-            gpu::destroy_pipeline(&device, display_pipeline)!;
+            gpu::destroy_pipeline(device, display_pipeline)!;
             display_pipeline = create_display_pipeline(
-                &device,
+                device,
                 swapchain_info.format,
             )!;
             display_format = swapchain_info.format;
         }
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(
-            device:     &device,
+            device:     device,
             swapchain:  swapchain,
             timeout_ns: sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
         );
@@ -986,7 +948,7 @@ fn void? run(String[] args) {
             if (err == gpu::WAIT_TIMEOUT) continue;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
                 swapchain_info = sample_window::recover_swapchain(
-                    &device,
+                    device,
                     swapchain,
                     &window,
                 )!;
@@ -1016,7 +978,7 @@ fn void? run(String[] args) {
             alignment: 16,
         )!;
         CornellRoot* root = (CornellRoot*)gpu::get_span_mapping(
-            &device,
+            device,
             root_span,
         )!.ptr;
         root.camera_position = {
@@ -1038,8 +1000,8 @@ fn void? run(String[] args) {
             0.0,
         };
         root.light_radiance = CORNELL_LIGHT_RADIANCE;
-        root.vertex_gpu = gpu::get_span_address(&device, vertices.span)!;
-        root.material_gpu = gpu::get_span_address(&device, materials.span)!;
+        root.vertex_gpu = gpu::get_span_address(device, vertices.span)!;
+        root.material_gpu = gpu::get_span_address(device, materials.span)!;
         root.output_texture = output.view.index;
         root.tlas = tlas_view.index;
         root.width = output.width;
@@ -1047,7 +1009,7 @@ fn void? run(String[] args) {
         root.sample_index = sample_index;
         root.seed = FIXED_SEED;
         gpu::GpuAddress root_address =
-            gpu::get_span_address(&device, root_span)!;
+            gpu::get_span_address(device, root_span)!;
 
         gpu::GpuSpan display_span = sample_frame_upload::alloc_frame_upload(
             batch:     &upload,
@@ -1055,15 +1017,15 @@ fn void? run(String[] args) {
             alignment: 16,
         )!;
         DisplayRoot* display = (DisplayRoot*)gpu::get_span_mapping(
-            &device,
+            device,
             display_span,
         )!.ptr;
         display.output_texture = output.view.index;
         display.heap_sampler = display_sampler;
         gpu::GpuAddress display_address =
-            gpu::get_span_address(&device, display_span)!;
+            gpu::get_span_address(device, display_span)!;
 
-        gpu::CommandList commands = gpu::begin_commands(&allocator)!;
+        gpu::CommandList commands = gpu::begin_commands(&context.command_allocator)!;
         defer (void)gpu::discard_commands(&commands);
         gpu::TextureState ray_state =
             gpu::storage_at({ .ray_tracing }, { .read, .write });
@@ -1144,13 +1106,13 @@ fn void? run(String[] args) {
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
-        last_frame = gpu::submit(queue, &submit)!;
+        last_frame = gpu::submit(context.queue, &submit)!;
         sample_frame_upload::retire_frame_upload(&upload, last_frame)!;
 
         bool final_frame = options.frames > 0 && frame == options.frames - 1;
         if (validation && final_frame) {
             validate_pixels(
-                allocator: &allocator,
+                allocator: &context.command_allocator,
                 producer:  last_frame,
                 texture:   acquired.texture,
                 width:     swapchain_info.width,
@@ -1161,7 +1123,7 @@ fn void? run(String[] args) {
         }
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                allocator:           &allocator,
+                allocator:           &context.command_allocator,
                 producer_completion: last_frame,
                 src:                 acquired.texture,
                 width:               swapchain_info.width,
@@ -1172,13 +1134,13 @@ fn void? run(String[] args) {
             )!;
         }
         if (catch err = sample_window::present_when_ready(
-            &device,
+            device,
             &acquired,
             last_frame,
         )) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
             swapchain_info = sample_window::recover_swapchain(
-                &device,
+                device,
                 swapchain,
                 &window,
             )!;

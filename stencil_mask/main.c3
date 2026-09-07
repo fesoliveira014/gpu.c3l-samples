@@ -1,6 +1,7 @@
 module stencil_mask;
 
 import gpu;
+import gpu::util;
 import sample_args;
 import sample_capture;
 import sample_frame_upload;
@@ -196,66 +197,47 @@ fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l stencil mask", 800, 600)!;
     defer sample_window::destroy_sample_window(&window);
 
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation      = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation = true,
-        .application_name         = "stencil_mask",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-
-    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
-    defer (void)gpu::destroy_surface(&surface);
-
-    gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Format depth_stencil_format = gpu::get_device_caps(&device)!.depth_stencil_format;
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "stencil_mask";
+    desc.create_surface = &sample_window::surface_factory;
+    desc.surface_user_data = &window;
+    sample_window::pixel_size(&window, &desc.swapchain.width, &desc.swapchain.height);
+    desc.swapchain.present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX;
+    desc.swapchain.debug_name = "stencil_mask_swapchain";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
+    gpu::Device* device = &context.device;
+    gpu::SwapchainHandle swapchain = context.swapchain;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    gpu::Format depth_stencil_format = gpu::get_device_caps(device)!.depth_stencil_format;
     if (depth_stencil_format == gpu::Format.UNDEFINED) return gpu::UNSUPPORTED_FEATURE~;
     io::printfn("stencil_mask: depth-stencil format %s", depth_stencil_format);
-
-    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator graphics_allocator =
-        gpu::create_command_allocator(&device, graphics_queue)!;
-    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
         sample_frame_upload::create_frame_upload_ring(
-            device:        &device,
+            device:        device,
             slot_capacity: UPLOAD_BYTES_PER_SLOT,
             access:        upload_access,
             debug_name:    "stencil_mask_frame_upload",
         )!;
     defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
 
-    uint width;
-    uint height;
-    sample_window::pixel_size(&window, &width, &height);
-    gpu::SwapchainDesc swapchain_desc = {
-        .width            = width,
-        .height           = height,
-        .preferred_format = gpu::Format.BGRA8_UNORM,
-        .present_mode     = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
-        .srgb             = false,
-        .debug_name       = "stencil_mask_swapchain",
-    };
-    gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
-
     StencilTarget target;
-    defer destroy_stencil_target(&device, &target);
+    defer destroy_stencil_target(device, &target);
     gpu::Format[1] color_formats = { swapchain_info.format };
     Pipelines pipelines;
-    defer destroy_pipelines(&device, &pipelines);
+    defer destroy_pipelines(device, &pipelines);
     if (!swapchain_info.dormant) {
         target = create_stencil_target(
-            device: &device,
+            device: device,
             format: depth_stencil_format,
             width:  swapchain_info.width,
             height: swapchain_info.height,
         )!;
-        pipelines = create_pipelines(&device, color_formats[..], depth_stencil_format)!;
+        pipelines = create_pipelines(device, color_formats[..], depth_stencil_format)!;
     }
 
     gpu::ColorTargetState[1] write_color = { gpu::color_blend_disabled() };
@@ -276,7 +258,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -291,14 +273,14 @@ fn void? run(sample_args::Options options) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
         }
         if (pipelines_changed) {
-            destroy_pipelines(&device, &pipelines);
+            destroy_pipelines(device, &pipelines);
             color_formats[0] = swapchain_info.format;
-            pipelines = create_pipelines(&device, color_formats[..], depth_stencil_format)!;
+            pipelines = create_pipelines(device, color_formats[..], depth_stencil_format)!;
         }
         if (target_changed) {
-            destroy_stencil_target(&device, &target);
+            destroy_stencil_target(device, &target);
             target = create_stencil_target(
-                device: &device,
+                device: device,
                 format: depth_stencil_format,
                 width:  swapchain_info.width,
                 height: swapchain_info.height,
@@ -306,13 +288,13 @@ fn void? run(sample_args::Options options) {
         }
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(
-            device:     &device,
+            device:     device,
             swapchain:  swapchain,
             timeout_ns: sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
         );
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
             continue;
         }
 
@@ -324,7 +306,7 @@ fn void? run(sample_args::Options options) {
             }
         };
 
-        gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
+        gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
 
         gpu::TextureState depth_attach = {
@@ -357,7 +339,7 @@ fn void? run(sample_args::Options options) {
             size:      2 * MaskRoot::size,
             alignment: 16,
         )!;
-        MaskRoot* roots = (MaskRoot*)gpu::get_span_mapping(&device, roots_span)!.ptr;
+        MaskRoot* roots = (MaskRoot*)gpu::get_span_mapping(device, roots_span)!.ptr;
         MaskRoot shared = {
             .time            = (float)frame / 60.0f,
             .aspect          = (float)swapchain_info.width / (float)swapchain_info.height,
@@ -369,7 +351,7 @@ fn void? run(sample_args::Options options) {
         roots[0].fill_mode = FILL_INSIDE;
         roots[1] = shared;
         roots[1].fill_mode = FILL_OUTSIDE;
-        gpu::GpuAddress roots_address = gpu::get_span_address(&device, roots_span)!;
+        gpu::GpuAddress roots_address = gpu::get_span_address(device, roots_span)!;
         gpu::GpuAddress inside_root  = roots_address;
         gpu::GpuAddress outside_root = roots_address + MaskRoot::size;
 
@@ -474,12 +456,12 @@ fn void? run(sample_args::Options options) {
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
-        last_graphics = gpu::submit(graphics_queue, &submit)!;
+        last_graphics = gpu::submit(context.queue, &submit)!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         bool verify_now = options.wants_screenshot() ? options.capture_frame(frame) : frame == 0;
         if (verify_now) {
-            usz masked = count_masked_texels(&graphics_allocator, last_graphics, &target)!;
+            usz masked = count_masked_texels(&context.command_allocator, last_graphics, &target)!;
             usz total = (usz)swapchain_info.width * swapchain_info.height;
             float coverage = (float)masked / (float)total;
             io::printfn("stencil_mask: stencil coverage %d / %d (%.1f%%)", masked, total, coverage * 100.0f);
@@ -489,7 +471,7 @@ fn void? run(sample_args::Options options) {
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                allocator:           &graphics_allocator,
+                allocator:           &context.command_allocator,
                 producer_completion: last_graphics,
                 src:                 acquired.texture,
                 width:               swapchain_info.width,
@@ -500,9 +482,9 @@ fn void? run(sample_args::Options options) {
             )!;
         }
 
-        if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
+        if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
 
         frame++;

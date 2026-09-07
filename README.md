@@ -24,41 +24,34 @@ beside the executables.
 
 ## Device setup
 
-Samples create a runtime, enumerate adapters, test a plain description, and
-create a device from a supported adapter. Support checks and creation borrow
-the description without modifying it; the required device baseline and default
-queues are implicit:
+Samples create their runtime, device, queue, command allocator, and optional
+surface and swapchain through `gpu::util::DeviceContext`. The defaults select
+full contract checks and a graphics queue; samples turn on Vulkan validation
+layers, name the application, and override what they need:
 
 ```c3
-gpu::RuntimeDesc runtime_desc = gpu::full_validation_runtime_desc();
-runtime_desc.application_name = "my_sample";
-gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-defer (void)gpu::destroy_runtime(&runtime);
-
-gpu::DeviceDesc desc = {};
-gpu::AdapterList adapters = gpu::enumerate_adapters(&runtime)!;
-gpu::Device device = {};
-for (uint i = 0; i < adapters.count; i++) {
-    gpu::Adapter adapter = adapters.get(i)!;
-    if (!gpu::supports_device_desc(&adapter, &desc)!.supported) continue;
-    device = gpu::create_device(&adapter, &desc)!;
-    break;
-}
-if (!device.is_valid()) return gpu::UNSUPPORTED_FEATURE~;
-defer (void)gpu::destroy_device(&device);
+util::DeviceContextDesc desc = util::default_device_context_desc();
+desc.runtime.enable_vulkan_validation = true;
+desc.runtime.application_name = "my_sample";
+util::DeviceContext context = util::create_device_context(&desc)!;
+defer util::destroy_device_context(&context);
 ```
 
-`RuntimeDesc` defaults to trusted contracts; command-resource lifetime tracking
-and Vulkan validation layers are both disabled. The helper above enables full
-contract checks, lifetime tracking, and Vulkan validation layers for
-development; those three policies can also be selected independently.
+Headless compute samples set `desc.device.queues.required = { .compute }` and
+`desc.command_queue = gpu::QueueKind.COMPUTE`. Windowed samples pass
+`sample_window::surface_factory` with the `SampleWindow` as user data and fill
+`desc.swapchain` from the window's pixel size; the context then owns the
+swapchain, and the sample waits `wait_swapchain_presentations` before teardown.
+Optional device features (`enable_mesh_shaders`, `enable_ray_tracing_pipelines`,
+`unified_layouts`) are set on `desc.device`; a larger command allocator or a
+second queue is requested through `desc.command_allocator` and extra
+`create_command_allocator` calls. Adapter selection prefers discrete, then
+integrated, then software devices among those that satisfy the description.
 
-The reusable default adapter-selection form lives in `shared/sample_device.c3`.
-Windowed samples use the same pattern with `DeviceDesc.surface` set.
-Allocations, upload reuse, readback, and completion policy remain sample-local.
-The default queue request selects one queue for each semantic role. Explicit
-requests use `QueueRequest.required` and `QueueRequest.distinct`; each selected
-role is retrieved with `get_queue(device, kind)` and has no public queue index.
+`present_mode_explorer` recreates swapchains per present mode, so it keeps the
+manual runtime, adapter, device, and swapchain path from
+`shared/sample_window_sdl.c3`. Allocations, upload reuse, readback, and
+completion policy remain sample-local.
 
 ## Build and run
 

@@ -1,7 +1,7 @@
 module texture_streaming;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import std::io;
 
 const char[*] PROBE_SPIRV = $embed("shaders/probe.comp.spv");
@@ -36,20 +36,16 @@ fn char[4] generation_color(uint generation, uint slot) {
 }
 
 fn void? run() {
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation      = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation = true,
-        .application_name         = "texture_streaming",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
-    gpu::CommandAllocator allocator = gpu::create_command_allocator(&device, compute_queue)!;
-    defer (void)gpu::destroy_command_allocator(&allocator);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "texture_streaming";
+    desc.device.queues.required = { .compute };
+    desc.command_queue = gpu::QueueKind.COMPUTE;
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
-    gpu::TextureIndexRange range = gpu::reserve_texture_indices(&device, SLOT_COUNT)!;
+    gpu::TextureIndexRange range = gpu::reserve_texture_indices(device, SLOT_COUNT)!;
     io::printfn("reserved %d texture slots at index %d", range.count, range.base.value);
     if (range.count != SLOT_COUNT) return gpu::INVALID_RESOURCE_STATE~;
 
@@ -63,16 +59,16 @@ fn void? run() {
     gpu::TextureHandle[SLOT_COUNT][GENERATION_COUNT] textures;
     for (uint g = 0; g < GENERATION_COUNT; g++) {
         for (uint i = 0; i < SLOT_COUNT; i++) {
-            textures[g][i] = gpu::create_texture(&device, &tex_desc)!;
+            textures[g][i] = gpu::create_texture(device, &tex_desc)!;
         }
     }
     defer {
         for (uint g = 0; g < GENERATION_COUNT; g++) {
-            for (uint i = 0; i < SLOT_COUNT; i++) (void)gpu::destroy_texture(&device, textures[g][i]);
+            for (uint i = 0; i < SLOT_COUNT; i++) (void)gpu::destroy_texture(device, textures[g][i]);
         }
     }
 
-    check_general_region(&device, textures[0][0], range)!;
+    check_general_region(device, textures[0][0], range)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = GENERATION_COUNT * SLOT_COUNT * TEXTURE_BYTES,
@@ -80,9 +76,9 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "streaming_staging",
     };
-    gpu::MappedGpuSpan staging = gpu::allocate_mapped_memory(&device, &staging_desc)!;
+    gpu::MappedGpuSpan staging = gpu::allocate_mapped_memory(device, &staging_desc)!;
     gpu::GpuAllocation staging_allocation = staging.span.allocation();
-    defer (void)gpu::free_allocation(&device, &staging_allocation);
+    defer (void)gpu::free_allocation(device, &staging_allocation);
     for (uint g = 0; g < GENERATION_COUNT; g++) {
         for (uint i = 0; i < SLOT_COUNT; i++) {
             char[4] color = generation_color(g, i);
@@ -92,10 +88,10 @@ fn void? run() {
             }
         }
     }
-    gpu::flush_mapped_span(&device, staging.span)!;
+    gpu::flush_mapped_span(device, staging.span)!;
     upload_textures(
-        device:    &device,
-        allocator: &allocator,
+        device:    device,
+        allocator: &context.command_allocator,
         staging:   staging.span,
         textures:  &textures,
     )!;
@@ -107,7 +103,7 @@ fn void? run() {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex sampler = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex sampler = gpu::intern_sampler(device, &sampler_desc)!;
 
     gpu::AllocationDesc output_desc = {
         .size         = SLOT_COUNT * PROBE_RESULT_BYTES,
@@ -115,9 +111,9 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "streaming_output",
     };
-    gpu::MappedGpuSpan output = gpu::allocate_mapped_memory(&device, &output_desc)!;
+    gpu::MappedGpuSpan output = gpu::allocate_mapped_memory(device, &output_desc)!;
     gpu::GpuAllocation output_allocation = output.span.allocation();
-    defer (void)gpu::free_allocation(&device, &output_allocation);
+    defer (void)gpu::free_allocation(device, &output_allocation);
 
     gpu::AllocationDesc root_desc = {
         .size         = StreamRoot::size,
@@ -125,10 +121,10 @@ fn void? run() {
         .access       = { .compute },
         .debug_name   = "streaming_root",
     };
-    gpu::MappedGpuSpan root = gpu::allocate_mapped_memory(&device, &root_desc)!;
+    gpu::MappedGpuSpan root = gpu::allocate_mapped_memory(device, &root_desc)!;
     gpu::GpuAllocation root_allocation = root.span.allocation();
-    defer (void)gpu::free_allocation(&device, &root_allocation);
-    gpu::AllocationInfo root_info = gpu::get_allocation_info(&device, root_allocation)!;
+    defer (void)gpu::free_allocation(device, &root_allocation);
+    gpu::AllocationInfo root_info = gpu::get_allocation_info(device, root_allocation)!;
     io::printfn(
         "root record in CPU_WRITE_GPU_LOCAL: device_local=%s coherent=%s",
         root_info.device_local,
@@ -141,17 +137,17 @@ fn void? run() {
         .sampler_index = sampler,
         .count         = SLOT_COUNT,
     };
-    gpu::flush_mapped_span(&device, root.span)!;
+    gpu::flush_mapped_span(device, root.span)!;
 
     gpu::ComputePipelineDesc pipe_desc = {
         .shader = { .spirv = PROBE_SPIRV[..], .entry_point = "main" },
     };
-    gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(&device, &pipe_desc)!;
-    defer (void)gpu::destroy_pipeline(&device, pipeline);
+    gpu::PipelineHandle pipeline = gpu::create_compute_pipeline(device, &pipe_desc)!;
+    defer (void)gpu::destroy_pipeline(device, pipeline);
 
     Probe probe = {
-        .device      = &device,
-        .allocator   = &allocator,
+        .device      = device,
+        .allocator   = &context.command_allocator,
         .pipeline    = pipeline,
         .root_span   = root.span,
         .output_span = output.span,
@@ -160,7 +156,7 @@ fn void? run() {
     gpu::TextureView[SLOT_COUNT] views;
     for (uint i = 0; i < SLOT_COUNT; i++) {
         views[i] = gpu::create_texture_view_at(
-            device:  &device,
+            device:  device,
             slot:    slot_index(range, i),
             texture: textures[0][i],
             desc:    null,
@@ -172,7 +168,7 @@ fn void? run() {
 
     for (uint i = 0; i < SLOT_COUNT; i++) {
         gpu::update_texture_view(
-            device:  &device,
+            device:  device,
             view:    &views[i],
             texture: textures[1][i],
             desc:    null,
@@ -182,10 +178,10 @@ fn void? run() {
     expected = { 1, 1, 1, 1 };
     probe_slots(&probe, &expected, "generation B swapped in place, root unchanged")!;
 
-    gpu::destroy_texture_view(&device, views[0])!;
-    check_general_region(&device, textures[0][0], range)!;
+    gpu::destroy_texture_view(device, views[0])!;
+    check_general_region(device, textures[0][0], range)!;
     views[0] = gpu::create_texture_view_at(
-        device:  &device,
+        device:  device,
         slot:    range.base,
         texture: textures[0][0],
         desc:    null,
@@ -193,8 +189,8 @@ fn void? run() {
     expected = { 0, 1, 1, 1 };
     probe_slots(&probe, &expected, "slot 0 republished after destroy")!;
 
-    for (uint i = 0; i < SLOT_COUNT; i++) gpu::destroy_texture_view(&device, views[i])!;
-    gpu::release_texture_indices(&device, range)!;
+    for (uint i = 0; i < SLOT_COUNT; i++) gpu::destroy_texture_view(device, views[i])!;
+    gpu::release_texture_indices(device, range)!;
     io::printn("reservation released");
 }
 

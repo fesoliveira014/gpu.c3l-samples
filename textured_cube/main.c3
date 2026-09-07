@@ -1,6 +1,7 @@
 module textured_cube;
 
 import gpu;
+import gpu::util;
 import sample_args;
 import sample_camera;
 import sample_capture;
@@ -104,48 +105,30 @@ fn void? run(sample_args::Options options) {
     sample_window::SampleWindow window = sample_window::create_sample_window("gpu.c3l textured cube", 800, 600)!;
     defer sample_window::destroy_sample_window(&window);
 
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "textured_cube",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-
-    gpu::Surface surface = sample_window::create_surface(&runtime, &window)!;
-    defer (void)gpu::destroy_surface(&surface);
-
-    gpu::Device device = sample_window::create_presentation_device(&runtime, &surface)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Queue graphics_queue = gpu::get_queue(&device, gpu::QueueKind.GRAPHICS)!;
-    gpu::CommandAllocator graphics_allocator =
-        gpu::create_command_allocator(&device, graphics_queue)!;
-    defer (void)gpu::destroy_command_allocator(&graphics_allocator);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "textured_cube";
+    desc.create_surface = &sample_window::surface_factory;
+    desc.surface_user_data = &window;
+    sample_window::pixel_size(&window, &desc.swapchain.width, &desc.swapchain.height);
+    desc.swapchain.present_mode = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX;
+    desc.swapchain.debug_name = "cube_swapchain";
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
+    gpu::Device* device = &context.device;
+    gpu::SwapchainHandle swapchain = context.swapchain;
+    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
 
     gpu::QueueRoles upload_access = { .graphics };
     sample_frame_upload::FrameUploadRing upload_ring =
         sample_frame_upload::create_frame_upload_ring(
-            device:        &device,
+            device:        device,
             slot_capacity: UPLOAD_BYTES_PER_SLOT,
             access:        upload_access,
             debug_name:    "textured_cube_frame_upload",
         )!;
     defer (void)sample_frame_upload::destroy_frame_upload_ring(&upload_ring);
-
-    uint width;
-    uint height;
-    sample_window::pixel_size(&window, &width, &height);
-    gpu::SwapchainDesc swapchain_desc = {
-        .width            = width,
-        .height           = height,
-        .preferred_format = gpu::Format.BGRA8_UNORM,
-        .present_mode     = options.vsync ? gpu::PresentMode.FIFO : gpu::PresentMode.MAILBOX,
-        .srgb             = false,
-        .debug_name       = "cube_swapchain",
-    };
-    gpu::SwapchainHandle swapchain = gpu::create_swapchain(&device, &surface, &swapchain_desc)!;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(&device, swapchain)!;
-    defer (void)sample_window::destroy_swapchain_when_ready(&device, swapchain);
 
     gpu::TextureHandle depth;
     gpu::AttachmentViewHandle depth_view;
@@ -153,11 +136,11 @@ fn void? run(sample_args::Options options) {
     uint depth_height;
     bool depth_valid = false;
     if (!swapchain_info.dormant) {
-        depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height)!;
+        depth = create_depth_texture(device, swapchain_info.width, swapchain_info.height)!;
         {
-            defer catch (void)gpu::destroy_texture(&device, depth);
+            defer catch (void)gpu::destroy_texture(device, depth);
             gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
-            depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+            depth_view = gpu::create_attachment_view(device, &depth_view_desc)!;
         }
         depth_width = swapchain_info.width;
         depth_height = swapchain_info.height;
@@ -165,8 +148,8 @@ fn void? run(sample_args::Options options) {
     }
     defer {
         if (depth_valid) {
-            (void)gpu::destroy_attachment_view(&device, depth_view);
-            (void)gpu::destroy_texture(&device, depth);
+            (void)gpu::destroy_attachment_view(device, depth_view);
+            (void)gpu::destroy_texture(device, depth);
         }
     }
 
@@ -177,12 +160,12 @@ fn void? run(sample_args::Options options) {
         .access       = { .graphics },
         .debug_name   = "cube_vertices",
     };
-    gpu::GpuAllocation vertices = gpu::allocate_memory(&device, &vertex_desc)!;
-    defer (void)gpu::free_allocation(&device, &vertices);
-    gpu::GpuSpan vertex_span = gpu::get_allocation_span(&device, vertices)!;
-    write_cube_vertices((float*)gpu::get_span_mapping(&device, vertex_span)!.ptr);
-    gpu::flush_mapped_span(&device, vertex_span)!;
-    gpu::GpuAddress vertex_address = gpu::get_span_address(&device, vertex_span)!;
+    gpu::GpuAllocation vertices = gpu::allocate_memory(device, &vertex_desc)!;
+    defer (void)gpu::free_allocation(device, &vertices);
+    gpu::GpuSpan vertex_span = gpu::get_allocation_span(device, vertices)!;
+    write_cube_vertices((float*)gpu::get_span_mapping(device, vertex_span)!.ptr);
+    gpu::flush_mapped_span(device, vertex_span)!;
+    gpu::GpuAddress vertex_address = gpu::get_span_address(device, vertex_span)!;
 
     gpu::TextureDesc tex_desc = {
         .width     = TEX_SIZE,
@@ -191,10 +174,10 @@ fn void? run(sample_args::Options options) {
         .usage     = { .sampled, .transfer_dst },
         .access     = { .graphics },
     };
-    gpu::TextureHandle checker = gpu::create_texture(&device, &tex_desc)!;
-    defer (void)gpu::destroy_texture(&device, checker);
-    gpu::TextureView tex_view = gpu::create_texture_view(&device, checker, null)!;
-    defer (void)gpu::destroy_texture_view(&device, tex_view);
+    gpu::TextureHandle checker = gpu::create_texture(device, &tex_desc)!;
+    defer (void)gpu::destroy_texture(device, checker);
+    gpu::TextureView tex_view = gpu::create_texture_view(device, checker, null)!;
+    defer (void)gpu::destroy_texture_view(device, tex_view);
     gpu::TextureIndex tex_index = tex_view.index;
 
     gpu::SamplerDesc sampler_desc = {
@@ -204,7 +187,7 @@ fn void? run(sample_args::Options options) {
         .address_v  = gpu::AddressMode.CLAMP_TO_EDGE,
         .address_w  = gpu::AddressMode.CLAMP_TO_EDGE,
     };
-    gpu::SamplerIndex smp_index = gpu::intern_sampler(&device, &sampler_desc)!;
+    gpu::SamplerIndex smp_index = gpu::intern_sampler(device, &sampler_desc)!;
 
     gpu::AllocationDesc staging_desc = {
         .size         = TEX_SIZE * TEX_SIZE * 4,
@@ -212,10 +195,10 @@ fn void? run(sample_args::Options options) {
         .memory_class = gpu::MemoryClass.CPU_WRITE,
         .access       = { .graphics },
     };
-    gpu::GpuAllocation staging = gpu::allocate_memory(&device, &staging_desc)!;
-    defer (void)gpu::free_allocation(&device, &staging);
-    gpu::GpuSpan staging_span = gpu::get_allocation_span(&device, staging)!;
-    char* texels = (char*)gpu::get_span_mapping(&device, staging_span)!.ptr;
+    gpu::GpuAllocation staging = gpu::allocate_memory(device, &staging_desc)!;
+    defer (void)gpu::free_allocation(device, &staging);
+    gpu::GpuSpan staging_span = gpu::get_allocation_span(device, staging)!;
+    char* texels = (char*)gpu::get_span_mapping(device, staging_span)!.ptr;
     for (uint y = 0; y < TEX_SIZE; y++) {
         for (uint x = 0; x < TEX_SIZE; x++) {
             bool checkered = ((x / 4) + (y / 4)) % 2 == 0;
@@ -226,7 +209,7 @@ fn void? run(sample_args::Options options) {
             texel[3] = (char)255;
         }
     }
-    gpu::flush_mapped_span(&device, staging_span)!;
+    gpu::flush_mapped_span(device, staging_span)!;
 
     gpu::Format[1] color_formats = { swapchain_info.format };
     gpu::ColorTargetState[1] color_targets = {
@@ -248,11 +231,11 @@ fn void? run(sample_args::Options options) {
     gpu::PipelineHandle pipeline;
     bool pipeline_valid = false;
     if (!swapchain_info.dormant) {
-        pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
+        pipeline = gpu::create_graphics_pipeline(device, &pipe_desc)!;
         pipeline_valid = true;
     }
     defer {
-        if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
+        if (pipeline_valid) (void)gpu::destroy_pipeline(device, pipeline);
     }
 
     sample_camera::OrbitCamera camera = { .pitch = 0.45f, .radius = 5.5f, .target = { 0, 0, 0 } };
@@ -269,7 +252,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -284,23 +267,23 @@ fn void? run(sample_args::Options options) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
         }
         if (pipeline_changed) {
-            if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
+            if (pipeline_valid) gpu::destroy_pipeline(device, pipeline)!;
             pipeline_valid = false;
             color_formats[0] = swapchain_info.format;
-            pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
+            pipeline = gpu::create_graphics_pipeline(device, &pipe_desc)!;
             pipeline_valid = true;
         }
         if (depth_changed) {
             if (depth_valid) {
-                gpu::destroy_attachment_view(&device, depth_view)!;
-                gpu::destroy_texture(&device, depth)!;
+                gpu::destroy_attachment_view(device, depth_view)!;
+                gpu::destroy_texture(device, depth)!;
             }
             depth_valid = false;
-            depth = create_depth_texture(&device, swapchain_info.width, swapchain_info.height)!;
+            depth = create_depth_texture(device, swapchain_info.width, swapchain_info.height)!;
             {
-                defer catch (void)gpu::destroy_texture(&device, depth);
+                defer catch (void)gpu::destroy_texture(device, depth);
                 gpu::AttachmentViewDesc depth_view_desc = { .texture = depth };
-                depth_view = gpu::create_attachment_view(&device, &depth_view_desc)!;
+                depth_view = gpu::create_attachment_view(device, &depth_view_desc)!;
             }
             depth_width = swapchain_info.width;
             depth_height = swapchain_info.height;
@@ -309,13 +292,13 @@ fn void? run(sample_args::Options options) {
         }
 
         gpu::AcquiredImage? acquired = gpu::acquire_next_image(
-            device:     &device,
+            device:     device,
             swapchain:  swapchain,
             timeout_ns: sample_window::FRAME_ACQUIRE_TIMEOUT_NS,
         );
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
             continue;
         }
 
@@ -329,7 +312,7 @@ fn void? run(sample_args::Options options) {
             }
         };
 
-        gpu::CommandList cmd = gpu::begin_commands(&graphics_allocator)!;
+        gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
         defer (void)gpu::discard_commands(&cmd);
 
         if (!checker_uploaded) {
@@ -399,14 +382,14 @@ fn void? run(sample_args::Options options) {
             size:      SceneRoot::size,
             alignment: 16,
         )!;
-        SceneRoot* root = (SceneRoot*)gpu::get_span_mapping(&device, root_span)!.ptr;
+        SceneRoot* root = (SceneRoot*)gpu::get_span_mapping(device, root_span)!.ptr;
         write_matrix(&root.view_proj_c0, view_proj);
         write_matrix(&root.model_c0, spin_model(time));
         root.vertex_gpu     = vertex_address;
         root.albedo_texture = tex_index;
         root.albedo_sampler = smp_index;
         root.time           = time;
-        gpu::GpuAddress root_address = gpu::get_span_address(&device, root_span)!;
+        gpu::GpuAddress root_address = gpu::get_span_address(device, root_span)!;
 
         gpu::ColorTargetDesc[1] colors = {{
             .view     = color_view,
@@ -467,12 +450,12 @@ fn void? run(sample_args::Options options) {
             .readiness        = acquired.readiness,
             .readiness_before = { .color_output },
         };
-        last_graphics = gpu::submit(graphics_queue, &submit)!;
+        last_graphics = gpu::submit(context.queue, &submit)!;
         sample_frame_upload::retire_frame_upload(&upload_batch, last_graphics)!;
 
         if (options.capture_frame(frame)) {
             sample_capture::capture_texture_png(
-                allocator:           &graphics_allocator,
+                allocator:           &context.command_allocator,
                 producer_completion: last_graphics,
                 src:                 acquired.texture,
                 width:       swapchain_info.width,
@@ -485,9 +468,9 @@ fn void? run(sample_args::Options options) {
             )!;
         }
 
-        if (catch err = sample_window::present_when_ready(&device, &acquired, last_graphics)) {
+        if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(&device, swapchain, &window)!;
+            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
 
         frame++;

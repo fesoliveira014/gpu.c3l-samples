@@ -1,7 +1,7 @@
 module image_processing;
 
 import gpu;
-import sample_device;
+import gpu::util;
 import sample_args;
 import sample_capture;
 import std::io;
@@ -38,29 +38,23 @@ fn gpu::TextureHandle? create_storage_image(gpu::Device* device, bool capture_ta
 }
 
 fn void? run(sample_args::Options options) {
-    gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
-        .enable_vulkan_validation     = true,
-        .application_name             = "image_processing",
-    };
-    gpu::Runtime runtime = gpu::create_runtime(&runtime_desc)!;
-    defer (void)gpu::destroy_runtime(&runtime);
-    gpu::Device device = sample_device::create_device(&runtime)!;
-    defer (void)gpu::destroy_device(&device);
-    gpu::Queue compute_queue = gpu::get_queue(&device, gpu::QueueKind.COMPUTE)!;
-    gpu::CommandAllocator compute_allocator =
-        gpu::create_command_allocator(&device, compute_queue)!;
-    defer (void)gpu::destroy_command_allocator(&compute_allocator);
+    util::DeviceContextDesc desc = util::default_device_context_desc();
+    desc.runtime.enable_vulkan_validation = true;
+    desc.runtime.application_name = "image_processing";
+    desc.command_queue = gpu::QueueKind.COMPUTE;
+    util::DeviceContext context = util::create_device_context(&desc)!;
+    defer util::destroy_device_context(&context);
+    gpu::Device* device = &context.device;
 
-    gpu::TextureHandle image_a = create_storage_image(&device, true, "plasma_a")!;
-    defer (void)gpu::destroy_texture(&device, image_a);
-    gpu::TextureHandle image_b = create_storage_image(&device, false, "plasma_b")!;
-    defer (void)gpu::destroy_texture(&device, image_b);
-    gpu::TextureView view_a = gpu::create_texture_view(&device, image_a, null)!;
-    defer (void)gpu::destroy_texture_view(&device, view_a);
+    gpu::TextureHandle image_a = create_storage_image(device, true, "plasma_a")!;
+    defer (void)gpu::destroy_texture(device, image_a);
+    gpu::TextureHandle image_b = create_storage_image(device, false, "plasma_b")!;
+    defer (void)gpu::destroy_texture(device, image_b);
+    gpu::TextureView view_a = gpu::create_texture_view(device, image_a, null)!;
+    defer (void)gpu::destroy_texture_view(device, view_a);
     gpu::TextureIndex index_a = view_a.index;
-    gpu::TextureView view_b = gpu::create_texture_view(&device, image_b, null)!;
-    defer (void)gpu::destroy_texture_view(&device, view_b);
+    gpu::TextureView view_b = gpu::create_texture_view(device, image_b, null)!;
+    defer (void)gpu::destroy_texture_view(device, view_b);
     gpu::TextureIndex index_b = view_b.index;
 
     gpu::AllocationDesc bins_desc = {
@@ -70,10 +64,10 @@ fn void? run(sample_args::Options options) {
         .access       = { .compute },
         .debug_name   = "histogram_bins",
     };
-    gpu::GpuAllocation bins = gpu::allocate_memory(&device, &bins_desc)!;
-    defer (void)gpu::free_allocation(&device, &bins);
-    gpu::GpuSpan bins_span = gpu::get_allocation_span(&device, bins)!;
-    uint* bin_counts = (uint*)gpu::get_span_mapping(&device, bins_span)!.ptr;
+    gpu::GpuAllocation bins = gpu::allocate_memory(device, &bins_desc)!;
+    defer (void)gpu::free_allocation(device, &bins);
+    gpu::GpuSpan bins_span = gpu::get_allocation_span(device, bins)!;
+    uint* bin_counts = (uint*)gpu::get_span_mapping(device, bins_span)!.ptr;
 
     gpu::ComputePipelineDesc gen_pd = {
         .shader = {
@@ -82,8 +76,8 @@ fn void? run(sample_args::Options options) {
         },
         .debug_name = "generate",
     };
-    gpu::PipelineHandle gen_pipe = gpu::create_compute_pipeline(&device, &gen_pd)!;
-    defer (void)gpu::destroy_pipeline(&device, gen_pipe);
+    gpu::PipelineHandle gen_pipe = gpu::create_compute_pipeline(device, &gen_pd)!;
+    defer (void)gpu::destroy_pipeline(device, gen_pipe);
     gpu::ComputePipelineDesc blur_pd = {
         .shader = {
             .spirv       = BLUR_SPIRV[..],
@@ -91,8 +85,8 @@ fn void? run(sample_args::Options options) {
         },
         .debug_name = "blur",
     };
-    gpu::PipelineHandle blur_pipe = gpu::create_compute_pipeline(&device, &blur_pd)!;
-    defer (void)gpu::destroy_pipeline(&device, blur_pipe);
+    gpu::PipelineHandle blur_pipe = gpu::create_compute_pipeline(device, &blur_pd)!;
+    defer (void)gpu::destroy_pipeline(device, blur_pipe);
     gpu::ComputePipelineDesc hist_pd = {
         .shader = {
             .spirv       = HISTOGRAM_SPIRV[..],
@@ -100,8 +94,8 @@ fn void? run(sample_args::Options options) {
         },
         .debug_name = "histogram",
     };
-    gpu::PipelineHandle hist_pipe = gpu::create_compute_pipeline(&device, &hist_pd)!;
-    defer (void)gpu::destroy_pipeline(&device, hist_pipe);
+    gpu::PipelineHandle hist_pipe = gpu::create_compute_pipeline(device, &hist_pd)!;
+    defer (void)gpu::destroy_pipeline(device, hist_pipe);
 
     gpu::AllocationDesc roots_desc = {
         .size         = GenerateRoot::size + 2 * BlurRoot::size + HistogramRoot::size,
@@ -110,38 +104,38 @@ fn void? run(sample_args::Options options) {
         .access       = { .compute },
         .debug_name   = "image_processing_roots",
     };
-    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(&device, &roots_desc)!;
-    defer (void)gpu::free_allocation(&device, &roots_allocation);
-    gpu::GpuSpan roots_span = gpu::get_allocation_span(&device, roots_allocation)!;
+    gpu::GpuAllocation roots_allocation = gpu::allocate_memory(device, &roots_desc)!;
+    defer (void)gpu::free_allocation(device, &roots_allocation);
+    gpu::GpuSpan roots_span = gpu::get_allocation_span(device, roots_allocation)!;
 
     gpu::GpuSpan gen_span = roots_span.checked_subspan(0, GenerateRoot::size)!;
-    GenerateRoot* gen_root = (GenerateRoot*)gpu::get_span_mapping(&device, gen_span)!.ptr;
+    GenerateRoot* gen_root = (GenerateRoot*)gpu::get_span_mapping(device, gen_span)!.ptr;
     gen_root.target = index_a;
     gen_root.size   = IMAGE_SIZE;
     gen_root.seed   = 3.7f;
 
     gpu::GpuSpan blur_h_span = roots_span.checked_subspan(GenerateRoot::size, BlurRoot::size)!;
-    BlurRoot* blur_h = (BlurRoot*)gpu::get_span_mapping(&device, blur_h_span)!.ptr;
+    BlurRoot* blur_h = (BlurRoot*)gpu::get_span_mapping(device, blur_h_span)!.ptr;
     blur_h.src        = index_a;
     blur_h.dst        = index_b;
     blur_h.size       = IMAGE_SIZE;
     blur_h.horizontal = 1;
 
     gpu::GpuSpan blur_v_span = roots_span.checked_subspan(GenerateRoot::size + BlurRoot::size, BlurRoot::size)!;
-    BlurRoot* blur_v = (BlurRoot*)gpu::get_span_mapping(&device, blur_v_span)!.ptr;
+    BlurRoot* blur_v = (BlurRoot*)gpu::get_span_mapping(device, blur_v_span)!.ptr;
     blur_v.src        = index_b;
     blur_v.dst        = index_a;
     blur_v.size       = IMAGE_SIZE;
     blur_v.horizontal = 0;
 
     gpu::GpuSpan hist_span = roots_span.checked_subspan(GenerateRoot::size + 2 * BlurRoot::size, HistogramRoot::size)!;
-    HistogramRoot* hist_root = (HistogramRoot*)gpu::get_span_mapping(&device, hist_span)!.ptr;
-    hist_root.bins_gpu = gpu::get_span_address(&device, bins_span)!;
+    HistogramRoot* hist_root = (HistogramRoot*)gpu::get_span_mapping(device, hist_span)!.ptr;
+    hist_root.bins_gpu = gpu::get_span_address(device, bins_span)!;
     hist_root.src      = index_a;
     hist_root.size     = IMAGE_SIZE;
-    gpu::flush_mapped_span(&device, roots_span)!;
+    gpu::flush_mapped_span(device, roots_span)!;
 
-    gpu::CommandList cmd = gpu::begin_commands(&compute_allocator)!;
+    gpu::CommandList cmd = gpu::begin_commands(&context.command_allocator)!;
     defer (void)gpu::discard_commands(&cmd);
 
     gpu::cmd_fill_buffer(&cmd, bins_span, 0)!;
@@ -167,7 +161,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_bind_pipeline(&cmd, gen_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        root:     gpu::get_span_address(&device, gen_span)!,
+        root:     gpu::get_span_address(device, gen_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;
 
@@ -182,7 +176,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_bind_pipeline(&cmd, blur_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        root:     gpu::get_span_address(&device, blur_h_span)!,
+        root:     gpu::get_span_address(device, blur_h_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
     )!;
 
@@ -199,7 +193,7 @@ fn void? run(sample_args::Options options) {
 
     gpu::cmd_dispatch(
         commands: &cmd,
-        root:     gpu::get_span_address(&device, blur_v_span)!,
+        root:     gpu::get_span_address(device, blur_v_span)!,
         groups:   { STRIP_GROUPS, IMAGE_SIZE, 1 },
     )!;
 
@@ -208,7 +202,7 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_bind_pipeline(&cmd, hist_pipe)!;
     gpu::cmd_dispatch(
         commands: &cmd,
-        root:     gpu::get_span_address(&device, hist_span)!,
+        root:     gpu::get_span_address(device, hist_span)!,
         groups:   { TILE_GROUPS, TILE_GROUPS, 1 },
     )!;
 
@@ -221,16 +215,16 @@ fn void? run(sample_args::Options options) {
     gpu::ExecutableCommandList[1] lists = { gpu::end_commands(&cmd)! };
     defer (void)gpu::discard_executable_commands(&lists[0]);
     gpu::SubmitDesc submit = { .command_lists = lists[..] };
-    gpu::CompletionPoint completion = gpu::submit(compute_queue, &submit)!;
+    gpu::CompletionPoint completion = gpu::submit(context.queue, &submit)!;
     defer (void)gpu::wait_completion(completion, ulong::max);
     gpu::wait_completion(completion, ulong::max)!;
-    gpu::invalidate_mapped_span(&device, bins_span)!;
+    gpu::invalidate_mapped_span(device, bins_span)!;
 
     print_histogram(bin_counts)!;
 
     if (options.wants_screenshot()) {
         sample_capture::capture_texture_png(
-            allocator:           &compute_allocator,
+            allocator:           &context.command_allocator,
             producer_completion: completion,
             src:                 image_a,
             width:               IMAGE_SIZE,

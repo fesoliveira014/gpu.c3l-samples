@@ -8,8 +8,9 @@ mirroring the `triangle` example from
 
 It demonstrates:
 
-- Adapter selection and device creation with `unified_layouts`, so no barrier
-  is recorded anywhere.
+- `gpu::util::create_device_context`: one call owns the runtime, adapter,
+  device, queue, command allocator, surface, and sRGB swapchain.
+- `unified_layouts`, so no barrier is recorded anywhere.
 - A pipeline whose shaders take no root data: positions and colors come from
   `gl_VertexIndex`, and the draw passes zero roots.
 - One command list per frame: clear, draw, submit against the acquire

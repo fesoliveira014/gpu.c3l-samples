@@ -7,6 +7,10 @@ fewest lines the library allows.
 
 It demonstrates:
 
+- `gpu::util::DeviceContext` setup through `sample_window::surface_factory`;
+  the context owns the swapchain and the sample waits its presentations before
+  teardown.
+
 - `DeviceDesc.unified_layouts`: no application layout transitions. The only
   texture barrier orders the checker upload before fragment sampling; the
   swapchain image needs none. Startup prints `unified_layouts_optimal`.
