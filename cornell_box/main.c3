@@ -877,7 +877,7 @@ fn void? run(String[] args) {
         gpu::intern_sampler(device, &sampler_desc)!;
 
     gpu::SwapchainHandle swapchain = context.swapchain;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    gpu::SwapchainInfo* swapchain_info = &context.swapchain_info;
     OutputTarget output = create_output_target(
         device,
         swapchain_info.width,
@@ -907,7 +907,7 @@ fn void? run(String[] args) {
         if (delta_seconds > 0.1) delta_seconds = 0.1;
         if (!validation && update_camera(&camera, delta_seconds)) sample_index = 0;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(
+            *swapchain_info = sample_window::recover_swapchain(
                 device,
                 swapchain,
                 &window,
@@ -947,7 +947,7 @@ fn void? run(String[] args) {
         if (catch err = acquired) {
             if (err == gpu::WAIT_TIMEOUT) continue;
             if (err == gpu::SWAPCHAIN_OUT_OF_DATE) {
-                swapchain_info = sample_window::recover_swapchain(
+                *swapchain_info = sample_window::recover_swapchain(
                     device,
                     swapchain,
                     &window,
@@ -1139,7 +1139,7 @@ fn void? run(String[] args) {
             last_frame,
         )) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(
+            *swapchain_info = sample_window::recover_swapchain(
                 device,
                 swapchain,
                 &window,

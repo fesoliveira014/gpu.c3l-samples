@@ -7,6 +7,7 @@ on:
 
 env:
   C3C_VERSION: "0.8.3"
+  VULKAN_SDK_VERSION: "1.4.357.0"
 
 jobs:
   linux:
@@ -36,10 +37,30 @@ jobs:
           fi
           echo "$HOME/tools/c3" >> "$GITHUB_PATH"
 
-      - name: Install glslc, lavapipe, xvfb
+      - name: Install lavapipe, xvfb and SDK dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y glslc mesa-vulkan-drivers vulkan-validationlayers xvfb
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools xvfb xz-utils libxcb-xinput0 libxcb-xinerama0 libxcb-cursor0
+
+      - name: Cache Vulkan SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/tools/vulkan
+          key: vulkan-linux-${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Install Vulkan SDK
+        run: |
+          if [ ! -f ~/tools/vulkan/x86_64/lib/libVkLayer_khronos_validation.so ]; then
+            mkdir -p ~/tools/vulkan
+            curl -fsSL -o /tmp/vulkan-sdk.tar.xz \
+              "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkan_sdk.tar.xz"
+            tar -xJf /tmp/vulkan-sdk.tar.xz -C ~/tools/vulkan --strip-components=1
+          fi
+          SDK_ROOT="$HOME/tools/vulkan/x86_64"
+          echo "VULKAN_SDK=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "VK_LAYER_PATH=$SDK_ROOT/share/vulkan/explicit_layer.d" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$SDK_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/bin" >> "$GITHUB_PATH"
 
       - name: ABI drift gate
         run: python3 scripts/gen_abi.py --check

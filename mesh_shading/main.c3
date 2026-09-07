@@ -238,7 +238,7 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
     gpu::Device* device = &context.device;
     gpu::SwapchainHandle swapchain = context.swapchain;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    gpu::SwapchainInfo* swapchain_info = &context.swapchain_info;
     gpu::DeviceCaps caps = gpu::get_device_caps(device)!;
     check_mesh_caps(&caps.mesh_shaders)!;
 
@@ -301,7 +301,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+            *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -321,7 +321,7 @@ fn void? run(sample_args::Options options) {
             .command_allocator = &context.command_allocator,
             .window            = &window,
             .swapchain         = swapchain,
-            .swapchain_info    = &swapchain_info,
+            .swapchain_info    = swapchain_info,
             .pipeline          = pipeline,
             .indirect_args     = args.span,
             .upload_ring       = &upload_ring,

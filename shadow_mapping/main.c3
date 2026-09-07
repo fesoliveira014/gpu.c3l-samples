@@ -131,7 +131,7 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
     gpu::Device* device = &context.device;
     gpu::SwapchainHandle swapchain = context.swapchain;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    gpu::SwapchainInfo* swapchain_info = &context.swapchain_info;
     uint width = swapchain_info.width;
     uint height = swapchain_info.height;
 
@@ -287,7 +287,7 @@ fn void? run(sample_args::Options options) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
         if (events.resized) {
-            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+            *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
@@ -349,7 +349,7 @@ fn void? run(sample_args::Options options) {
         );
         if (catch err = acquired) {
             if (err != gpu::WAIT_TIMEOUT && err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+            if (err == gpu::SWAPCHAIN_OUT_OF_DATE) *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
             continue;
         }
 
@@ -559,7 +559,7 @@ fn void? run(sample_args::Options options) {
 
         if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+            *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
 
         frame++;
