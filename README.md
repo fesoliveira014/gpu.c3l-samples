@@ -12,7 +12,7 @@ cd gpu.c3l-samples
 
 Requirements:
 
-- `c3c` 0.8.0
+- `c3c` 0.8.3
 - `glslc` from the Vulkan SDK or shaderc
 - A Vulkan 1.3 loader and driver; lavapipe works for headless samples
 - SDL3 and a window system for windowed samples
@@ -100,7 +100,9 @@ before commands that request screenshots.
 | `multithreaded_recording` | headless | host threads, one explicit allocator per worker | — |
 | `pipeline_cache_timing` | headless | graphics and compute pipeline caches | — |
 | `image_processing` | headless | storage images, span atomics | `--screenshot out/image_processing.png` |
-| `hello_triangle_sdl` | windowed | baseline presentation | `--frames 30 --screenshot out/hello_triangle_sdl.png` |
+| `texture_streaming` | headless | reserved texture-index ranges, in-place view updates | — |
+| `hello_triangle_sdl` | windowed | baseline presentation; unified layouts, inline root payload | `--frames 30 --screenshot out/hello_triangle_sdl.png` |
+| `minimal_triangle` | windowed | smallest windowed program; no roots, no barriers, no descriptors | `--frames 30 --screenshot out/minimal_triangle.png` |
 | `textured_cube` | windowed | depth attachment, sampled texture | `--frames 30 --screenshot out/textured_cube.png` |
 | `texture_filtering` | windowed | mip sampling; anisotropy optional | `--frames 30 --screenshot out/texture_filtering.png` |
 | `volume_texture` | windowed | 3D texture upload and sampled volume raymarch | `--frames 30 --screenshot out/volume_texture.png` |
@@ -112,6 +114,10 @@ before commands that request screenshots.
 | `pbr_materials` | windowed | instancing, sampled textures | `--frames 30 --screenshot out/pbr_materials.png` |
 | `present_mode_explorer` | windowed | FIFO; MAILBOX and IMMEDIATE optional | `--frames 30 --screenshot out/present_mode_explorer.png` |
 | `cornell_box` | windowed | direct ray-tracing pipelines, acceleration structures | `--validate --frames 1 --screenshot out/cornell_box.png` |
+| `mesh_shading` | windowed | task and mesh shader pipelines, direct and indirect mesh draws | `--frames 30 --screenshot out/mesh_shading.png` |
+| `stencil_mask` | windowed | stencil attachment state, stencil-aspect readback | `--frames 30 --screenshot out/stencil_mask.png` |
+| `skybox` | windowed | cube-compatible texture, cube and per-face views | `--frames 30 --screenshot out/skybox.png` |
+| `compressed_textures` | windowed | BC1 and BC4 upload with full mip chains | `--frames 30 --screenshot out/compressed_textures.png` |
 
 Each sample README describes its output and optional flags. CI runs this full
 matrix on lavapipe; windowed targets use xvfb and the listed frame bound.

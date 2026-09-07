@@ -39,21 +39,20 @@ const usz FRAGMENT_ROOTS_UPLOAD_BYTES = INSTANCES * FragmentRoot::size;
 const usz BUILD_ROOT_UPLOAD_OFFSET =
     ((FRAGMENT_ROOTS_UPLOAD_OFFSET + FRAGMENT_ROOTS_UPLOAD_BYTES + 15) / 16) * 16;
 const usz UPLOAD_BYTES_PER_SLOT = BUILD_ROOT_UPLOAD_OFFSET + BuildRoot::size;
-const uint GENERATED_PREPROCESS_BUFFER_COUNT = sample_frame_upload::FRAME_UPLOAD_SLOT_COUNT;
-const usz GENERATED_PREPROCESS_BUDGET_BYTES = 32 * 1024 * 1024;
+const uint GENERATED_CONCURRENT_LISTS = sample_frame_upload::FRAME_UPLOAD_SLOT_COUNT;
 $assert UPLOAD_BYTES_PER_SLOT == 31896;
 
-fn void? reserve_generated_draw_scratch(
+fn void? reserve_generated_draws(
     gpu::CommandAllocator* allocator,
     gpu::PipelineHandle pipeline,
 ) {
-    gpu::GeneratedScratchDesc desc = {
-        .pipeline                = pipeline,
-        .kind                    = gpu::GeneratedWorkKind.DRAW_INDEXED,
-        .max_commands_per_list   = INSTANCES,
-        .preprocess_buffer_count = GENERATED_PREPROCESS_BUFFER_COUNT,
+    gpu::GeneratedWorkReservationDesc desc = {
+        .pipeline              = pipeline,
+        .kind                  = gpu::GeneratedWorkKind.DRAW_INDEXED,
+        .max_commands_per_list = INSTANCES,
+        .concurrent_lists      = GENERATED_CONCURRENT_LISTS,
     };
-    return gpu::reserve_generated_scratch(allocator, &desc);
+    return gpu::reserve_generated_work(allocator, &desc);
 }
 
 fn int main(String[] args) {
@@ -102,9 +101,8 @@ fn void? run(sample_args::Options options) {
         gpu::QueueKind.GRAPHICS,
     )!;
     gpu::CommandAllocatorDesc graphics_allocator_desc = {
-        .command_buffer_capacity     = GENERATED_PREPROCESS_BUFFER_COUNT + 1,
-        .generated_preprocess_bytes  = GENERATED_PREPROCESS_BUDGET_BYTES,
-        .debug_name                  = "gpu_driven_graphics",
+        .command_buffer_capacity = GENERATED_CONCURRENT_LISTS + 1,
+        .debug_name              = "gpu_driven_graphics",
     };
     gpu::CommandAllocator graphics_allocator = gpu::create_command_allocator(
         &device,
@@ -166,9 +164,9 @@ fn void? run(sample_args::Options options) {
     defer {
         if (pipeline_valid) (void)gpu::destroy_pipeline(&device, pipeline);
     }
-    bool scratch_reserved = false;
+    bool generated_reserved = false;
     if (use_generated && pipeline_valid) {
-        if (catch err = reserve_generated_draw_scratch(
+        if (catch err = reserve_generated_draws(
             &graphics_allocator,
             pipeline,
         )) {
@@ -176,7 +174,7 @@ fn void? run(sample_args::Options options) {
             use_generated = false;
             use_count = caps.draw_indirect_count;
         } else {
-            scratch_reserved = true;
+            generated_reserved = true;
         }
     }
     io::printfn(
@@ -189,8 +187,8 @@ fn void? run(sample_args::Options options) {
         use_count ? "on" : "off",
     );
     defer {
-        if (scratch_reserved) {
-            (void)gpu::release_generated_scratch(
+        if (generated_reserved) {
+            (void)gpu::release_generated_work(
                 &graphics_allocator,
                 pipeline,
                 gpu::GeneratedWorkKind.DRAW_INDEXED,
@@ -217,13 +215,13 @@ fn void? run(sample_args::Options options) {
         }
         if (!pipeline_valid || color_formats[0] != swapchain_info.format) {
             if (last_graphics.is_valid()) gpu::wait_completion(last_graphics, ulong::max)!;
-            if (scratch_reserved) {
-                gpu::release_generated_scratch(
+            if (generated_reserved) {
+                gpu::release_generated_work(
                     &graphics_allocator,
                     pipeline,
                     gpu::GeneratedWorkKind.DRAW_INDEXED,
                 )!;
-                scratch_reserved = false;
+                generated_reserved = false;
             }
             if (pipeline_valid) gpu::destroy_pipeline(&device, pipeline)!;
             pipeline_valid = false;
@@ -231,7 +229,7 @@ fn void? run(sample_args::Options options) {
             pipeline = gpu::create_graphics_pipeline(&device, &pipe_desc)!;
             pipeline_valid = true;
             if (use_generated) {
-                if (catch err = reserve_generated_draw_scratch(
+                if (catch err = reserve_generated_draws(
                     &graphics_allocator,
                     pipeline,
                 )) {
@@ -241,7 +239,7 @@ fn void? run(sample_args::Options options) {
                     use_generated = false;
                     use_count = caps.draw_indirect_count;
                 } else {
-                    scratch_reserved = true;
+                    generated_reserved = true;
                 }
             }
         }
