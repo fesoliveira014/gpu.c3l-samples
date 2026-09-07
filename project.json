@@ -16,7 +16,7 @@
     "hello_triangle_sdl": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
-      "sources": [ "hello_triangle_sdl/main.c3", "hello_triangle_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+      "sources": [ "hello_triangle_sdl/main.c3", "hello_triangle_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
     },
     // Headless: no SDL. Proves the root-pointer compute ABI end to end.
     "root_pointer_compute": {
@@ -153,6 +153,51 @@
       "type": "executable",
       "dependencies": [ "sdl3" ],
       "sources": [ "gpu_driven_draw_sdl/main.c3", "gpu_driven_draw_sdl/shader_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+    },
+    "minimal_triangle": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [ "minimal_triangle/main.c3", "shared/sample_window_sdl.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+    },
+    "mesh_shading": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "mesh_shading/main.c3", "mesh_shading/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "stencil_mask": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "stencil_mask/main.c3", "stencil_mask/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "skybox": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "skybox/main.c3", "skybox/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "compressed_textures": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "compressed_textures/main.c3", "compressed_textures/shader_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "texture_streaming": {
+      "type": "executable",
+      "sources": [ "texture_streaming/main.c3", "texture_streaming/shader_abi.c3", "shared/sample_device.c3" ]
     },
     "cornell_box": {
       "type": "executable",

@@ -93,8 +93,10 @@ fn gpu::Surface? create_surface(gpu::Runtime* runtime, SampleWindow* sample) {
 fn gpu::Device? create_presentation_device(
     gpu::Runtime* runtime,
     gpu::Surface* surface,
+    gpu::DeviceDesc features = {},
 ) {
-    gpu::DeviceDesc desc = { .surface = *surface };
+    gpu::DeviceDesc desc = features;
+    desc.surface = *surface;
     gpu::AdapterList adapters = gpu::enumerate_adapters(runtime)!;
     for (uint i = 0; i < adapters.count; i++) {
         gpu::Adapter adapter = adapters.get(i)!;

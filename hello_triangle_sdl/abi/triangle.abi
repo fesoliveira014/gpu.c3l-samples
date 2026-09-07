@@ -1,0 +1,8 @@
+abi triangle;
+
+push graphics TriangleRoot {
+    TextureIndex texture_index;
+    SamplerIndex sampler_index;
+    float        pulse;
+    uint         _pad0;
+}
