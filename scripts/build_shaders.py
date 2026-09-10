@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Compile each sample's GLSL shaders to SPIR-V next to their sources.
+"""Generate every sample's shader ABI and compile its shaders.
 
-.spv is gitignored; .glsl is the source of truth. Run after cloning and
-after editing a shader or regenerating ABI includes (scripts/gen_abi.py).
-Set GLSLC to point at a specific glslc binary.
+Builds the gpu_shaders tool vendored in lib/gpu.c3l, then runs it once per
+sample directory: schemas under <sample>/abi/ produce <sample>/<name>_abi.c3
+and <sample>/shaders/generated/<name>_abi.glsl; every <sample>/shaders/*.glsl
+compiles to .spv beside it. Pass --check to verify committed ABI outputs
+instead of rewriting them (exits nonzero on drift); shaders compile either
+way. Set C3C or GLSLC to point at specific binaries.
 """
 
 import os
@@ -13,48 +16,42 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STAGES = {
-    ".comp": "compute",
-    ".vert": "vertex",
-    ".frag": "fragment",
-    ".task": "task",
-    ".mesh": "mesh",
-    ".rgen": "rgen",
-    ".rmiss": "rmiss",
-    ".rchit": "rchit",
-    ".rahit": "rahit",
-    ".rint": "rint",
-    ".rcall": "rcall",
-}
+TOOL_DIR = ROOT / "lib" / "gpu.c3l" / "tools" / "gpu_shaders"
+
+
+def tool_binary():
+    exe = TOOL_DIR / "build" / "gpu_shaders.exe"
+    return exe if exe.exists() else TOOL_DIR / "build" / "gpu_shaders"
+
+
+def build_tool():
+    c3c = shutil.which(os.environ.get("C3C", "c3c"))
+    if c3c is None:
+        sys.exit("build_shaders: c3c not found (set C3C or add it to PATH)")
+    subprocess.run(
+        [c3c, "build", "gpu_shaders", "--path", str(TOOL_DIR)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    return tool_binary()
 
 
 def main():
-    glslc = shutil.which(os.environ.get("GLSLC", "glslc"))
-    if glslc is None:
-        sys.exit("build_shaders: glslc not found (set GLSLC or add it to PATH)")
-    include_dir = ROOT / "lib" / "gpu.c3l" / "include" / "shaders"
-
-    for src in sorted(ROOT.glob("*/shaders/*.glsl")):
-        if src.parent.name == "generated":
-            continue
-        suffix = Path(src.stem).suffix
-        stage = STAGES.get(suffix)
-        if stage is None:
-            print(f"build_shaders: unknown shader stage for {src}", file=sys.stderr)
-            sys.exit(1)
-        out = src.with_suffix(".spv")
-        command = [
-            glslc,
-            f"-fshader-stage={stage}",
-            "--target-env=vulkan1.3",
-            "-I",
-            str(include_dir),
-            str(src),
-            "-o",
-            str(out),
-        ]
-        subprocess.run(command, check=True)
-        print(f"built {out}")
+    check = "--check" in sys.argv[1:]
+    tool = build_tool()
+    for sample in sorted(p for p in ROOT.iterdir() if (p / "shaders").is_dir()):
+        args = ["--shader-dir", sample / "shaders"]
+        if (sample / "abi").is_dir():
+            args = [
+                "--abi-dir", sample / "abi",
+                "--module", sample.name,
+                "--c3-out", sample,
+                "--glsl-out", sample / "shaders" / "generated",
+                *args,
+            ]
+        if check:
+            args.append("--check")
+        subprocess.run([str(tool), *map(str, args)], check=True, cwd=ROOT)
 
 
 if __name__ == "__main__":
