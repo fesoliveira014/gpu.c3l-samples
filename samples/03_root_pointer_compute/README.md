@@ -11,8 +11,8 @@ or binding numbers.
 3. Dispatch once and order the output against host reads.
 4. Invalidate the output mapping and verify all 256 values.
 
-The schema is `abi/root_pointer.abi`; `scripts/gen_abi.py` generates matching C3
-and GLSL layouts.
+The schema is `abi/root_pointer.abi`; `scripts/build_shaders.py` generates
+matching C3 and GLSL layouts.
 
 ## Run
 
