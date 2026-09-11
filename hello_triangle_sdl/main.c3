@@ -40,7 +40,7 @@ fn void? run(sample_args::Options options) {
     defer (void)gpu::wait_swapchain_presentations(&context.device, context.swapchain);
     gpu::Device* device = &context.device;
     gpu::SwapchainHandle swapchain = context.swapchain;
-    gpu::SwapchainInfo swapchain_info = gpu::get_swapchain_info(device, swapchain)!;
+    gpu::SwapchainInfo* swapchain_info = &context.swapchain_info;
     io::printfn("hello_triangle_sdl: unified layouts optimal %s",
         gpu::get_device_caps(device)!.unified_layouts_optimal ? "yes" : "no");
 
@@ -93,7 +93,7 @@ fn void? run(sample_args::Options options) {
     while (options.frames < 0 || frame < options.frames) {
         sample_window::WindowEvents events = sample_window::pump_events(&window);
         if (events.quit) break;
-        if (events.resized) swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+        if (events.resized) *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         if (swapchain_info.dormant) {
             sample_window::throttle_dormant();
             continue;
@@ -109,7 +109,7 @@ fn void? run(sample_args::Options options) {
         if (catch err = acquired) {
             if (err == gpu::WAIT_TIMEOUT) continue;
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+            *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
             continue;
         }
 
@@ -177,7 +177,7 @@ fn void? run(sample_args::Options options) {
         if (capture.is_valid()) sample_capture::finish_capture(&capture, last_graphics, options.screenshot_path)!;
         if (catch err = sample_window::present_when_ready(device, &acquired, last_graphics)) {
             if (err != gpu::SWAPCHAIN_OUT_OF_DATE) return err~;
-            swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
+            *swapchain_info = sample_window::recover_swapchain(device, swapchain, &window)!;
         }
         frame++;
     }

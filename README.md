@@ -1,7 +1,8 @@
 # gpu.c3l samples
 
 Standalone consumers of [`gpu.c3l`](https://github.com/fesoliveira014/gpu.c3l),
-vendored as a pinned submodule. Each sample owns its shaders and ABI schemas.
+vendored at [v0.4.2](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.4.2)
+as a pinned submodule. Each sample owns its shaders and ABI schemas.
 
 ## Setup
 
@@ -42,6 +43,11 @@ Headless compute samples set `desc.device.queues.required = { .compute }` and
 `sample_window::surface_factory` with the `SampleWindow` as user data and fill
 `desc.swapchain` from the window's pixel size; the context then owns the
 swapchain, and the sample waits `wait_swapchain_presentations` before teardown.
+
+Windowed samples borrow `context.swapchain_info` for the selected format, extent,
+image count and dormant state. Resize recovery writes its fresh query result
+back through that borrowed pointer, keeping the context snapshot current.
+
 Optional device features (`enable_mesh_shaders`, `enable_ray_tracing_pipelines`,
 `unified_layouts`) are set on `desc.device`; a larger command allocator or a
 second queue is requested through `desc.command_allocator` and extra
