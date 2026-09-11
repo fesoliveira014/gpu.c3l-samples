@@ -24,7 +24,6 @@ It demonstrates:
   without rebuilding static acceleration structures.
 
 ```sh
-python3 scripts/gen_abi.py
 python3 scripts/build_shaders.py
 c3c build cornell_box
 ./build/cornell_box [--frames N] [--no-vsync] [--screenshot out.png]
