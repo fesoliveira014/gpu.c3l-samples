@@ -1,5 +1,7 @@
 # Cornell Box
 
+![cornell_box](screenshots/cornell_box.png)
+
 An interactive direct-ray-tracing rendering of the classical Cornell Box.
 The room, two blocks, ceiling area light, and default camera are hardcoded from
 Cornell's published measurements:
