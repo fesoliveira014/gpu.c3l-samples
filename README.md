@@ -1,8 +1,10 @@
 # gpu.c3l samples
 
 Standalone consumers of [`gpu.c3l`](https://github.com/fesoliveira014/gpu.c3l),
-vendored at [v0.4.2](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.4.2)
-as a pinned submodule. Each sample owns its shaders and ABI schemas.
+vendored at [v0.5.0](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.5.0)
+as a pinned submodule. Each sample owns its shaders and ABI schemas;
+`scripts/build_shaders.py` runs the library's `gpu_shaders` tool over every
+sample.
 
 ## Setup
 
@@ -62,7 +64,6 @@ completion policy remain sample-local.
 ## Build and run
 
 ```sh
-python3 scripts/gen_abi.py --check
 python3 scripts/build_shaders.py
 c3c build root_pointer_compute
 ./build/root_pointer_compute

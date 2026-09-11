@@ -62,11 +62,8 @@ jobs:
           echo "LD_LIBRARY_PATH=$SDK_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
           echo "$SDK_ROOT/bin" >> "$GITHUB_PATH"
 
-      - name: ABI drift gate
-        run: python3 scripts/gen_abi.py --check
-
-      - name: Build shaders
-        run: python3 scripts/build_shaders.py
+      - name: ABI check and shader build
+        run: python3 scripts/build_shaders.py --check
 
       - name: Run samples
         run: |
