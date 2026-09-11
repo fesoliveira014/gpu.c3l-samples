@@ -10,125 +10,9 @@
   // the app must link the matching CRT or std::mutex layout mismatches crash
   // at first allocation. Harmless on linux (single libstdc++ ABI).
   "wincrt": "static",
+  // Samples live in samples/NN_<target>, numbered by complexity; each target
+  // drops the NN_ prefix.
   "targets": {
-    // Windowed: SDL3 window + swapchain, presents the textured triangle.
-    // Run with --frames N for an auto-exit smoke, --no-vsync for MAILBOX.
-    "hello_triangle_sdl": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [ "hello_triangle_sdl/main.c3", "hello_triangle_sdl/hello_triangle_abi.c3", "shared/sample_window_sdl.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
-    },
-    // Headless: no SDL. Proves the root-pointer compute ABI end to end.
-    "root_pointer_compute": {
-      "type": "executable",
-      "sources": [ "root_pointer_compute/main.c3", "root_pointer_compute/root_pointer_abi.c3" ]
-    },
-    // Headless rasterization: textured triangles in dynamic viewport/scissor
-    // regions, with readback verification and optional PNG capture.
-    "offscreen_triangle": {
-      "type": "executable",
-      "sources": [ "offscreen_triangle/main.c3", "offscreen_triangle/offscreen_abi.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
-    },
-    // Headless: writes a pattern into a storage image by TextureIndex, then
-    // samples it back by the same index. Proves the bindless descriptor heap.
-    "bindless_texture_compute": {
-      "type": "executable",
-      "sources": [ "bindless_texture_compute/main.c3", "bindless_texture_compute/bindless_abi.c3" ]
-    },
-    // Windowed: compute culls a quad grid and writes indirect draw args
-    // (+ count where supported); one multi-draw renders via gl_DrawID.
-    "textured_cube": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "textured_cube/main.c3", "textured_cube/textured_cube_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "texture_filtering": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "texture_filtering/main.c3", "texture_filtering/texture_filtering_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "volume_texture": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "volume_texture/main.c3", "volume_texture/volume_texture_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3",
-        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "bindless_stress": {
-      "type": "executable",
-      "sources": [ "bindless_stress/main.c3", "bindless_stress/bindless_stress_abi.c3" ]
-    },
-    "image_processing": {
-      "type": "executable",
-      "sources": [
-        "image_processing/main.c3", "image_processing/image_processing_abi.c3",
-        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "particle_sim": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "particle_sim/main.c3", "particle_sim/particle_sim_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "frustum_culling": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "frustum_culling/main.c3", "frustum_culling/frustum_culling_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "shadow_mapping": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "shadow_mapping/main.c3", "shadow_mapping/shadow_mapping_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "deferred_shading": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "deferred_shading/main.c3", "deferred_shading/deferred_shading_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "pbr_materials": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "pbr_materials/main.c3", "pbr_materials/pbr_materials_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
-    "present_mode_explorer": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [
-        "present_mode_explorer/main.c3", "present_mode_explorer/present_mode_explorer_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/screenshot.c3", "shared/png.c3"
-      ]
-    },
     "shared_selftest": {
       "type": "executable",
       "sources": [ "shared/selftest.c3", "shared/sample_args.c3", "shared/sample_camera.c3", "shared/png.c3" ]
@@ -137,51 +21,78 @@
       "type": "executable",
       "sources": [ "shared/frame_upload_selftest.c3", "shared/frame_upload.c3" ]
     },
-    "multithreaded_recording": {
-      "type": "executable",
-      "sources": [ "multithreaded_recording/main.c3", "multithreaded_recording/multithreaded_recording_abi.c3" ]
-    },
-    "pipeline_cache_timing": {
-      "type": "executable",
-      "sources": [ "pipeline_cache_timing/main.c3", "pipeline_cache_timing/pipeline_cache_timing_abi.c3" ]
-    },
-    "memory_report": {
-      "type": "executable",
-      "sources": [ "memory_report/main.c3" ]
-    },
-    "gpu_driven_draw_sdl": {
-      "type": "executable",
-      "dependencies": [ "sdl3" ],
-      "sources": [ "gpu_driven_draw_sdl/main.c3", "gpu_driven_draw_sdl/gpu_driven_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
-    },
     "minimal_triangle": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
-      "sources": [ "minimal_triangle/main.c3", "shared/sample_window_sdl.c3" ]
+      "sources": [ "samples/01_minimal_triangle/main.c3", "shared/sample_window_sdl.c3" ]
     },
-    "mesh_shading": {
+    // Windowed: SDL3 window + swapchain, presents the textured triangle.
+    // Run with --frames N for an auto-exit smoke, --no-vsync for MAILBOX.
+    "hello_triangle_sdl": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
+      "sources": [ "samples/02_hello_triangle_sdl/main.c3", "samples/02_hello_triangle_sdl/hello_triangle_abi.c3", "shared/sample_window_sdl.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+    },
+    // Headless: no SDL. Proves the root-pointer compute ABI end to end.
+    "root_pointer_compute": {
+      "type": "executable",
+      "sources": [ "samples/03_root_pointer_compute/main.c3", "samples/03_root_pointer_compute/root_pointer_abi.c3" ]
+    },
+    "memory_report": {
+      "type": "executable",
+      "sources": [ "samples/04_memory_report/main.c3" ]
+    },
+    // Headless: writes a pattern into a storage image by TextureIndex, then
+    // samples it back by the same index. Proves the bindless descriptor heap.
+    "bindless_texture_compute": {
+      "type": "executable",
+      "sources": [ "samples/05_bindless_texture_compute/main.c3", "samples/05_bindless_texture_compute/bindless_abi.c3" ]
+    },
+    "image_processing": {
+      "type": "executable",
       "sources": [
-        "mesh_shading/main.c3", "mesh_shading/mesh_shading_abi.c3",
-        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/screenshot.c3", "shared/png.c3"
+        "samples/06_image_processing/main.c3", "samples/06_image_processing/image_processing_abi.c3",
+        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
-    "stencil_mask": {
+    // Headless rasterization: textured triangles in dynamic viewport/scissor
+    // regions, with readback verification and optional PNG capture.
+    "offscreen_triangle": {
+      "type": "executable",
+      "sources": [ "samples/07_offscreen_triangle/main.c3", "samples/07_offscreen_triangle/offscreen_abi.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+    },
+    "textured_cube": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
       "sources": [
-        "stencil_mask/main.c3", "stencil_mask/stencil_mask_abi.c3",
+        "samples/08_textured_cube/main.c3", "samples/08_textured_cube/textured_cube_abi.c3",
         "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
-        "shared/screenshot.c3", "shared/png.c3"
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "texture_filtering": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/09_texture_filtering/main.c3", "samples/09_texture_filtering/texture_filtering_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "volume_texture": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/10_volume_texture/main.c3", "samples/10_volume_texture/volume_texture_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3",
+        "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
     "skybox": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
       "sources": [
-        "skybox/main.c3", "skybox/skybox_abi.c3",
+        "samples/11_skybox/main.c3", "samples/11_skybox/skybox_abi.c3",
         "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
@@ -190,20 +101,109 @@
       "type": "executable",
       "dependencies": [ "sdl3" ],
       "sources": [
-        "compressed_textures/main.c3", "compressed_textures/compressed_textures_abi.c3",
+        "samples/12_compressed_textures/main.c3", "samples/12_compressed_textures/compressed_textures_abi.c3",
         "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
         "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
     },
+    "present_mode_explorer": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/13_present_mode_explorer/main.c3", "samples/13_present_mode_explorer/present_mode_explorer_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "pbr_materials": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/14_pbr_materials/main.c3", "samples/14_pbr_materials/pbr_materials_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "particle_sim": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/15_particle_sim/main.c3", "samples/15_particle_sim/particle_sim_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "stencil_mask": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/16_stencil_mask/main.c3", "samples/16_stencil_mask/stencil_mask_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "shadow_mapping": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/17_shadow_mapping/main.c3", "samples/17_shadow_mapping/shadow_mapping_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "deferred_shading": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/18_deferred_shading/main.c3", "samples/18_deferred_shading/deferred_shading_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "frustum_culling": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/19_frustum_culling/main.c3", "samples/19_frustum_culling/frustum_culling_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/sample_camera.c3", "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
+    "gpu_driven_draw_sdl": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [ "samples/20_gpu_driven_draw_sdl/main.c3", "samples/20_gpu_driven_draw_sdl/gpu_driven_abi.c3", "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3" ]
+    },
+    "mesh_shading": {
+      "type": "executable",
+      "dependencies": [ "sdl3" ],
+      "sources": [
+        "samples/21_mesh_shading/main.c3", "samples/21_mesh_shading/mesh_shading_abi.c3",
+        "shared/sample_window_sdl.c3", "shared/frame_upload.c3", "shared/sample_args.c3",
+        "shared/screenshot.c3", "shared/png.c3"
+      ]
+    },
     "texture_streaming": {
       "type": "executable",
-      "sources": [ "texture_streaming/main.c3", "texture_streaming/texture_streaming_abi.c3" ]
+      "sources": [ "samples/22_texture_streaming/main.c3", "samples/22_texture_streaming/texture_streaming_abi.c3" ]
+    },
+    "bindless_stress": {
+      "type": "executable",
+      "sources": [ "samples/23_bindless_stress/main.c3", "samples/23_bindless_stress/bindless_stress_abi.c3" ]
+    },
+    "pipeline_cache_timing": {
+      "type": "executable",
+      "sources": [ "samples/24_pipeline_cache_timing/main.c3", "samples/24_pipeline_cache_timing/pipeline_cache_timing_abi.c3" ]
+    },
+    "multithreaded_recording": {
+      "type": "executable",
+      "sources": [ "samples/25_multithreaded_recording/main.c3", "samples/25_multithreaded_recording/multithreaded_recording_abi.c3" ]
     },
     "cornell_box": {
       "type": "executable",
       "dependencies": [ "sdl3" ],
       "sources": [
-        "cornell_box/main.c3", "cornell_box/cornell_box_abi.c3",
+        "samples/26_cornell_box/main.c3", "samples/26_cornell_box/cornell_box_abi.c3",
         "shared/sample_window_sdl.c3", "shared/frame_upload.c3",
         "shared/sample_args.c3", "shared/screenshot.c3", "shared/png.c3"
       ]
