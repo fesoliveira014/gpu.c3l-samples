@@ -81,6 +81,10 @@ budget. `WAIT_TIMEOUT` skips the current frame and returns to SDL event
 processing, which avoids both an unbounded WSI wait and a hot nonblocking retry
 loop.
 
+`minimal_triangle` is the exception to both rules. It takes no flags, waits for
+each frame's completion, and acquires without a timeout. It also skips
+validation layers and resize recovery. Close its window to exit.
+
 ## Smoke matrix
 
 All GPU samples require Vulkan 1.3. Windowed samples also require SDL3 and
@@ -102,7 +106,7 @@ before commands that request screenshots.
 | `image_processing` | headless | storage images, span atomics | `--screenshot out/image_processing.png` |
 | `texture_streaming` | headless | reserved texture-index ranges, in-place view updates | — |
 | `hello_triangle_sdl` | windowed | baseline presentation; unified layouts, inline root payload | `--frames 30 --screenshot out/hello_triangle_sdl.png` |
-| `minimal_triangle` | windowed | smallest windowed program; no roots, no barriers, no descriptors | `--frames 30 --screenshot out/minimal_triangle.png` |
+| `minimal_triangle` | windowed | smallest windowed program; no roots, no barriers, no descriptors, no flags | — |
 | `textured_cube` | windowed | depth attachment, sampled texture | `--frames 30 --screenshot out/textured_cube.png` |
 | `texture_filtering` | windowed | mip sampling; anisotropy optional | `--frames 30 --screenshot out/texture_filtering.png` |
 | `volume_texture` | windowed | 3D texture upload and sampled volume raymarch | `--frames 30 --screenshot out/volume_texture.png` |
@@ -121,3 +125,5 @@ before commands that request screenshots.
 
 Each sample README describes its output and optional flags. CI runs this full
 matrix on lavapipe; windowed targets use xvfb and the listed frame bound.
+`minimal_triangle` has no frame bound, so CI stops it with SIGTERM after five
+seconds; SDL turns the signal into a quit event and the sample exits zero.

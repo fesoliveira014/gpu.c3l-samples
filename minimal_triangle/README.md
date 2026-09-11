@@ -14,11 +14,14 @@ It demonstrates:
 - A pipeline whose shaders take no root data: positions and colors come from
   `gl_VertexIndex`, and the draw passes zero roots.
 - One command list per frame: clear, draw, submit against the acquire
-  readiness point, present.
+  readiness point, wait for completion, present.
 - No shader ABI schema, no allocations, no descriptors.
 
-Use `--frames N` for automatic exit and `--no-vsync` to request MAILBOX.
+To stay minimal, the sample takes no flags and panics on any fault. It creates
+a 512×512 swapchain once and does not recover from resize or minimize. It waits
+for each frame's completion and acquires without a timeout instead of using the
+shared two-millisecond budget. Close the window to exit.
 
 ```sh
-c3c run minimal_triangle -- --frames 30 --screenshot out/minimal_triangle.png
+c3c run minimal_triangle
 ```
