@@ -80,7 +80,10 @@ jobs:
           c3c run offscreen_triangle -- --screenshot out/offscreen_triangle.png
           c3c run image_processing -- --screenshot out/image_processing.png
           c3c run texture_streaming
-          for s in minimal_triangle hello_triangle_sdl gpu_driven_draw_sdl textured_cube texture_filtering volume_texture particle_sim frustum_culling shadow_mapping deferred_shading pbr_materials present_mode_explorer mesh_shading stencil_mask skybox compressed_textures; do
+          c3c build minimal_triangle
+          xvfb-run -a env SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
+            timeout --preserve-status --kill-after=10 5 ./build/minimal_triangle
+          for s in hello_triangle_sdl gpu_driven_draw_sdl textured_cube texture_filtering volume_texture particle_sim frustum_culling shadow_mapping deferred_shading pbr_materials present_mode_explorer mesh_shading stencil_mask skybox compressed_textures; do
             c3c build "$s"
             xvfb-run -a env SDL_VIDEODRIVER=x11 WAYLAND_DISPLAY= \
               "./build/$s" --frames 30 --screenshot "out/$s.png"
