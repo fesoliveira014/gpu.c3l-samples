@@ -354,9 +354,6 @@ struct RunResult {
    readbacks are byte-identical. *>
 fn RunResult? run_on_device(bool validation) {
     util::DeviceContextDesc desc = util::default_device_context_desc();
-    desc.runtime.contract_validation = validation
-        ? gpu::ContractValidation.FULL
-        : gpu::ContractValidation.TRUSTED;
     desc.runtime.enable_vulkan_validation = validation;
     desc.runtime.application_name = "multithreaded_recording";
     desc.command_allocator.command_buffer_capacity = CHUNKS + 1;

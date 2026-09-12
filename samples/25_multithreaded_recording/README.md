@@ -8,9 +8,9 @@ The timed region contains only command recording. Draw roots live in persistent
 `CPU_WRITE` allocation, and each list writes a disjoint band of a 512x512
 offscreen target.
 
-Correctness runs with validation enabled. Timing uses a second device with
-validation disabled because validation serializes command recording. Reported
-speedup is advisory; the readback comparison is the correctness gate.
+Correctness runs with Vulkan validation enabled. Timing uses a second device
+with Vulkan validation disabled to exclude its overhead. Reported speedup is
+advisory; the readback comparison is the correctness gate.
 
 ```sh
 c3c run multithreaded_recording

@@ -245,7 +245,6 @@ fn void? run(sample_args::Options options) {
     defer sample_window::destroy_sample_window(&window);
 
     gpu::RuntimeDesc runtime_desc = {
-        .contract_validation          = gpu::ContractValidation.FULL,
         .enable_vulkan_validation     = true,
         .application_name             = "present_mode_explorer",
     };

@@ -21,6 +21,9 @@ jobs:
           # the private binding submodules.
           token: ${{ secrets.SUBMODULE_TOKEN }}
 
+      - name: Fetch VMA static libraries
+        run: python3 lib/gpu.c3l/scripts/fetch_vma_libs.py
+
       - name: Cache c3c
         uses: actions/cache@v4
         with:
