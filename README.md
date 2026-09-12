@@ -1,7 +1,7 @@
 # gpu.c3l samples
 
 Standalone consumers of [`gpu.c3l`](https://github.com/fesoliveira014/gpu.c3l),
-vendored at [v0.5.0](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.5.0)
+vendored at [v0.6.0](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.6.0)
 as a pinned submodule. Samples live under `samples/`, numbered in order of
 complexity from `01_minimal_triangle` to `26_cornell_box`; later samples assume
 the concepts of earlier ones. Each sample owns its shaders and ABI schemas;
@@ -13,6 +13,7 @@ sample. Code shared between samples lives in `shared/`.
 ```sh
 git clone --recursive https://github.com/fesoliveira014/gpu.c3l-samples
 cd gpu.c3l-samples
+python3 lib/gpu.c3l/scripts/fetch_vma_libs.py
 ```
 
 Requirements:
@@ -22,16 +23,16 @@ Requirements:
 - A Vulkan 1.3 loader and driver; lavapipe works for headless samples
 - SDL3 and a window system for windowed samples
 
-On Windows, build the VMA 3.3.0 static library using the pinned-header commands
-in [`testing.md`](lib/gpu.c3l/docs/contributing/testing.md) under “Prerequisites on windows-x64”.
-Run `python3 scripts/copy_runtime_deps.py` after building to place `SDL3.dll`
-beside the executables.
+The fetch step downloads the Linux and Windows VMA static libraries matching
+the pinned binding; these libraries are release assets, not Git content.
+On Windows, run `python3 scripts/copy_runtime_deps.py` after building to place
+`SDL3.dll` beside the executables.
 
 ## Device setup
 
 Samples create their runtime, device, queue, command allocator, and optional
 surface and swapchain through `gpu::util::DeviceContext`. The defaults select
-full contract checks and a graphics queue; samples turn on Vulkan validation
+a graphics queue; samples turn on Vulkan validation
 layers, name the application, and override what they need:
 
 ```c3

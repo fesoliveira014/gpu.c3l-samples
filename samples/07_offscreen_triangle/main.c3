@@ -319,8 +319,8 @@ fn void? run(sample_args::Options options) {
     gpu::cmd_set_graphics_state(&cmd, &graphics)!;
     for (uint i = 0; i < viewports.len; i++) {
         if (i > 0) {
-            gpu::cmd_set_viewport(&cmd, &viewports[i])!;
-            gpu::cmd_set_scissor(&cmd, &scissors[i])!;
+            gpu::cmd_set_viewport(&cmd, &viewports[i]);
+            gpu::cmd_set_scissor(&cmd, &scissors[i]);
         }
         gpu::cmd_draw(
             commands:       &cmd,
@@ -340,8 +340,8 @@ fn void? run(sample_args::Options options) {
         .min_depth = 0.0f,
         .max_depth = 1.0f,
     };
-    gpu::cmd_set_viewport(&cmd, &ui_viewport)!;
-    gpu::cmd_set_scissor(&cmd, &ui_scissor)!;
+    gpu::cmd_set_viewport(&cmd, &ui_viewport);
+    gpu::cmd_set_scissor(&cmd, &ui_scissor);
     gpu::cmd_draw(
         commands:       &cmd,
         vertex_root:    verts_address,
