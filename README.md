@@ -1,7 +1,7 @@
 # gpu.c3l samples
 
 Standalone consumers of [`gpu.c3l`](https://github.com/fesoliveira014/gpu.c3l),
-vendored at [v0.6.0](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.6.0)
+vendored at [v0.7.7](https://github.com/fesoliveira014/gpu.c3l/releases/tag/v0.7.7)
 as a pinned submodule. Samples live under `samples/`, numbered in order of
 complexity from `01_minimal_triangle` to `26_cornell_box`; later samples assume
 the concepts of earlier ones. Each sample owns its shaders and ABI schemas;
@@ -18,15 +18,17 @@ python3 lib/gpu.c3l/scripts/fetch_vma_libs.py
 
 Requirements:
 
-- `c3c` 0.8.3
+- `c3c` 0.8.5_1 (the patched 0.8.5 release)
 - `glslc` from the Vulkan SDK or shaderc
 - A Vulkan 1.3 loader and driver; lavapipe works for headless samples
 - SDL3 and a window system for windowed samples
 
 The fetch step downloads the Linux and Windows VMA static libraries matching
 the pinned binding; these libraries are release assets, not Git content.
-On Windows, run `python3 scripts/copy_runtime_deps.py` after building to place
-`SDL3.dll` beside the executables.
+On Windows, also run `python3 lib/gpu.c3l/scripts/fetch_spvreflect_lib.py`
+before building to download the matching SPIRV-Reflect library. After building,
+run `python3 scripts/copy_runtime_deps.py` to place `SDL3.dll` beside the
+executables.
 
 ## Device setup
 
